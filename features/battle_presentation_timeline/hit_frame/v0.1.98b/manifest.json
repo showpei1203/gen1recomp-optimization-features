@@ -1,0 +1,21 @@
+{
+  "id": "pmd_idle_battle_sprites",
+  "name": "PMD Idle Battle Sprites",
+  "version": "0.1.98b",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "GRAPHICS",
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "priority": 140,
+  "dependencies": [],
+  "optional_dependencies": [
+    "kanto_gear",
+    "DRAMATIC_SHAPE"
+  ],
+  "conflicts": [],
+  "description": "TEST-ONLY HIT_FRAME Authority I Draw Guarantee from v0.1.98a. Engine applyHitFx remains the sole HIT_FRAME latch. If battle-frame time advances while the PMD battler is not actually drawn, the latched source hitFrame is guaranteed exactly once on the next real draw before recovery continues. No new timer; no native animation/audio/damage retiming; multi-hit continuation barrier safety unchanged; sfxSnap remains legacy compatibility. DRAMATIC_SHAPE/THOR Battle UI are not modified.",
+  "permissions": [
+    "engine_internals"
+  ]
+}
