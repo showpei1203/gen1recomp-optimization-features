@@ -1,0 +1,29 @@
+{
+  "id": "pmd_hit_frame_authority_i_v0_1_98b",
+  "status": "RUNTIME_PASS_FORMAL_AUTHORITY",
+  "source_mod": "pmd_idle_battle_sprites",
+  "version": "0.1.98b",
+  "authority": "docs/PMD_HIT_FRAME_AUTHORITY_I.md",
+  "accepted_hashes": {
+    "main.lua": "d424b958571ab18fa456710230a39b46686d6533f7b277987920d83d0c19c67c",
+    "manifest.json": "798346ed03a8a02ad184c769502e23c10a828bd9e81025a8eaf297e94ae415d6",
+    "candidate_zip": "c673f8a1cdb17648325e90882f035942a1fa49f91172bfc7c446d52df0979565",
+    "pass_evidence_zip": "9e4129dd1b30f036498b0c638dc5001626c6362595fdc4802a751687aece6adb"
+  },
+  "hard_gates": {
+    "duplicate_hit_authority": 0,
+    "continuation_barrier_rearm": 0,
+    "behavioral_pose_missing": 0,
+    "anim_release_to_hit_nonzero": 0,
+    "status_false_hit_auth": false
+  },
+  "coverage": [
+    "Quick Attack",
+    "Fury Swipes",
+    "Ember",
+    "Thundershock",
+    "Gust",
+    "Status Negative"
+  ],
+  "next_mainline": "PMD Action Binding"
+}
