@@ -1,52 +1,32 @@
-# v0.1.98b Patch Spec
+# v0.1.98b HIT_FRAME Authority I — Accepted Patch Spec
 
-Source PMD main SHA: `8343074b48a7720b595d74c54a698566e69d0a1e54b15bf455cf1669eea68ece` (`v0.1.98a`)  
-Candidate PMD main SHA: `d424b958571ab18fa456710230a39b46686d6533f7b277987920d83d0c19c67c`
+## Status
 
-Exact candidate source, v0.1.98a rollback, accepted v0.1.97f rollback, diff, SHA gates and collector are archived in Drive ZIP `1UTfiT7rllz4m_RYTBzykivQm2VaPc2eO`.
+Runtime PASS / Formal Authority.
 
-## Runtime change
+## Behavioral contract
 
-Only the existing `combatMotionPose` `postRecovery` impact-hold branch changes.
+- `applyHitFx` is the sole HIT_FRAME latch.
+- Native damage and native animation/audio timing remain engine-owned.
+- Each native hit row owns at most one HIT authority record.
+- Multi-hit continuation rows never re-arm the native presentation barrier.
+- Behavioral contact HIT authority must render the latched source `hitFrame` at least once.
+- Draw Guarantee may defer that pose until the next actual PMD draw when the short battle-frame impact window expired before draw. It delivers exactly once and does not create a new timer.
+- `sfxSnap` remains legacy visual compatibility only.
 
-Before v0.1.98b, the authoritative pose was returned only while:
-
-`impactRec and elapsed < impactHold`
-
-v0.1.98b adds one pending-delivery latch:
-
-`authorityPosePending = cue.hitAuthority and not cue.hitAuthorityPoseLogged`
-
-and permits the impact pose when:
-
-`impactRec and (elapsed < impactHold or authorityPosePending)`
-
-The pending path delivers the already-latched `impactHitFrame` once on the next actual PMD draw, logs `HIT_AUTH DRAW_GUARANTEE`, then the existing recovery code continues normally.
-
-## Safety properties
-
-- no new timer
-- no new native queue barrier
-- no repeated `armNativeActionSync`
-- no replayed SFX
-- no damage/status retiming
-- no change to `fireHitFrameAuthority`
-- no change to `applyHitFx` wrapper
-- no DRAMATIC_SHAPE / THOR file changes
-- no depth / lighting / shadow / anchor / large-species changes
-
-## Evidence target
-
-Hard PASS remains:
+## Runtime PASS gates
 
 - duplicate HIT authority = 0
 - continuation barrier re-arm = 0
 - behavioral pose missing = 0
 - numeric `ANIM_RELEASE -> HIT` non-zero = 0
 - status false HIT authority = false
-- all required benchmark coverage present
-- at least one multi-hit sequence observed
+- benchmark coverage: Quick Attack, Fury Swipes, Ember, Thundershock, Gust, status-negative all true
 
-Collector additionally reports `DRAW_GUARANTEE_DEFERRED` so a recovered formerly-skipped pose can be distinguished from ordinary same-frame/next-frame pose delivery.
+## Sealed compatibility
 
-Static validation: **28/28 PASS**. Runtime/visual acceptance pending.
+No modification or rollback of accepted DRAMATIC_SHAPE / THOR depth integration, Presentation Overflow, player BACK SPRITES shadow policy, Presentation vs Physical Feet Authority separation, or Large Pokémon Expanded Presentation Bounds.
+
+Accepted PMD main SHA: `d424b958571ab18fa456710230a39b46686d6533f7b277987920d83d0c19c67c`.
+
+See `docs/PMD_HIT_FRAME_AUTHORITY_I.md` for the formal authority and `THOR_PASS_20260820_064038.md` for final evidence.
