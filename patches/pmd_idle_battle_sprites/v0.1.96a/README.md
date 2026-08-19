@@ -1,6 +1,6 @@
 # PMD v0.1.96a — Battle Presentation Timeline I
 
-Status: **TEST-ONLY**
+Status: **RUNTIME PASS / VISUAL ACCEPTANCE PENDING**
 
 ## Source authority
 
@@ -26,6 +26,26 @@ v0.1.96a adds a narrow audio-tail presentation owner:
 5. Release together into native hit feedback / PMD hurt / HP drain / recovery when active audio returns to baseline.
 6. Hard cap at 180 visible frames to prevent a stray audio Source from deadlocking battle presentation.
 
+## Runtime evidence — 2026-08-19
+
+Evidence package: `GEN1RECOMP_PRESENTATION_TIMELINE_I_EVIDENCE_20260819_192121.zip`
+
+- Evidence ZIP SHA-256: `a860df083c891cdfdaaf83d4dc03f8c78fc1dd8cd49c7e8aaa10bee1dad7100a`
+- Evidence Drive file ID: `1bvsQir0nzFIAIoJqAFZQRSvZ1s3bjk1N`
+- Installed candidate SHA matched `698159d9fdab16633f29f8155740e5d4fdf3626648513bb0b834888cd3ed6031`.
+- Five audio-tail ownership windows were observed:
+  - `THUNDER WAVE`: 68 frames, then 58 frames in a later battle.
+  - `TAIL WHIP`: 7 frames, then 5 frames.
+  - `QUICK ATTACK`: 14 frames.
+- Every observed tail ended with `reason=audio_done`.
+- 0 safety-cap timeouts.
+- 0 new Lua errors in the session.
+- FULL_LOGCAT showed no Android `FATAL EXCEPTION` or ANR.
+
+This is strong runtime evidence that the candidate is detecting the real interval where native animation has ended but move audio is still active. It does **not** replace visual acceptance of the held final VFX frame and PMD body pose, so the candidate is not sealed yet.
+
+Unrelated warnings were observed from `overworld_wild_spawns` world-billboard `pose() returned nil sprite` fallback and are tracked outside this candidate.
+
 ## Non-goals
 
 This candidate does **not** modify damage, accuracy, hit timing, move data, pitch/tempo, sound playback, Gen2 palettes, or full-game runtime. It is an isolated presentation-layer experiment built byte-exact from the Thor v0.1.95c source snapshot.
@@ -40,3 +60,7 @@ Runtime trace markers:
 
 - `PRESENTATION_TIMELINE audio-tail BEGIN`
 - `PRESENTATION_TIMELINE audio-tail END`
+
+## Next step
+
+Presentation Timeline II will correlate, per move, PMD `nativeHandoff/nativeHitFrame`, native animation step progression, `playAnimSound` onset, `applyHitFx` impact, audio-tail begin/end, and recovery. The aim is to replace scattered hand-tuned `sfxSnap` behavior with an explicit HIT_FRAME authority before Gen2-colored animation work begins.
