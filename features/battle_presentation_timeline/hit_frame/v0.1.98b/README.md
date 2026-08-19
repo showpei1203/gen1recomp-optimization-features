@@ -1,56 +1,44 @@
-# PMD v0.1.98b HIT_FRAME Authority I Draw Guarantee
+# PMD v0.1.98b HIT_FRAME Authority I
 
-**Status:** TEST-only candidate. STATIC PASS. Thor runtime + visual acceptance pending.
+**Status:** Runtime PASS / Formal Authority
 
-## Source
+v0.1.98b promotes the engine `applyHitFx` event as the sole authoritative HIT_FRAME latch for the tested PMD battle presentation path while preserving all accepted v0.1.97f depth/occlusion compatibility invariants.
 
-Direct continuation from Thor-tested `v0.1.98a`.
+## Accepted behavior
 
-v0.1.98a proved:
+- one HIT authority per native hit row;
+- multi-hit sequence keeps row ownership without continuation barrier re-arm;
+- behavioral contact hits deliver the latched PMD source `hitFrame` on an actual PMD draw;
+- Draw Guarantee supplies that authoritative pose exactly once on the next actual draw if battle-frame elapsed already exceeded the short impact hold;
+- `sfxSnap` remains legacy compatibility, not HIT authority;
+- native damage, native animation, audio lifecycle, DRAMATIC_SHAPE depth, THOR UI wrappers and Large Pokémon presentation bounds remain unchanged.
 
-- 21 HIT_AUTH fires
-- duplicate HIT authority = 0
-- continuation barrier re-arm = 0
-- all numeric `ANIM_RELEASE -> HIT` deltas = 0f
-- all required benchmark coverage present
+## Accepted hashes
 
-Its only hard failure was 3 missing behavioral `HIT_AUTH POSE` proofs: one Quick Attack and two Gust occurrences.
+- PMD `main.lua`: `d424b958571ab18fa456710230a39b46686d6533f7b277987920d83d0c19c67c`
+- PMD `manifest.json`: `798346ed03a8a02ad184c769502e23c10a828bd9e81025a8eaf297e94ae415d6`
+- Candidate ZIP: `c673f8a1cdb17648325e90882f035942a1fa49f91172bfc7c446d52df0979565`
+- PASS Evidence ZIP: `9e4129dd1b30f036498b0c638dc5001626c6362595fdc4802a751687aece6adb`
 
-## Root cause
+## Thor final result
 
-`applyHitFx` correctly latched the source hit frame, but the existing `postRecovery` impact hold used battle-frame elapsed. If battle frames advanced while the PMD battler was not actually drawn, the short hold could expire before the next `combatMotionPose` call, skipping the authoritative pose entirely.
+`RESULT=PASS`
 
-## v0.1.98b change
+- `HIT_AUTH_FIRES=16`
+- `BEHAVIORAL_SINGLE_CONTACT=11`
+- `POSE_PROOFS=11`
+- `DRAW_GUARANTEE_DEFERRED=3`
+- `DUPLICATE_HIT_AUTHORITY=0`
+- `CONTINUATION_BARRIER_REARM=0`
+- `BEHAVIORAL_POSE_MISSING=0`
+- `ANIM_RELEASE_TO_HIT_NONZERO=0`
+- `MULTI_HIT_ROWS_SEEN=3`
+- `STATUS_FALSE_HIT_AUTH=False`
 
-When a behavioral HIT authority is pending and no authority pose has yet been delivered, the next actual PMD draw returns the latched source hit frame exactly once even if the original impact hold has already expired. The normal recovery path resumes immediately afterward.
+Coverage PASS: Quick Attack, Fury Swipes, Ember, Thundershock, Gust, status-negative.
 
-This adds no new timer and does not retime native animation, audio, damage, or queue ownership.
+See `docs/PMD_HIT_FRAME_AUTHORITY_I.md` and `THOR_PASS_20260820_064038.md`.
 
-## Candidate SHA
+## Next mainline
 
-- PMD main: `d424b958571ab18fa456710230a39b46686d6533f7b277987920d83d0c19c67c`
-- PMD manifest: `798346ed03a8a02ad184c769502e23c10a828bd9e81025a8eaf297e94ae415d6`
-- Test ZIP: `c673f8a1cdb17648325e90882f035942a1fa49f91172bfc7c446d52df0979565`
-
-Drive test folder: `15HKvj8ByORCz7Hp6piPKbRj1p8GWdo2Q`  
-Drive ZIP: `1UTfiT7rllz4m_RYTBzykivQm2VaPc2eO`
-
-## Explicitly unchanged
-
-- `fireHitFrameAuthority`
-- `BattleState.applyHitFx` wrapper
-- `moveTimingExceptions`
-- `motionSyncTiming`
-- `armNativeActionSync`
-- `playAnimSound`
-- audio-tail lifecycle
-- `sfxSnap` legacy compatibility
-- multi-hit one-row/one-owner safety
-- DRAMATIC_SHAPE / THOR Battle UI
-- Presentation vs Physical Feet Authority
-- Presentation Overflow
-- Large Pokémon Expanded Battle Presentation Bounds
-
-Static validation: **28/28 PASS**.
-
-Do not promote until Thor runtime evidence returns `BEHAVIORAL_POSE_MISSING=0` with the same ownership, multi-hit, timeline, status, and render invariants intact.
+PMD Action Binding across melee/contact, projectile, multi-hit, long-SFX/sustained, full-screen/area and status/self families. The Gen2/GBC Colored Move Animation Layer must consume this same Presentation Timeline and may not introduce an independent timing clock.
