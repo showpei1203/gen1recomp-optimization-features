@@ -1,0 +1,43 @@
+請接續 Gen1recomp Optimization / Features 專案，不要從零開始，不要回滾已 PASS 的 PMD × DRAMATIC_SHAPE Depth/Occlusion，也不要重新要求我說明本次 3D 遮擋歷史。
+
+請先依序讀取：
+
+1. Google Drive `Gen1recomp/00_Project_Authority/MASTER_PROJECT_STATE`
+2. Google Drive `Gen1recomp/05_Handoff/CURRENT_HANDOFF`
+3. Google Drive `Gen1recomp/02_Current_Development/CURRENT_DEVELOPMENT`
+4. Google Drive `Gen1recomp/03_Test_Builds/CURRENT_TEST_BUILD`
+5. Google Drive `Gen1recomp/00_Project_Authority/PMD_DRAMATIC_SHAPE_DEPTH_INTEGRATION_AUTHORITY`
+6. Google Drive `Gen1recomp/00_Project_Authority/DEPENDENCY_FILE_REGISTER`
+7. GitHub `showpei1203/gen1recomp-optimization-features`
+8. GitHub `integration/pmd_dramatic_shape_depth/v0.1.97f/README.md`
+9. GitHub `docs/PMD_DRAMATIC_SHAPE_DEPTH_INTEGRATION_AUTHORITY.md`
+10. GitHub `docs/PMD_LARGE_POKEMON_PRESENTATION_BOUNDS_AUTHORITY.md`
+
+目前已驗收 Compatibility Authority：
+`pmd_idle_battle_sprites v0.1.97f × DRAMATIC_SHAPE 1.8.2 × thor_battle_ui 0.3.41`
+狀態：`RUNTIME PASS + VISUAL ACCEPTANCE PASS`。
+
+Accepted SHA：
+- ZIP `8492bc002c1eb7707c5b232dc1b3029eac98fcc4c0df7b9157ebff1981ee94b2`
+- PMD main `a4870ddea71c5679917275a8444d6451405a0634758767e9f8487d1e0180ca49`
+- PMD manifest `87d9caf6d33d1082c86fa3804422827bb0f5e8437825e14be409c98240015051`
+- DS OverworldBattle `1714ac5d5d98f2f785a8a63f2cc741865595e41eafada8d9dd7c4619f23ca501`
+- DS BattleScene `bca552070e26c9ac6554f8cc387ffb34036a76722b7be9c5d3184974237873cc`
+- THOR Battle UI main `8a1d1fb26b56c736fed42ef7c27f95cdc3e3a349ae989417f4e9ee2579686835`
+
+Sealed rules：
+1. Presentation Authority 與 Physical Feet Authority 必須分離。
+2. Presentation Overflow 只用 screen-stable camera-ray depth bias 修 intentional lower overflow，不准整隻上移或縮小。
+3. cross-MOD wrapper 必須完整 forward semantic arguments。
+4. Large Pokémon Expanded Battle Presentation Bounds 不可回歸：BATTLE_SCALE=0.90、PLAYER_Y_SHIFT=6、ENEMY_Y_SHIFT=10、>=90px giant 不進 conservative fit/shrink、preserve native scale、允許 top/side overflow、non-bird giant +6X/-4Y、三鳥 shared approved anchor。
+5. 玩家 BACK SPRITES：visible PMD 維持 legacy overlay，hidden silhouette 進 3D shadow。
+6. Depth/Occlusion 已結案，除非有真實 regression，不要重做。
+
+目前回主線：
+`Battle Presentation Timeline → HIT_FRAME Authority → PMD Action Binding → Gen2/GBC Colored Move Animation Layer`
+
+Timeline 已知：Timeline II/IIc correlated trace 已完成；observed damaging moves 均證明 `HIT = ANIM_RELEASE`；audio-tail 正常；`sfxSnap` 後續只保留 legacy compatibility。
+
+請先不要直接改 code。先重建 v0.1.97f PMD 中 `moveTimingExceptions`、`motionSyncTiming`、`armNativeActionSync`、`BattleState.updateQueue` wrapper、`playAnimSound` wrapper、`applyHitFx` wrapper、`combatMotionPose` 與 Timeline II/IIc ownership，再提出最小 HIT_FRAME Authority candidate。
+
+要求：從 v0.1.97f accepted state 出發；優先只改 PMD；DS/THOR 保持 byte-exact；保留 rollback/SHA gate/collector；multi-hit 使用 one-row/one-owner hit-sequence，不重複 re-arm native barrier；不破壞 depth、lighting、shadow、Large Pokémon bounds；不使用 Linear。
