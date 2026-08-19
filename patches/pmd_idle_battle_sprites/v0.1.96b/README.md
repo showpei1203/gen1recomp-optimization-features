@@ -1,10 +1,10 @@
 # PMD v0.1.96b — Battle Presentation Timeline II Trace
 
-Status: **STATIC PASS / WAITING THOR RUNTIME TRACE**
+Status: **RUNTIME TRACE PASS WITH TRACE-LIFECYCLE DEFECTS**
 
 ## Scope
 
-Diagnostic-only successor to `v0.1.96a`. It intentionally preserves the v0.1.96a audio-tail presentation behavior and adds correlated per-move trace markers. It does not tune animation timing, SFX lifetime, damage, accuracy, hit resolution, or Gen2 visual assets.
+Diagnostic-only successor to `v0.1.96a`. It preserves the v0.1.96a audio-tail presentation behavior and adds correlated per-move trace markers. It does not tune animation timing, SFX lifetime, damage, accuracy, hit resolution, or Gen2 visual assets.
 
 ## Source authority
 
@@ -20,39 +20,33 @@ Diagnostic-only successor to `v0.1.96a`. It intentionally preserves the v0.1.96a
 - Candidate `manifest.json` SHA-256: `05719ed704a9052ab51a305f0d2e4c54576a3548aa89a5ca5cb9a92706da33bf`
 - Candidate ZIP SHA-256: `ec1df1b771f2ae89e8df8ecf22e9bc3698d38bf3f71728cede6802fb2e13085c`
 
-## Google Drive authority
+## Thor runtime evidence
 
-- Test folder ID: `1mQntf-9hrMakLTHDHPweDbu9T44McWzi`
-- Candidate ZIP ID: `1VkznGO7vShXiBaYOXlZt5yOjErb-m8-4`
-- Candidate `main.lua` ID: `1JHlQu5pmoEMVMYpbi5Djnd2tYyF-tSnA`
-- Candidate `manifest.json` ID: `1iS8GJ06nUko4iWz0IMo-cMbi_9c9JP_2`
-- Diff ID: `1ztJxRgWEZ5Js4mX46VJwEADFvws4HRmI`
-- Static validation ID: `1QQRaDw2eq2sZX0L_-vtWoag9ED8cpfSa`
+Evidence captured on 2026-08-19 confirms that every observed damaging move resolves native `HIT` on the exact `ANIM_RELEASE` battle frame.
 
-## Timeline II trace
+| Move | START→HIT | HANDOFF→HIT | SFX→HIT | ANIM_DONE→RELEASE | RELEASE→HIT |
+|---|---:|---:|---:|---:|---:|
+| Quick Attack | 94f | 69f | 64f | 16f | 0f |
+| Thundershock | 137f | 102f | 97f | 27f | 0f |
+| Ember #1 | 91f | 89f | 84f | 0f | 0f |
+| Ember #2 | 91f | 89f | 84f | 0f | 0f |
 
-Each real move presentation receives one monotonically increasing trace id. The same id correlates:
+The repeated Ember trace is byte-for-byte timing-consistent at the presentation-frame level, which is useful evidence that the measured relationship is deterministic rather than incidental wall-clock jitter.
 
-`START -> HANDOFF -> NATIVE_RELEASE -> ANIM_ACTIVE -> SFX -> ANIM_DONE -> ANIM_RELEASE -> HIT`
+### Trace-only defects found
 
-The final `HIT` line records frame deltas from move start, PMD/native handoff, and the most recent native move-SFX trigger. This makes the next HIT_FRAME design evidence-driven rather than dependent on hand-tuned `sfxSnap` guesses.
+1. `HIT fromHandoff/fromLastSfx` logged as `?` because those timestamps lived only on the PMD source `combatMotionCue`, which can be consumed/replaced before `applyHitFx`.
+2. A completed Sand Attack trace id later appeared on unrelated BIND animation SFX because `self.pmdLastTelegraph` still retained the closed status-move trace.
 
-Trace markers:
+These are classified as diagnostic trace-lifecycle defects. No candidate-caused battle crash, ANR, or new Lua error was observed.
 
-- `PRESENTATION_TIMELINE2 START`
-- `PRESENTATION_TIMELINE2 HANDOFF`
-- `PRESENTATION_TIMELINE2 NATIVE_RELEASE`
-- `PRESENTATION_TIMELINE2 ANIM_ACTIVE`
-- `PRESENTATION_TIMELINE2 SFX`
-- `PRESENTATION_TIMELINE2 ANIM_DONE`
-- `PRESENTATION_TIMELINE2 ANIM_RELEASE`
-- `PRESENTATION_TIMELINE2 HIT`
+## Google Drive evidence authority
 
-## Rollback
+- Evidence folder ID: `1zowHTeDUdcxy8BVfIC-JJv5YFn2KLU6G`
+- Raw evidence ZIP ID: `1W86gi9rh77XLycfbzV1RGJ6Kx9BdQklc`
+- Analysis TXT ID: `19pP6OtuGcQKeZogvRITPLKfX4OvdkV6s`
+- Result Doc ID: `1_7BhOzPuYr7QH2OsaZ1A3YqfBW8-cOZzylDNCdC0ITs`
 
-The test package contains byte-exact rollback sources for both:
+## Next
 
-- `v0.1.96a`, the previous Runtime-pass / visual-pending candidate.
-- `v0.1.95c`, the formal PMD source authority.
-
-Runtime evidence is required before this trace candidate can be used to choose new HIT_FRAME policies.
+`v0.1.96c` fixes only trace-state persistence and closure. Presentation behavior must remain identical to v0.1.96b. HIT_FRAME behavioral tuning remains deferred until the corrected trace is confirmed on Thor.
