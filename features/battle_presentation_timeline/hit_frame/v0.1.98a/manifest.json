@@ -1,0 +1,21 @@
+{
+  "id": "pmd_idle_battle_sprites",
+  "name": "PMD Idle Battle Sprites",
+  "version": "0.1.98a",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "GRAPHICS",
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "priority": 140,
+  "dependencies": [],
+  "optional_dependencies": [
+    "kanto_gear",
+    "DRAMATIC_SHAPE"
+  ],
+  "conflicts": [],
+  "description": "TEST-ONLY HIT_FRAME Authority I from accepted v0.1.97f compatibility state. Engine applyHitFx is the sole HIT_FRAME latch. Adds one move-sequence/one-row ownership metadata and dedicated HIT_AUTH trace. Single-hit contact recovery consumes the exact source hitFrame latched by the active move row. Multi-hit continuation rows keep v0.1.92 safety: no repeated native barrier arm. sfxSnap remains legacy visual compatibility only. DRAMATIC_SHAPE/THOR Battle UI are not modified.",
+  "permissions": [
+    "engine_internals"
+  ]
+}
