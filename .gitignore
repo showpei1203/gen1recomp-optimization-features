@@ -1,0 +1,48 @@
+# Gen1recomp repository keeps source/config/tooling only.
+# Runnable binaries, archives, ROM-derived content, captures and large assets belong in private Google Drive authority.
+
+# Archives / builds
+*.zip
+*.7z
+*.rar
+*.tar
+*.gz
+*.exe
+*.dll
+*.so
+*.apk
+
+# ROM / cartridge images
+*.gb
+*.gbc
+*.gba
+*.rom
+*.bin
+
+# Runtime / logs / captures
+*.log
+*.dmp
+*.trace
+*.mp4
+*.mov
+*.avi
+*.png
+*.jpg
+*.jpeg
+*.webp
+
+# Local build/output/cache
+build/
+dist/
+out/
+cache/
+tmp/
+temp/
+__pycache__/
+*.pyc
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
