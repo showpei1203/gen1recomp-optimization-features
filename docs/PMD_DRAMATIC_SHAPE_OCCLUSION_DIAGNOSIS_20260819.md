@@ -29,15 +29,56 @@ Thor exact snapshot captured on 2026-08-19:
 - priority: `100`
 - permission: `engine_internals`
 
-The exact `main.lua` independently confirms the intended 3D battle path:
+## Exact core render authority
 
-- `OverworldBattle.install()` owns the engine seams around `OverworldState:pushBattle`, `BattleState:draw`, and `BattleState:drawHUDs`.
-- the `pokemon.sprite` hook is explicitly documented as the seam used for every battle Pokémon picture, including Transform.
-- `VoxelScene.render(...)` is the depth-buffered 3D world render path.
+The direct-cat core-library capture is now available:
 
-This is directly incompatible with PMD's current replacement strategy, where the PMD v0.1.95c source explicitly draws the replacement body later from `battle.overlay`.
+- ZIP: `GEN1RECOMP_DRAMATIC_SHAPE_CORE_LIBS_20260819_201743.zip`
+- Drive ZIP ID: `1aemyrp-JfEG7-B8SNcIPkCQJniIC1r89`
+- `OverworldBattle.lua` SHA-256: `a92c90c236d2b4d4028ea03c987924353168db2b0a63e30edc323d88dab71226`
+- `VoxelScene.lua` SHA-256: `d273b3f94b6e0822710d4ce02b830762a46399f2a4385ab1b96919c25781b7ec`
+- `Voxel3D.lua` SHA-256: `923f0b827ce6f8834d1fa763861b96e1338a9f3ddfdb4ead78cd9eb688b9bc4f`
+- Drive seam diagnosis ID: `1coEiT46-5idkpmhr__9u7O1X2mRKj6Qt`
 
-Important snapshot limitation: the first source-grab package captured `manifest.json` and `main.lua`, but `SOURCE_DUMP.txt` and `SOURCE_INDEX_AND_SHA256.txt` were zero bytes. Therefore no integration patch may be built from guessed library code. `lib/OverworldBattle.lua`, `Voxel3D.lua`, `VoxelScene.lua`, and supporting depth/geometry libraries must be direct-cat captured from Thor first.
+The exact 1.8.2 source establishes the render chain conclusively:
+
+1. `OverworldBattle.update()` calls `OverworldBattle.textures(session.battle)` every frame before the staged world shot is rendered.
+2. `sideTexture()` renders each side's `BattleState.drawPicsLayer` into a transparent 160×144 canvas at canonical anchor `TEX_AX=80`, `TEX_AY=96`.
+3. Those per-side canvases are passed to `BattleScene.render()`.
+4. `VoxelScene` draws the resulting battle cards using `Voxel3D.draw(BattleBillboard.mesh(), card.tex, card.model, BattleBillboard.PULL)`.
+5. `Voxel3D` uses a real `lequal` depth buffer, so terrain, buildings, and trees can naturally occlude the battle cards.
+6. The same battle cards participate in the shadow pass.
+
+This is the exact seam the PMD integration must use.
+
+## Confirmed PMD incompatibility
+
+Current PMD source intercepts `pokemon.sprite` when `ctx.kind == "battle"`, sets `trueColor`, and returns `transparent.png`.
+
+Therefore DRAMATIC_SHAPE's `sideTexture()` sees a transparent native battle picture and builds a transparent world card. The real PMD animated body is then drawn later from `battle.overlay`, after the 3D world/depth pass has already completed.
+
+That makes the observed bug inevitable: a screen-space overlay cannot be occluded by a tree/building already written into the 3D depth buffer.
+
+## Preferred fix
+
+Do **not** solve this with layer-order changes, hard-coded tree masks, per-map clip rectangles, or y-sort.
+
+Create a dedicated two-mod integration candidate that:
+
+1. exposes the current PMD animated body frame to the battle rendering seam;
+2. feeds that frame into DRAMATIC_SHAPE's per-side texture canvas instead of leaving the world card transparent;
+3. lets `BattleScene` / `VoxelScene` / `Voxel3D` draw the PMD frame as a normal depth-tested battle card;
+4. suppresses only the duplicate PMD body draw in `battle.overlay` when a DRAMATIC_SHAPE 3D card successfully owns that side;
+5. preserves PMD Presentation Timeline v0.1.96c, move timing, HIT logic, audio-tail ownership, and non-body overlays unchanged.
+
+## Remaining exact-source gate
+
+Two exact 1.8.2 files are still required before producing the first behavioral candidate:
+
+- `lib/BattleScene.lua`
+- `lib/BattleBillboard.lua`
+
+These define final card sizing, anchor/model matrix, and camera pull behavior. No candidate should guess those details.
 
 ## Runtime context
 
@@ -47,31 +88,14 @@ Current evidence confirms:
 - `pmd_idle_battle_sprites 0.1.96c` loaded
 - `thor_battle_ui` reports DRAMATIC_SHAPE 3D battle compatibility enabled
 
-Evidence ZIP:
-`GEN1RECOMP_PRESENTATION_TIMELINE_IIc_EVIDENCE_20260819_200104.zip`
+IIc evidence ZIP: `GEN1RECOMP_PRESENTATION_TIMELINE_IIc_EVIDENCE_20260819_200104.zip`
 
-SHA-256:
-`0420ce211035f86584a1271da20232f7b16d862bf815184c0f4c93b045b3786a`
+SHA-256: `0420ce211035f86584a1271da20232f7b16d862bf815184c0f4c93b045b3786a`
 
 Drive evidence ID: `1OBxDEWpLRjgfSj04beGNXvraJ1hl5nK7`
-Drive diagnosis ID: `1tqwHgGOSDP3DfXw-Shv_OkkwbvQmfiww`
 
 ## Classification
 
 `PMD × DRAMATIC_SHAPE Integration Defect`
 
-The PMD renderer replaces the native battler with a 2D overlay. DRAMATIC_SHAPE's battle system is depth-buffer based. A screen-space overlay does not naturally participate in tree/building occlusion.
-
-## Preferred fix
-
-Do **not** mix this into Presentation Timeline II.
-
-Create a dedicated integration candidate that feeds the animated PMD frame into DRAMATIC_SHAPE's per-side battle texture / world billboard path so the battler participates in the 3D depth buffer.
-
-Fallback only if that path is unavailable: use a DRAMATIC_SHAPE foreground/depth occlusion composite after PMD draw.
-
-Avoid hard-coded tree masks, map-specific clip rectangles, or manual y-sort hacks.
-
-## Timeline IIc side result
-
-The same evidence run confirms the IIc trace-integrity fix is working: damaging HIT records now contain concrete `fromHandoff`, `fromLastSfx`, `fromAnimDone`, and `fromAnimRelease` deltas, with observed damaging moves still resolving at `fromAnimRelease=0`.
+Timeline work remains valid and should not be rolled back for this defect.
