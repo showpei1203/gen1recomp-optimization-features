@@ -56,3 +56,17 @@ Initial benchmark set should include at minimum:
 - long/sustained SFX move
 - area/background-effect move
 - status/self-target move
+
+## 2026-08-19 Thor P0 Capture Diagnostic
+
+Captured package confirms the live Android build is Gen1Recomp 0.1.75 (`versionCode=175`) under `io.github.averageconsumer.gen1recomp.androidtest`.
+
+Exact PMD presentation mod entry identified from live `lua-error.log`:
+- `mods/pmd_idle_battle_sprites/main.lua`
+- historical runtime errors recorded at lines 120, 433, 844 and 923; later failures repeatedly involve missing `battlerHasMotion`.
+
+The first P0 text capture successfully captured device/package/log evidence, but its `05_P0_INDEX.txt` and `06_P0_SOURCE_DUMP.txt` were both zero bytes. Therefore the exact live PMD source has NOT yet been captured and must not be reconstructed from guesses.
+
+Official Gen1Recomp 0.1.75 architecture comparison shows that the engine battle animation layer already represents row SFX as frame-timed animation events. The P0 integration should therefore treat the PMD sprite layer as the third presentation track and bind it to the existing animation lifecycle rather than introduce another independent timer.
+
+Next required evidence is deliberately narrow: exact live `pmd_idle_battle_sprites/main.lua`, `manifest.json`, and its file list using the previously proven direct `adb exec-out run-as ... cat` text path. No full-device rescan is required.
