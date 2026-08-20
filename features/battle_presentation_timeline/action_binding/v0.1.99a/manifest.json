@@ -1,0 +1,13 @@
+{
+  "version": "0.1.99a",
+  "lane": "battle_presentation_timeline/action_binding",
+  "status": "TEST-only",
+  "base_authority": "pmd_idle_battle_sprites v0.1.98b HIT_FRAME Authority I",
+  "pmdbuild_sha256": "276e3f7e86b3dfbb6b004bb80f8a8ee1697e2a6ccc656884bd8411606341cda2",
+  "manifest_sha256": "c1f60336175503613eddb702841b3a8db4e5d2d7c67aba57378f7dec0c9b5110",
+  "zip_sha256": "b6562b90a3fd8c4ac5fac930adfd0e4ae11134b19fb4e3522ea569fb8a815c51",
+  "drive_test_folder": "1afY9rjp5MDHWSs9gxSHufTI4u0wm3dbO",
+  "drive_zip": "1NOurYy6OpP0tNp_G4q4tC19dFdiioZ0G",
+  "runtime_behavior_change": false,
+  "nidoran_size_normalization": "deferred_non_regression"
+}
