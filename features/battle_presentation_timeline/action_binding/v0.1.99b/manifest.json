@@ -1,7 +1,7 @@
 {
   "version": "0.1.99b",
   "lane": "battle_presentation_timeline/action_binding",
-  "status": "TEST-only",
+  "status": "TEST-only; sustained PASS; projectile closure pending",
   "source_candidate": "pmd_idle_battle_sprites v0.1.99a Action Binding I-A trace baseline",
   "formal_base_authority": "pmd_idle_battle_sprites v0.1.98b HIT_FRAME Authority I",
   "pmdbuild_sha256": "b2f8f143f7298d5b0744c30bc885df5cca1eb109a073c515bbcc6eeedb4eed64",
@@ -11,5 +11,10 @@
   "drive_zip": "1BGr-gme_9DPG2z_aWAJ7plzn-HTCSyMR",
   "runtime_behavior_change": true,
   "behavior_scope": "sustained_family_pre_tail_commitment_only",
+  "sustained_runtime_result": "PASS",
+  "closure_170115_result": "collector_false_fail; true projectile semantic row missing",
+  "collector_v2_sha256": "dd4f481b561da73b616967c02dd348835d7ab0038adc0f39ab0590da64231a13",
+  "collector_v2_drive_zip": "1IpCXXa2n18TxxTcDp43dT4gZIUx8EIZu",
+  "remaining_gate": "Ember once on exact v0.1.99b, then session-safe V2 collector",
   "nidoran_size_normalization": "deferred_non_regression"
 }
