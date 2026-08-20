@@ -1,0 +1,25 @@
+{
+  "version": "0.2.01a",
+  "lane": "gbc_colored_move_animation/a2",
+  "status": "TEST-only",
+  "candidate": {
+    "main": "698deb2ea8ade820b6f2c0d96e006ebbd2bb44d6f8977f5d3272b18e880e9ee5",
+    "manifest": "09e7ce55e2adf2cb6bf3b2639958fdca1da51797766ee95da2744ae09f4874b8",
+    "gbc_anim_data": "b19b65d930a88e238ebdc3d1b1bab2b499c827296705a804d5529eb49a6b681e",
+    "zip": "a66ba76e18cedbd3454a29ae08c424ae9b1c6c48c07ee03ddf8fc37450cf3515"
+  },
+  "moves": ["QUICK ATTACK", "FURY SWIPES", "PSYBEAM", "SURF"],
+  "fixture": {
+    "trigger": "B",
+    "once_per_process": true,
+    "battle_local_clone": true,
+    "persistent_writes": false,
+    "formal_release_remove": true
+  },
+  "dependencies": {
+    "dramatic_shape_overworld": "1714ac5d5d98f2f785a8a63f2cc741865595e41eafada8d9dd7c4619f23ca501",
+    "dramatic_shape_battlescene": "bca552070e26c9ac6554f8cc387ffb34036a76722b7be9c5d3184974237873cc",
+    "thor_ui": "8a1d1fb26b56c736fed42ef7c27f95cdc3e3a349ae989417f4e9ee2579686835"
+  },
+  "static_validation": "45 PASS / 0 FAIL"
+}
