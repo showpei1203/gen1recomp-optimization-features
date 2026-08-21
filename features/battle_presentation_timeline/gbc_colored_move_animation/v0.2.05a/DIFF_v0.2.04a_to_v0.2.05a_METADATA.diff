@@ -1,0 +1,55 @@
+--- v0.2.04a/manifest.json
++++ v0.2.05a/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "id": "pmd_idle_battle_sprites",
+   "name": "PMD Idle Battle Sprites",
+-  "version": "0.2.04a",
++  "version": "0.2.05a",
+   "api": 2,
+   "entry": "main.lua",
+   "profile": "content",
+@@ -14,7 +14,7 @@
+     "DRAMATIC_SHAPE"
+   ],
+   "conflicts": [],
+-  "description": "GBC Catalog Expansion A3 FORMAL promotion candidate. Tackle, Scratch, Bubble and Bubblebeam are frozen from v0.2.03c Thor PASS; TEST-only A3 benchmark fixture/B hook removed. Existing GBC/HIT_FRAME/Action Binding/Depth authorities remain unchanged.",
++  "description": "GBC Catalog Expansion A4 CUT-family batch TEST. Adds CUT/SLASH/VICEGRIP/GUILLOTINE via one data-driven Crystal CUT renderer; exact v0.2.04a Formal Authority is the base. TEST-only A4 B fixture must be removed before promotion.",
+   "permissions": [
+     "engine_internals"
+   ]
+
+--- v0.2.04a/gbc_anim_data.lua
++++ v0.2.05a/gbc_anim_data.lua
+@@ -1,5 +1,5 @@
+ return {
+-  version = "GBC-A3-FORMAL-v0.2.04a",
++  version = "GBC-A4-CUT-BATCH-I-v0.2.05a",
+   source = {
+     repository = "pret/pokecrystal",
+     ref = "master",
+@@ -97,5 +97,24 @@
+       waterStartFrame=124, waterFrames=20, hitBurstFrames=18, pendingHitGrace=208,
+       nativeReplace=true, sourceScript="BattleAnim_Bubblebeam",
+     },
++    CUT = {
++      kind="cut_pattern", slashSprite="cut_gray", scale=1, pattern="long_down_left_x1",
++      objects={{style="long",dx=28,dy=-4}}, impactFrames=22, pendingHitGrace=96, nativeReplace=true, sourceScript="BattleAnim_Cut",
++    },
++    SLASH = {
++      kind="cut_pattern", slashSprite="cut_gray", scale=1, pattern="long_down_left_x2",
++      objects={{style="long",dx=28,dy=-4},{style="long",dx=24,dy=-8}}, impactFrames=22, pendingHitGrace=96, nativeReplace=true, sourceScript="BattleAnim_Slash",
++    },
++    VICEGRIP = {
++      kind="cut_pattern", slashSprite="cut_gray", scale=1, pattern="short_down_left_plus_up_right",
++      objects={{style="short",dx=28,dy=-4},{style="short",dx=-4,dy=28,flipX=true,flipY=true}}, impactFrames=22, pendingHitGrace=96, nativeReplace=true, sourceScript="BattleAnim_Vicegrip",
++    },
++    GUILLOTINE = {
++      kind="cut_pattern", slashSprite="cut_gray", scale=1, pattern="seven_opposed_short_cuts",
++      objects={{style="short",dx=32,dy=0},{style="short",dx=28,dy=-4},{style="short",dx=24,dy=-8},
++               {style="short",dx=0,dy=32,flipX=true,flipY=true},{style="short",dx=-4,dy=28,flipX=true,flipY=true},
++               {style="short",dx=-8,dy=24,flipX=true,flipY=true},{style="short",dx=-4,dy=28,flipX=true,flipY=true}},
++      impactFrames=22, pendingHitGrace=96, nativeReplace=true, sourceScript="BattleAnim_Guillotine",
++    },
+   },
+ }
