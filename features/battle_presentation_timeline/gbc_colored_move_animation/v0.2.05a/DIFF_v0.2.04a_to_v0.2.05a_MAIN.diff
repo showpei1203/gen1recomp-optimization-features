@@ -1,0 +1,243 @@
+--- v0.2.04a/main.lua
++++ v0.2.05a/main.lua
+@@ -1,3 +1,4 @@
++-- TEST-ONLY: A4 CUT family batch fixture (CUT/SLASH/VICEGRIP/GUILLOTINE). Remove GBC_A4_FIXTURE before formal promotion.
+ -- PMD Idle Battle Sprites 0.2.04a GBC Catalog Expansion A3 Formal Promotion
+ -- Formal: Tackle / Scratch / Bubble / Bubblebeam accepted A3 runtime+visual behavior; TEST fixture removed.
+ -- Clean v0.1.17 battle base with rebuilt PMD Idle/Walk/Hop motion sheets.
+@@ -1868,10 +1869,10 @@
+   end
+ 
+ 
+-  -- Phase GBC-A3 / v0.2.04a FORMAL PROMOTION -------------------------------------------
+-  -- Promoted from exact v0.2.03c Thor PASS. Tackle, Scratch, Bubble and
+-  -- Bubblebeam native-presentation reconstructions are frozen from accepted evidence.
+-  -- Existing accepted A1/A2 move renderers remain byte-stable.
++  -- Phase GBC-A4 / v0.2.05a CUT FAMILY BATCH I TEST -------------------------------------------
++  -- TEST candidate from exact v0.2.04a Formal Authority. Adds a data-driven
++  -- Crystal CUT family batch: CUT / SLASH / VICEGRIP / GUILLOTINE. Existing
++  -- accepted A1/A2/A3 renderers remain frozen; no new PNG assets are added.
+   -- Presentation Timeline -> HIT_FRAME -> PMD Action Binding remains authoritative.
+   -- GBC never owns damage, HIT, barriers, SFX or native AnimPlayer lifetime.
+   Volatile.gbc = {
+@@ -1890,6 +1891,10 @@
+     ["BUBBLE"]=true,
+     ["BUBBLEBEAM"]=true,
+     ["BUBBLE BEAM"]=true,
++    ["CUT"]=true,
++    ["SLASH"]=true,
++    ["VICEGRIP"]=true,
++    ["GUILLOTINE"]=true,
+   }
+@@ -1916,6 +1921,25 @@
+       {-1,-1,4,4,0,false,false},{-2,0,6,2,0,false,false},
+       {-2,1,0,0,0,false,false},
+     }},
++    ["4F"]={base=1,sprites={
++      {-1,-1,4,4,0,false,false},{-2,0,6,2,0,false,false},{-2,1,0,0,0,false,false},
++      {-3,1,2,6,0,false,false},{-4,1,2,6,1,false,false},{-3,1,2,6,1,true,false},
++      {-4,2,2,6,1,false,true},{-3,2,2,6,1,true,true},
++    }},
++    ["50"]={base=1,sprites={
++      {-1,-1,4,4,0,false,false},{-2,0,6,2,0,false,false},{-2,1,0,0,0,false,false},
++      {-3,1,2,6,0,false,false},{-4,2,4,4,0,false,false},{-5,2,4,4,1,false,false},
++      {-4,2,4,4,1,true,false},{-5,3,4,4,1,false,true},{-4,3,4,4,1,true,true},
++    }},
++    ["51"]={base=1,sprites={
++      {-1,-1,4,4,0,false,false},{-2,0,6,2,0,false,false},{-2,1,0,0,0,false,false},
++      {-3,1,2,6,0,false,false},{-4,2,4,4,0,false,false},{-5,3,6,2,0,false,false},
++      {-6,3,6,2,1,false,false},{-5,3,6,2,1,true,false},{-6,4,6,2,1,false,true},{-5,4,6,2,1,true,true},
++    }},
++    ["52"]={base=1,sprites={
++      {-1,-1,4,4,0,false,false},{-2,0,6,2,0,false,false},{-2,1,0,0,0,false,false},
++      {-3,1,2,6,0,false,false},{-4,2,4,4,0,false,false},{-5,3,6,2,0,false,false},
++    }},
+   }
+@@ -1981,7 +2005,7 @@
+-    mod.log:info("GBC_VFX LOAD version=%s source=%s ref=%s moves=EMBER,THUNDERSHOCK,THUNDER_WAVE,QUICK_ATTACK,FURY_SWIPES,PSYBEAM,SURF,TACKLE,SCRATCH,BUBBLE,BUBBLEBEAM",
++    mod.log:info("GBC_VFX LOAD version=%s source=%s ref=%s moves=EMBER,THUNDERSHOCK,THUNDER_WAVE,QUICK_ATTACK,FURY_SWIPES,PSYBEAM,SURF,TACKLE,SCRATCH,BUBBLE,BUBBLEBEAM,CUT,SLASH,VICEGRIP,GUILLOTINE",
+@@ -2354,7 +2378,7 @@
+-  function Volatile.gbcDrawOamSet(sprite,setDef,x,y,scale,alpha,frameFlipX)
++  function Volatile.gbcDrawOamSet(sprite,setDef,x,y,scale,alpha,frameFlipX,frameFlipY)
+@@ -2364,6 +2388,7 @@
+       if frameFlipX then dx=-dx-8; fx=not fx end
++      if frameFlipY then dy=-dy-8; fy=not fy end
+@@ -2587,6 +2612,47 @@
++  -- A4 CUT family: Crystal long-cut progression is 4B,4C,4D,4F,50,51,52
++  -- with the final 52 stage held through the interleaved oamwait cadence.
++  function Volatile.gbcLongCutStage(age)
++    age=math.max(0,tonumber(age) or 0)
++    if age<1 then return "4B"
++    elseif age<2 then return "4C"
++    elseif age<3 then return "4D"
++    elseif age<4 then return "4F"
++    elseif age<5 then return "50"
++    elseif age<6 then return "51"
++    elseif age<18 then return "52" end
++    return nil
++  end
++
++  function Volatile.gbcDrawCutPattern(battle,rec,wide,now)
++    if not rec.hitFrame or now<rec.hitFrame then return false end
++    local d=rec.def or {}
++    local age=now-rec.hitFrame
++    local tx,ty=Volatile.gbcAnchor(battle,Volatile.gbcOpposite(rec.attackerSide),wide)
++    local scale=tonumber(d.scale) or 1
++    local alpha=math.max(0.72,1-age/30)
++    local drawn=false
++    for _,obj in ipairs(d.objects or {}) do
++      local style=tostring(obj.style or "short")
++      local stage=(style=="long") and Volatile.gbcLongCutStage(age) or Volatile.gbcFuryStage(age)
++      if stage then
++        local setDef=Volatile.gbcCutOam[stage]
++        drawn=Volatile.gbcDrawOamSet(d.slashSprite or "cut_gray",setDef,
++          tx+(tonumber(obj.dx) or 0),ty+(tonumber(obj.dy) or 0),scale,alpha,
++          obj.flipX==true,obj.flipY==true) or drawn
++      end
++    end
++    if drawn and not rec.cutPatternLogged then
++      rec.cutPatternLogged=true
++      mod.log:info("GBC_VFX CUT_PATTERN id=%s move=%s objects=%s pattern=%s owner=HIT fromHit=%s battleFrame=%s",
++        tostring(rec.id),tostring(rec.moveName),tostring(#(d.objects or {})),
++        tostring(d.pattern or "?"),tostring(age),tostring(now))
++    end
++    return drawn
++  end
+@@ -2924,6 +2990,7 @@
+         elseif rec.kind=="slash_single" then drew=Volatile.gbcDrawScratch(battle,rec,wide,now)
++        elseif rec.kind=="cut_pattern" then drew=Volatile.gbcDrawCutPattern(battle,rec,wide,now)
+@@ -2950,6 +3017,122 @@
++  -- GBC_A4_FIXTURE TEST-ONLY --------------------------------------------------
++  -- One process, one free-roam B press, one four-move CUT-family benchmark.
++  -- FORMAL RELEASE RULE: remove this entire block before promotion.
++  Volatile.gbcA4Fixture={consumed=false,active=false,battle=nil,guardLogged=false}
++  Volatile.gbcA4FixtureMoves={"CUT","SLASH","VICEGRIP","GUILLOTINE"}
++
++  function Volatile.gbcA4DeepCopy(v,seen)
++    if type(v)~="table" then return v end
++    seen=seen or {}
++    if seen[v] then return seen[v] end
++    local out={}; seen[v]=out
++    for k,x in pairs(v) do out[Volatile.gbcA4DeepCopy(k,seen)]=Volatile.gbcA4DeepCopy(x,seen) end
++    return out
++  end
++
++  function Volatile.gbcA4Moves(data)
++    local out={}
++    for _,wanted in ipairs(Volatile.gbcA4FixtureMoves) do
++      local id=wanted
++      local def=data and data.moves and data.moves[id]
++      if not def and data and data.moves then
++        local wn=normalizeMoveName(wanted)
++        for candidate,cdef in pairs(data.moves) do
++          if normalizeMoveName(candidate)==wn or normalizeMoveName(cdef and (cdef.name or cdef.id))==wn then
++            id=candidate; def=cdef; break
++          end
++        end
++      end
++      if not def then return nil,"missing_move_"..tostring(wanted) end
++      out[#out+1]={id=id,pp=math.max(1,tonumber(def.pp) or 99)}
++    end
++    return out
++  end
++
++  function Volatile.gbcA4SeenSnapshot(game,species)
++    local dex=game and game.save and game.save.pokedex
++    local seen=dex and dex.seen
++    return {table=seen,species=species,value=seen and seen[species] or nil}
++  end
++  function Volatile.gbcA4RestoreSeen(snap)
++    if not (snap and snap.table) then return false end
++    snap.table[snap.species]=snap.value
++    return true
++  end
++
++  function Volatile.startGbcA4Fixture(overworld)
++    local F=Volatile.gbcA4Fixture
++    if F.consumed or F.active then return false,"already_consumed" end
++    local okGame,GameCore=pcall(require,"src.core.Game")
++    local okBattle,BattleState=pcall(require,"src.battle.BattleState")
++    if not (okGame and GameCore and okBattle and BattleState and type(BattleState.newWild)=="function"
++        and type(BattleState.makeBattler)=="function") then return false,"engine_unavailable" end
++    local lead=nil
++    for _,mon in ipairs((GameCore.save and GameCore.save.party) or {}) do
++      if mon and (tonumber(mon.hp) or 0)>0 then lead=mon break end
++    end
++    if not lead then return false,"no_healthy_party" end
++    local moves,moveErr=Volatile.gbcA4Moves(GameCore.data)
++    if not moves then return false,moveErr end
++    local clone=Volatile.gbcA4DeepCopy(lead)
++    clone.moves=moves; clone.status=nil; clone.stats=clone.stats or {}
++    clone.hp=math.max(1,tonumber(clone.stats.hp) or tonumber(clone.hp) or 1)
++    clone.stats.hp=clone.hp; clone.stats.speed=math.max(999,tonumber(clone.stats.speed) or 1)
++    local species="RATTATA"
++    local seenSnap=Volatile.gbcA4SeenSnapshot(GameCore,species)
++    local battle=BattleState.newWild(GameCore,species,5)
++    local seenRestoredNow=Volatile.gbcA4RestoreSeen(seenSnap)
++    if not battle or battle.dead or not battle.enemy then return false,"fixture_battle_unavailable" end
++    battle.playerParty={clone}; battle.playerPartyIndices=nil
++    battle.player=BattleState.makeBattler(GameCore.data,clone,true,GameCore.save)
++    if battle.sides and battle.sides[1] then battle.sides[1].battlers[1]=battle.player end
++    if battle.sides and battle.sides[2] then battle.sides[2].battlers[1]=battle.enemy end
++    local em=battle.enemy.mon; em.status=nil; em.stats=em.stats or {}
++    em.stats.hp=9999; em.hp=9999; em.stats.attack=1; em.stats.defense=9999; em.stats.speed=1; em.stats.special=9999
++    em.moves={{id="GROWL",pp=99}}; battle.enemy.curStats=em.stats; battle.enemy.curMoves=em.moves
++    battle.enemy.shownHP=em.hp; battle.enemy.shownPx=48; battle.enemy.shownStatus=nil
++    battle.rng=function(a,b) return a end; battle.noCatch=true; battle.gbcA4Fixture=true
++    F.consumed=true; F.active=true; F.battle=battle; F.seenSnap=seenSnap
++    F.moves=table.concat(Volatile.gbcA4FixtureMoves,",")
++    mod.log:info("GBC_A4_FIXTURE START trigger=B once=true battleLocalClone=true enemy=RATTATA enemyHP=9999 deterministicRng=true moves=%s seenRestored=%s",F.moves,tostring(seenRestoredNow))
++    battle.onFinish=function(result)
++      local restored=Volatile.gbcA4RestoreSeen(seenSnap); F.active=false; F.battle=nil; F.result=result
++      if overworld and type(overworld.refreshStandingOnWarp)=="function" then pcall(overworld.refreshStandingOnWarp,overworld) end
++      mod.log:info("GBC_A4_FIXTURE END result=%s restored=true battleLocalClone=true seenRestored=%s onceConsumed=%s",tostring(result or "?"),tostring(restored),tostring(F.consumed))
++    end
++    overworld:pushBattle(battle); return true,"started"
++  end
++
++  (function()
++    local okOW,OverworldState=pcall(require,"src.world.OverworldController")
++    if okOW and OverworldState and type(OverworldState.handleInput)=="function"
++        and not OverworldState.pmdGbcA4FixtureV0205a then
++      local originalHandleInput=OverworldState.handleInput
++      OverworldState.handleInput=function(self,...)
++        local okGame,GameCore=pcall(require,"src.core.Game")
++        local input=okGame and GameCore and GameCore.input or nil
++        local bPressed=input and type(input.wasPressed)=="function" and input:wasPressed("b")
++        if bPressed and self.player and not self.player.moving then
++          local F=Volatile.gbcA4Fixture
++          if F.consumed then
++            if not F.guardLogged then F.guardLogged=true; mod.log:info("GBC_A4_FIXTURE ONCE_GUARD trigger=B consumed=true restart=false") end
++          else
++            local okStart,started,reason=pcall(Volatile.startGbcA4Fixture,self)
++            if not okStart then mod.log:error("GBC_A4_FIXTURE ERROR stage=START err=%s",tostring(started))
++            elseif started then return
++            else mod.log:warn("GBC_A4_FIXTURE BLOCKED trigger=B reason=%s consumed=false",tostring(reason)) end
++          end
++        end
++        return originalHandleInput(self,...)
++      end
++      OverworldState.pmdGbcA4FixtureV0205a=true
++      mod.log:info("GBC_A4_FIXTURE READY trigger=B once=true freeOverworldOnly=true batch=CUT_FAMILY formalReleaseRemove=true")
++    else mod.log:error("GBC_A4_FIXTURE ERROR stage=PATCH err=overworld_handleInput_unavailable") end
++  end)()
+@@ -5990,17 +6173,16 @@
+-    -- GBC-A3.1 / v0.2.03b Scratch contact-coherence hold. Thor evidence from
+-    -- v0.2.03a showed the Swing body strip completed and visually returned HOME
+-    -- roughly 33f before authoritative HIT; HIT_FRAME then correctly re-delivered
+-    -- the source hit frame, which humans reasonably interpreted as a second attack.
+-    -- For Scratch only, as soon as the native HANDOFF is reached while the row is
+-    -- still alive, hold the exact source hit frame until applyHitFx. This preserves
+-    -- HIT_FRAME ownership and contact semantics without inventing another clock.
++    -- GBC cut-family contact-coherence hold. Scratch proved the generic Swing
++    -- strip can return HOME before authoritative HIT. A4 extends the exact same
++    -- no-new-clock rule to CUT / SLASH / VICEGRIP / GUILLOTINE: after native
++    -- HANDOFF, hold the source hit pose only while applyHitFx is still pending.
+     do
+       local bind=cue.actionBinding
++      local cutHold=bind and (bind.moveName=="SCRATCH" or bind.moveName=="CUT" or bind.moveName=="SLASH"
++        or bind.moveName=="VICEGRIP" or bind.moveName=="GUILLOTINE")
+       if cue.nativeSync and cue.nativeHandoffReached
+-          and bind and bind.moveName=="SCRATCH" and not bind.hitLogged
++          and cutHold and bind and not bind.hitLogged
+           and battle.animPlaying==true then
