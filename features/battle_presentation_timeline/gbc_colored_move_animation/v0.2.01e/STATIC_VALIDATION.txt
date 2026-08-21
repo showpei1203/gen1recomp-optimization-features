@@ -1,0 +1,6 @@
+Gen1recomp PMD v0.2.01e GBC-A2.3 Static Validation
+RESULT=PASS
+PASS=77
+FAIL=0
+
+Key gates: Lua 5.4 parser PASS for main/data; legacy PSYBEAM_BRIDGE runtime event absent; PSYBEAM_CONTINUATION uses same 4f cadence, WAVE OAM path, linear source→target path and alpha 0.96; Quick Attack/Fury Swipes/Surf byte-exact vs d; all GBC assets byte-exact vs d; exact d rollback present; installer/analyzer hashes exact; sealed DS/THOR pins retained; TEST-only B fixture remains explicit deletion gate.
