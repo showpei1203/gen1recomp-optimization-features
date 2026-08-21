@@ -29,6 +29,8 @@
 +    ["VICEGRIP"]=true,
 +    ["GUILLOTINE"]=true,
    }
+ 
+   -- Crystal OAM layouts used by Fury Swipes and Psybeam. Entries are
 @@ -1916,6 +1921,25 @@
        {-1,-1,4,4,0,false,false},{-2,0,6,2,0,false,false},
        {-2,1,0,0,0,false,false},
@@ -53,16 +55,42 @@
 +      {-3,1,2,6,0,false,false},{-4,2,4,4,0,false,false},{-5,3,6,2,0,false,false},
 +    }},
    }
+ 
+   Volatile.gbcWaveOam={
 @@ -1981,7 +2005,7 @@
+       return nil
+     end
+     Volatile.gbc.data=data
 -    mod.log:info("GBC_VFX LOAD version=%s source=%s ref=%s moves=EMBER,THUNDERSHOCK,THUNDER_WAVE,QUICK_ATTACK,FURY_SWIPES,PSYBEAM,SURF,TACKLE,SCRATCH,BUBBLE,BUBBLEBEAM",
 +    mod.log:info("GBC_VFX LOAD version=%s source=%s ref=%s moves=EMBER,THUNDERSHOCK,THUNDER_WAVE,QUICK_ATTACK,FURY_SWIPES,PSYBEAM,SURF,TACKLE,SCRATCH,BUBBLE,BUBBLEBEAM,CUT,SLASH,VICEGRIP,GUILLOTINE",
+       tostring(data.version or "?"),tostring(data.source and data.source.repository or "?"),
+       tostring(data.source and data.source.ref or "?"))
+     return data
 @@ -2354,7 +2378,7 @@
+     return drawn
+   end
+ 
 -  function Volatile.gbcDrawOamSet(sprite,setDef,x,y,scale,alpha,frameFlipX)
 +  function Volatile.gbcDrawOamSet(sprite,setDef,x,y,scale,alpha,frameFlipX,frameFlipY)
+     if not (setDef and type(setDef.sprites)=="table") then return false end
+     scale=tonumber(scale) or 1
+     local drawn=false
 @@ -2364,6 +2388,7 @@
+       local fx=s[6] and true or false
+       local fy=s[7] and true or false
        if frameFlipX then dx=-dx-8; fx=not fx end
 +      if frameFlipY then dy=-dy-8; fy=not fy end
+       drawn=Volatile.gbcDrawTile(sprite,(tonumber(setDef.base) or 0)+(tonumber(s[5]) or 0),
+         x+dx*scale,y+dy*scale,scale,alpha,fx,fy) or drawn
+     end
 @@ -2587,6 +2612,47 @@
+       rec.tackleLogged=true
+       mod.log:info("GBC_VFX TACKLE_HIT id=%s bodyMotion=PMD_DELEGATED safeSource=charge_or_attack nativeBgForwardPx=8 owner=HIT fromHit=%s battleFrame=%s",
+         tostring(rec.id),tostring(age),tostring(now))
++    end
++    return drawn
++  end
++
 +  -- A4 CUT family: Crystal long-cut progression is 4B,4C,4D,4F,50,51,52
 +  -- with the final 52 stage held through the interleaved oamwait cadence.
 +  function Volatile.gbcLongCutStage(age)
@@ -77,7 +105,7 @@
 +    return nil
 +  end
 +
-+  function Volatile.gbcDrawCutPattern(battle,rec,wide,now)
++  function Volatile.wbcDrawCutPattern(battle,rec,wide,now)
 +    if not rec.hitFrame or now<rec.hitFrame then return false end
 +    local d=rec.def or {}
 +    local age=now-rec.hitFrame
@@ -100,13 +128,23 @@
 +      mod.log:info("GBC_VFX CUT_PATTERN id=%s move=%s objects=%s pattern=%s owner=HIT fromHit=%s battleFrame=%s",
 +        tostring(rec.id),tostring(rec.moveName),tostring(#(d.objects or {})),
 +        tostring(d.pattern or "?"),tostring(age),tostring(now))
-+    end
-+    return drawn
-+  end
+     end
+     return drawn
+   end
 @@ -2924,6 +2990,7 @@
-         elseif rec.kind=="slash_single" then drew=Volatile.gbcDrawScratch(battle,rec,wide,now)
+         elseif rec.kind=="area_wave" then drew=Volatile.gbcDrawSurf(battle,rec,wide,now)
+         elseif rec.kind=="contact_tackle" then drew=Volatile.gbcDrawTackle(battle,rec,wide,now)
+         elseif rec.kind=="slash_single" then drew=Volatile.wbcDrawScratch(battle,rec,wide,now)
 +        elseif rec.kind=="cut_pattern" then drew=Volatile.gbcDrawCutPattern(battle,rec,wide,now)
+         elseif rec.kind=="bubble_stream" then drew=Volatile.wbcDrawBubble(battle,rec,wide,now)
+         elseif rec.kind=="bubble_beam" then drew=Volatile.gbcDrawBubblebeam(battle,rec,wide,now) end
+         if drew and not rec.firstDrawLogged then
 @@ -2950,6 +3017,122 @@
+     Volatile.wbc.active[battle]=keep
+     love.graphics.setColor(1,1,1,1)
+   end
++
++
 +  -- GBC_A4_FIXTURE TEST-ONLY --------------------------------------------------
 +  -- One process, one free-roam B press, one four-move CUT-family benchmark.
 +  -- FORMAL RELEASE RULE: remove this entire block before promotion.
@@ -146,7 +184,7 @@
 +    local seen=dex and dex.seen
 +    return {table=seen,species=species,value=seen and seen[species] or nil}
 +  end
-+  function Volatile.gbcA4RestoreSeen(snap)
++  function Volatile.wbcA4RestoreSeen(snap)
 +    if not (snap and snap.table) then return false end
 +    snap.table[snap.species]=snap.value
 +    return true
@@ -164,14 +202,14 @@
 +      if mon and (tonumber(mon.hp) or 0)>0 then lead=mon break end
 +    end
 +    if not lead then return false,"no_healthy_party" end
-+    local moves,moveErr=Volatile.gbcA4Moves(GameCore.data)
++    local moves,moveErr=Volatile.wbcA4Moves(GameCore.data)
 +    if not moves then return false,moveErr end
 +    local clone=Volatile.gbcA4DeepCopy(lead)
 +    clone.moves=moves; clone.status=nil; clone.stats=clone.stats or {}
 +    clone.hp=math.max(1,tonumber(clone.stats.hp) or tonumber(clone.hp) or 1)
 +    clone.stats.hp=clone.hp; clone.stats.speed=math.max(999,tonumber(clone.stats.speed) or 1)
 +    local species="RATTATA"
-+    local seenSnap=Volatile.gbcA4SeenSnapshot(GameCore,species)
++    local seenSnap=Volatile.wbcA4SeenSnapshot(GameCore,species)
 +    local battle=BattleState.newWild(GameCore,species,5)
 +    local seenRestoredNow=Volatile.gbcA4RestoreSeen(seenSnap)
 +    if not battle or battle.dead or not battle.enemy then return false,"fixture_battle_unavailable" end
@@ -205,7 +243,7 @@
 +        local input=okGame and GameCore and GameCore.input or nil
 +        local bPressed=input and type(input.wasPressed)=="function" and input:wasPressed("b")
 +        if bPressed and self.player and not self.player.moving then
-+          local F=Volatile.gbcA4Fixture
++          local F=Volatile.wbcA4Fixture
 +          if F.consumed then
 +            if not F.guardLogged then F.guardLogged=true; mod.log:info("GBC_A4_FIXTURE ONCE_GUARD trigger=B consumed=true restart=false") end
 +          else
@@ -221,7 +259,13 @@
 +      mod.log:info("GBC_A4_FIXTURE READY trigger=B once=true freeOverworldOnly=true batch=CUT_FAMILY formalReleaseRemove=true")
 +    else mod.log:error("GBC_A4_FIXTURE ERROR stage=PATCH err=overworld_handleInput_unavailable") end
 +  end)()
+ 
+   -- v0.1.99a PMD Action Binding I trace baseline -------------------------
+   -- HIT_FRAME Authority I is sealed.  This layer is diagnostic only: it
 @@ -5990,17 +6173,16 @@
+       end
+     end
+ 
 -    -- GBC-A3.1 / v0.2.03b Scratch contact-coherence hold. Thor evidence from
 -    -- v0.2.03a showed the Swing body strip completed and visually returned HOME
 -    -- roughly 33f before authoritative HIT; HIT_FRAME then correctly re-delivered
@@ -241,3 +285,5 @@
 -          and bind and bind.moveName=="SCRATCH" and not bind.hitLogged
 +          and cutHold and bind and not bind.hitLogged
            and battle.animPlaying==true then
+         local durations=actionRec.durations or {1}
+         local holdFrame=tonumber(cue.nativeHitFrame) or tonumber(actionRec.hitFrame)
