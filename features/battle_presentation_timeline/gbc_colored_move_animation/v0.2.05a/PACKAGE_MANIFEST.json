@@ -1,0 +1,15 @@
+{
+  "version": "0.2.05a",
+  "phase": "GBC-A4 CUT Family Batch I TEST",
+  "formal_base": "v0.2.04a",
+  "new_moves": ["CUT", "SLASH", "VICEGRIP", "GUILLOTINE"],
+  "main_sha256": "3005399e737dea7c92614c7966de9f29ebf347eef9ce264ab75ffa56422d3c28",
+  "manifest_sha256": "82b0c09d55f36abcefc8f7e0448b1159facde67e2c9b66cf80911f11da4b15cb",
+  "gbc_anim_data_sha256": "9c0cc411e6ff0de91aed59445ce263154720c6faf5b18fcb4871311c96316635",
+  "zip_sha256": "3b630885162abe394df4e4377e7d7da0cead2487ce1c77075faabc1eb77d69a5",
+  "drive_test_folder": "1nldtCFFetgXpO3JVXzc1q-JLp4aJvsyL",
+  "drive_evidence_folder": "1c50AxewQGfnGxwXv_Rapt0jQFt_IOiat",
+  "drive_zip": "1quXKeQt9ueZ5YwiSuK82p8PGYwaQAbpC",
+  "test_fixture": "GBC_A4_FIXTURE / free-overworld B once",
+  "formal_promotion_rule": "remove entire fixture/B hook before release"
+}
