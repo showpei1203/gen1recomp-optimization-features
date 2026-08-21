@@ -1,0 +1,23 @@
+{
+  "version": "v0.2.04a",
+  "status": "FORMAL_PROMOTION_CANDIDATE",
+  "promotionBase": "v0.2.03c Thor PASS",
+  "runtimePassEvidenceSha256": "f1265f90943e18750a83a585d1d2a5c3a40f947fb863a3eac6b4cb8aa0dade12",
+  "promotionZipSha256": "f1c1c9cfa21a817144528c6000a17c9d664376bad0e85fc55d9ae146c9938b00",
+  "hashes": {
+    "main": "f9aede365165dcdb014a5d5937bfa47f578d92b464c838577e1c115ef7a02643",
+    "manifest": "87c53c38b7ae1cb597a5a34eb1c986c33ace0d03d8eaa17d6a41d02eb16adf9c",
+    "gbc_anim_data": "379686463280b6a967db229fdeb96323502fe87d4e83e3d2f0bc2964eb7121ae"
+  },
+  "formalRollback": {
+    "version": "v0.2.02a",
+    "main": "f574c138ca224ba06fb680fef59b5ff8869f6580da3c84398c3796a2c6d5a65e",
+    "manifest": "7e823d33645f82758cda4cf8cc28279a2ffb721031821808233e84e259db3eda",
+    "data": "b8619c28485ae5293f470ab9f00ed8a914a84fc42616e21d578ab6b904a255f0"
+  },
+  "testFixtureRemoved": true,
+  "waterGunDeferred": true,
+  "drivePromotionFolder": "1XXdurYEiT62Jbe6YGqFk7YKy1dh638uw",
+  "drivePromotionZip": "1U5hGP0p59ciZ2s_POjMutiBrXKZgPoXc",
+  "driveEvidenceFolder": "1mhH_B8TdglSizr3PBKOcZOf1XAGGHIT6"
+}
