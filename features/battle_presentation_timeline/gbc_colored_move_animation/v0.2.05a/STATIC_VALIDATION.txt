@@ -1,0 +1,49 @@
+GBC A4 v0.2.05a Static Validation
+=================================
+PASS=41
+FAIL=0
+
+PASS manifest version 0.2.05a
+PASS data version A4
+PASS data move CUT
+PASS native replacement CUT
+PASS fixture move CUT
+PASS data move SLASH
+PASS native replacement SLASH
+PASS fixture move SLASH
+PASS data move VICEGRIP
+PASS native replacement VICEGRIP
+PASS fixture move VICEGRIP
+PASS data move GUILLOTINE
+PASS native replacement GUILLOTINE
+PASS fixture move GUILLOTINE
+PASS generic cut renderer
+PASS long cut stage
+PASS OAM stage 4F
+PASS OAM stage 50
+PASS OAM stage 51
+PASS OAM stage 52
+PASS OAM Y flip support
+PASS cut dispatch
+PASS A4 fixture start
+PASS A4 fixture guard
+PASS A4 fixture restore
+PASS no A3 fixture
+PASS formal base exact main
+PASS formal base exact manifest
+PASS formal base exact data
+PASS asset frozen bubble_blue.png
+PASS asset frozen cut_gray.png
+PASS asset frozen cut_red.png
+PASS asset frozen explosion_gray.png
+PASS asset frozen fire_red.png
+PASS asset frozen hit_gold.png
+PASS asset frozen lightning_yellow.png
+PASS asset frozen psychic_gray.png
+PASS asset frozen psychic_purple.png
+PASS asset frozen psychic_yellow.png
+PASS asset frozen speed_gold.png
+PASS asset frozen wave_blue.png
+
+LUA_PARSE_PASS main+data
+ZIP_INTEGRITY_PASS
