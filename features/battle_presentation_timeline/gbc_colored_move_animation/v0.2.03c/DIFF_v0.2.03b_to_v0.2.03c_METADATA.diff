@@ -1,0 +1,30 @@
+--- v0.2.03b/manifest.json
++++ v0.2.03c/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "id": "pmd_idle_battle_sprites",
+   "name": "PMD Idle Battle Sprites",
+-  "version": "0.2.03b",
++  "version": "0.2.03c",
+   "api": 2,
+   "entry": "main.lua",
+   "profile": "content",
+@@ -14,7 +14,7 @@
+     "DRAMATIC_SHAPE"
+   ],
+   "conflicts": [],
+-  "description": "GBC-A3.1 Catalog Expansion I coherence-fix TEST. Fixes Tackle PMD body fragmentation, Scratch duplicate-looking late-HIT body beat, Bubble/Bubblebeam projectile binding, and Bubblebeam native +124f WATER retention; TEST-only B fixture must be removed before promotion.",
++  "description": "GBC-A3.2 Scratch handoff-hold TEST. Keeps v0.2.03b Tackle/projectile/Bubblebeam fixes, and makes Scratch hold the same authoritative source hit pose from native HANDOFF through applyHitFx so the attacker cannot visually perform a second beat; TEST-only B fixture must be removed before promotion.",
+   "permissions": [
+     "engine_internals"
+   ]
+
+--- v0.2.03b/gbc_anim_data.lua
++++ v0.2.03c/gbc_anim_data.lua
+@@ -1,5 +1,5 @@
+ return {
+-  version = "GBC-A3.1-v0.2.03b",
++  version = "GBC-A3.2-v0.2.03c",
+   source = {
+     repository = "pret/pokecrystal",
+     ref = "master",
