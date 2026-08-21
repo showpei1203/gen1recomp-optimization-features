@@ -1,0 +1,50 @@
+Gen1recomp GBC-A3.2 v0.2.03c Static Validation
+=================================================
+PASS=43 FAIL=0
+
+PASS: version main
+PASS: version data
+PASS: version manifest
+PASS: Scratch handoff hold condition
+PASS: Scratch hold no source exhaustion gate
+PASS: Scratch hold reason
+PASS: Scratch exact source hit frame
+PASS: Tackle safe body retained
+PASS: Bubble explicit projectile retained
+PASS: Bubblebeam visual retention retained
+PASS: analyzer Scratch hold reason
+PASS: analyzer expected main current
+PASS: analyzer expected manifest current
+PASS: analyzer expected data current
+PASS: verify accepts v0.2.03b
+PASS: installer current main hash
+PASS: installer current manifest hash
+PASS: installer current data hash
+PASS: asset count 12 | 12
+PASS: asset frozen bubble_blue.png | 275c03ef71e6c1cfa1ef75a1c6725e39cad47a7c2ea5deff06d201cc4b8de4d3
+PASS: asset frozen cut_gray.png | 894d46d5805fe2718ad278542661166b5a1866a2c0e234302c4b073dd415c180
+PASS: asset frozen cut_red.png | f8cd3d0ee9a0f7fbd7803fd934edd2f06c728f261e0ac2b7fe8d16cf655de92d
+PASS: asset frozen explosion_gray.png | 73bea1826f82eb9bcbe66cd2675195e55e6a922808b16b66cc3b115242a5a718
+PASS: asset frozen fire_red.png | 7b279edf5a907c278d18bccfe1f6661f3ead56b7264fde4bcfe57a0999798a93
+PASS: asset frozen hit_gold.png | d5d7c5c5ad7fc8866833b38c81497e95daea227484fa49c4ab688580ce42d213
+PASS: asset frozen lightning_yellow.png | 78949d8afed6f5962be7425a593246e07ea7525ce043e35e758a4dcf9bb89d2f
+PASS: asset frozen psychic_gray.png | fa92dbb24d679b6bbec4aba168eb2b2238191c477c98d201ce7a749cbb303be4
+PASS: asset frozen psychic_purple.png | 57648323176c2fd767b1ab37a39df1f2d7547aeb13a0d2c02add39f99d4de4c9
+PASS: asset frozen psychic_yellow.png | 0861b4693904bb117c5f84247e65816cf6bdd242182394ddb8af350b23a447e5
+PASS: asset frozen speed_gold.png | 8e55f373406c1a4d0bbc47ba0eef585d42e3b5b23b1eb7a8dd8bcd69204c12a8
+PASS: asset frozen wave_blue.png | 8956a225b0f9e93bf5aad41779b4704017c93c1fa94ddb7a2408ccdc9629f6bb
+PASS: rollback frozen ROLLBACK_EXACT_v0.2.02a/pmd_idle_battle_sprites/main.lua | f574c138ca224ba06fb680fef59b5ff8869f6580da3c84398c3796a2c6d5a65e
+PASS: rollback frozen ROLLBACK_EXACT_v0.2.02a/pmd_idle_battle_sprites/manifest.json | 7e823d33645f82758cda4cf8cc28279a2ffb721031821808233e84e259db3eda
+PASS: rollback frozen ROLLBACK_EXACT_v0.2.02a/pmd_idle_battle_sprites/gbc_anim_data.lua | b8619c28485ae5293f470ab9f00ed8a914a84fc42616e21d578ab6b904a255f0
+PASS: rollback frozen ROLLBACK_FORMAL_v0.1.99b/pmd_idle_battle_sprites/main.lua | b2f8f143f7298d5b0744c30bc885df5cca1eb109a073c515bbcc6eeedb4eed64
+PASS: rollback frozen ROLLBACK_FORMAL_v0.1.99b/pmd_idle_battle_sprites/manifest.json | c9351afd39ce30ca25428dcd359b8687bd7f6f92d2f44bf5ca3b92fa74d45aa4
+PASS: sealed dependency gate 1714ac5d5d
+PASS: sealed dependency gate bca552070e
+PASS: sealed dependency gate 8a1d1fb26b
+PASS: authority/log retained HIT_AUTH FIRE
+PASS: authority/log retained ACTION_BIND HIT_DUPLICATE
+PASS: authority/log retained continuationBarrierRearm
+PASS: authority/log retained GBC_VFX BUBBLEBEAM_WATER_BG
+
+PARSER: PASS via LuaTeX embedded Lua 5.3 loadfile() for main.lua and gbc_anim_data.lua.
+RUNTIME/VISUAL: PENDING THOR. Formal Authority remains exact v0.2.02a.

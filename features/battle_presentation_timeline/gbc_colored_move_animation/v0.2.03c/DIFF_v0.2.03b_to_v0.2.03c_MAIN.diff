@@ -1,0 +1,41 @@
+--- v0.2.03b/main.lua
++++ v0.2.03c/main.lua
+@@ -1,4 +1,4 @@
+--- PMD Idle Battle Sprites 0.2.03b GBC-A3 Catalog Expansion I COHERENCE FIX TEST
++-- PMD Idle Battle Sprites 0.2.03c GBC-A3.2 Scratch Handoff Hold Fix TEST
+ -- TEST-ONLY: one-shot overworld B fixture starts Tackle/Scratch/Bubble/Bubblebeam benchmark battle. Remove GBC_A3_FIXTURE before formal promotion.
+ -- Clean v0.1.17 battle base with rebuilt PMD Idle/Walk/Hop motion sheets.
+ -- Battle, Pokedex and Pokemon-menu art use PMD idle sprites. UI large sprites loop their PMD idle frames. v0.1.17 restores battle feedback that the PMD overlay previously failed to inherit: native battler pic effects (blink/shake/slide/squish/fade), status-infliction feedback, poison/burn residual pulses, and a guarded faint-audio fallback. v0.1.16 send-out behavior, lower placement, and Kanto Gear compatibility remain intact.
+@@ -1868,7 +1868,7 @@
+   end
+ 
+ 
+-  -- Phase GBC-A3 / v0.2.03b Catalog Expansion I Coherence Fix TEST -------------------------------
++  -- Phase GBC-A3.2 / v0.2.03c Scratch Handoff Hold Fix TEST -------------------------------
+   -- Formal v0.2.02a GBC Layer I remains the runtime base. This isolated TEST
+   -- candidate adds native-presentation reconstructions for Tackle, Scratch,
+   -- Bubble and Bubblebeam. Existing accepted move renderers stay byte-stable.
+@@ -6161,12 +6161,12 @@
+     -- v0.2.03a showed the Swing body strip completed and visually returned HOME
+     -- roughly 33f before authoritative HIT; HIT_FRAME then correctly re-delivered
+     -- the source hit frame, which humans reasonably interpreted as a second attack.
+-    -- For Scratch only, once its source strip is exhausted while the native row is
++    -- For Scratch only, as soon as the native HANDOFF is reached while the row is
+     -- still alive, hold the exact source hit frame until applyHitFx. This preserves
+     -- HIT_FRAME ownership and contact semantics without inventing another clock.
+     do
+       local bind=cue.actionBinding
+-      if motionElapsed >= total and cue.nativeSync and cue.nativeHandoffReached
++      if cue.nativeSync and cue.nativeHandoffReached
+           and bind and bind.moveName=="SCRATCH" and not bind.hitLogged
+           and battle.animPlaying==true then
+         local durations=actionRec.durations or {1}
+@@ -6177,7 +6177,7 @@
+           bind.contactHoldLogged=true
+           bind.contactHoldFrame=now
+           mod.log:info(
+-            "ACTION_BIND CONTACT_HOLD id=%s move=%s family=%s action=%s sourceHitFrame=%s reason=late_authoritative_hit fromStart=%s battleFrame=%s",
++            "ACTION_BIND CONTACT_HOLD id=%s move=%s family=%s action=%s sourceHitFrame=%s reason=handoff_wait_authoritative_hit fromStart=%s battleFrame=%s",
+             tostring(bind.id),tostring(bind.move),tostring(bind.family),tostring(bind.action),
+             tostring(holdFrame),tostring(now-(tonumber(bind.startFrame) or now)),tostring(now))
+         end
