@@ -1,0 +1,55 @@
+Gen1recomp GBC A3 v0.2.04a Promotion Static Validation
+============================================================
+PASS=44 FAIL=0
+
+PASS: version main
+PASS: version manifest
+PASS: version data
+PASS: fixture absent GBC_A3_FIXTURE
+PASS: fixture absent gbcA3Fixture
+PASS: fixture absent fixtureDeepCopy
+PASS: fixture absent fixtureMoves
+PASS: fixture absent fixtureSeenSnapshot
+PASS: fixture absent fixtureRestoreSeen
+PASS: fixture absent startGbcA3Fixture
+PASS: fixture absent pmdGbcA3Fixture
+PASS: Scratch handoff hold retained
+PASS: Scratch source hit frame retained
+PASS: Tackle safe proof retained
+PASS: Bubble projectile routing retained
+PASS: Bubblebeam WATER retained
+PASS: GBC load includes A3
+PASS: asset frozen bubble_blue.png
+PASS: asset frozen cut_gray.png
+PASS: asset frozen cut_red.png
+PASS: asset frozen explosion_gray.png
+PASS: asset frozen fire_red.png
+PASS: asset frozen hit_gold.png
+PASS: asset frozen lightning_yellow.png
+PASS: asset frozen psychic_gray.png
+PASS: asset frozen psychic_purple.png
+PASS: asset frozen psychic_yellow.png
+PASS: asset frozen speed_gold.png
+PASS: asset frozen wave_blue.png
+PASS: rollback main exact
+PASS: rollback manifest exact
+PASS: rollback data exact
+PASS: main promotion shrinks by fixture removal
+PASS: promotion source exact c main
+PASS: promotion source exact c manifest
+PASS: promotion source exact c data
+PASS: source gate expects exact c
+PASS: installer verifies promotion
+PASS: analyzer requires fixture zero
+PASS: analyzer hashes promotion
+PASS: sealed DS gate
+PASS: sealed BattleScene gate
+PASS: sealed THOR gate
+PASS: Lua parser | PASS
+
+PROMOTION_MAIN_SHA=f9aede365165dcdb014a5d5937bfa47f578d92b464c838577e1c115ef7a02643
+PROMOTION_MANIFEST_SHA=87c53c38b7ae1cb597a5a34eb1c986c33ace0d03d8eaa17d6a41d02eb16adf9c
+PROMOTION_DATA_SHA=379686463280b6a967db229fdeb96323502fe87d4e83e3d2f0bc2964eb7121ae
+PROMOTION_ZIP_SHA=f1c1c9cfa21a817144528c6000a17c9d664376bad0e85fc55d9ae146c9938b00
+RUNTIME_PASS_BASE_EVIDENCE_SHA=f1265f90943e18750a83a585d1d2a5c3a40f947fb863a3eac6b4cb8aa0dade12
+RUNTIME PROMOTION SMOKE: PENDING THOR. Formal Authority remains v0.2.02a until smoke PASS.
