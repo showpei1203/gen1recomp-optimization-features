@@ -13,6 +13,7 @@ User approval: explicit `升格 Formal Authority` after v0.2.12a closure and v0.
 - PMD `manifest.json`: `20eec657f82f85d486bcd25b714e03d0d4ac4873dd638cf363d75879ee718c4a`
 - StadiumBattleFX `lib/effects/StadiumFxPlayer.lua`: `7c8c52373f894b8b821f582b875748631897d8daf89366d0aa49ba7af668b279`
 - Promotion-candidate delivery ZIP: `07970c40683f5c70da3b25602c8661ac13cc7aa1673d1036d3f541c97b38902e`
+- Formal Authority archive ZIP: `9f30ced7e9748578d1db406d03210260acda85ff43fb3c9fa1d570d0a45a0cdb`
 
 Pinned unchanged dependencies:
 
