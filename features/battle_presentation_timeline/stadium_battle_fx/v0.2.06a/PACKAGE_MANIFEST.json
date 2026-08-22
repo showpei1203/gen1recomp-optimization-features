@@ -1,0 +1,18 @@
+{
+  "candidate": "PMD v0.2.06a StadiumBattleFX Integration I TEST",
+  "formal_base": "PMD v0.2.04a A3 Formal Authority",
+  "pmd_main_sha256": "71bfa8839897c3560405c690dbdf82362fff57373c091dfaff34443f7cc6ab4f",
+  "pmd_manifest_sha256": "8abf0aa55ae889955e75c3009f083ebbbc1d840d2edbd9c0b97ee9d648ba1bd9",
+  "zip_sha256": "f2ac459eceae7a449764a4d06b7f13ab253e8660788e442b52e567eda27d203c",
+  "stadium_battle_fx": {
+    "version": "2.1.8",
+    "upstream_commit": "6965f2535cebaf3151033a5db409d40608ddcc0d",
+    "redistributed": false
+  },
+  "drive": {
+    "test_folder": "1ISSa7HCM3XjQqo4bnLXW0_nI8xrY1ohd",
+    "evidence_folder": "1CPO-nT8uXBND6EH8FXyJWhFtcdS4emqY",
+    "zip": "1Jvtjou6FpSUlusk68muQCYUXEVPaKMd-"
+  },
+  "status": "STATIC_PASS_THOR_PENDING"
+}
