@@ -31,6 +31,20 @@ Depends on:
 8. Area/full-screen is observer-only in Action Binding I and was not required for the formal five-family closure gate.
 9. DRAMATIC_SHAPE, THOR, Depth/Occlusion, Presentation-vs-Physical-Feet separation, Large Pokémon Bounds, player BACK SPRITES policy, and species scale are outside Action Binding Authority and remain sealed/unchanged.
 
+## Global PMD visible-action hard constraints
+
+Effective 2026-08-22 for all future PMD candidates:
+
+- **Visible PMD `action=head` is forbidden for every species and every runtime context.**
+- Reason: extracted `*_head.png` strips can contain only a detached head crop rather than a complete-body combat pose, producing a visibly invalid floating-head result.
+- Semantic family `head` may remain for move classification, timing, HIT/recovery tuning and move-effect semantics; it must never imply rendering the PMD `head` asset.
+- Full-body fallback order for a semantic head request is: `lunge → charge → strike → attack`.
+- This rule applies to normal moves, multi-hit mapping, ambient/small actions, test fixtures and any future feature code.
+- A central renderer/asset guard is required so that even a future accidental `motionAssetFor(..., "head")` request is redirected before asset lookup.
+- Promotion of any later PMD build requires zero visible detached-head incidents and zero runtime `ACTION_BIND ... action=head` ownership for visible bodies.
+
+This is a **project hard constraint**, not a claim that v0.1.99b itself implemented the later redirect. Current implementation/promotion evidence is tracked in the active StadiumBattleFX integration candidate line.
+
 ## Formal closure
 
 Session-safe re-analysis across Android PID 7831 and PID 9520:
