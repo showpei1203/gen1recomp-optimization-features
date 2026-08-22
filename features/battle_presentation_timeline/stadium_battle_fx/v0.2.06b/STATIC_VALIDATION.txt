@@ -1,0 +1,21 @@
+[PASS] main zero case-insensitive gbc tokens
+[PASS] manifest zero case-insensitive gbc tokens
+[PASS] no legacy target-anchor runtime state
+[PASS] no GBC_VFX runtime
+[PASS] no gbc animator data in patch
+[PASS] no gbc asset directory in patch
+[PASS] Psybeam beam_release retained
+[PASS] Tackle safe body retained
+[PASS] Bubble/Bubblebeam projectile retained
+[PASS] Scratch hold family retained
+[PASS] SBFX optional dependency retained
+[PASS] fixture present TEST-only
+[PASS] v0.2.06b provider log present
+[PASS] verifier accepts 2.1.8.1
+[PASS] verifier recursively scans manifests
+[PASS] installer deletes legacy data
+[PASS] installer deletes legacy asset directory
+[PASS] installer hard-checks zero legacy token refs
+RESULT=PASS 18/18
+LUA_PARSE_PASS main
+ZIP_INTEGRITY=PASS
