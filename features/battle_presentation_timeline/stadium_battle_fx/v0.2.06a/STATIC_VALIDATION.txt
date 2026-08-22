@@ -1,0 +1,20 @@
+PASS | custom GBC runtime ref zero
+PASS | GBC assets absent from patch
+PASS | GBC data absent from patch
+PASS | HIT_FRAME applyHitFx trace preserved
+PASS | Action Binding trace preserved
+PASS | Psybeam beam_release preserved
+PASS | Tackle safe body semantic preserved
+PASS | Bubble projectile semantic preserved
+PASS | Scratch contact hold preserved
+PASS | SBFX provider diagnostic added
+PASS | TEST fixture present
+PASS | rollback formal main exact
+PASS | rollback formal manifest exact
+PASS | rollback formal data exact
+
+SUMMARY 14 PASS / 0 FAIL
+
+Lua parser: PASS
+ZIP integrity: PASS
+Thor Runtime + Visual: PENDING
