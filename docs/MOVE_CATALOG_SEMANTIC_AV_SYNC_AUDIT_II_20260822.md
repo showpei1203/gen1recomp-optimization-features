@@ -1,25 +1,29 @@
 # Move Catalog Semantic + AV Synchronization Audit II
 
-Status: **ACTIVE NEXT MAINLINE / STATIC AUDIT STARTED**
+Status: **CLOSED / PROMOTED INTO v0.2.17e FORMAL AUTHORITY**
 
-Baseline: **PMD + StadiumBattleFX Integration I v0.2.13a FORMAL AUTHORITY**
+Original baseline: **PMD + StadiumBattleFX Integration I v0.2.13a FORMAL AUTHORITY**
 
-Formal PMD main hash: `7365476702ab294ad75b5c52e9e69dff9710c608ea57dc806e540e7b1650d406`
+Promoted authority: **PMD + StadiumBattleFX Move Presentation Authority v0.2.17e (2026-08-23)**
+
+Canonical authority document:
+`docs/PMD_SBFX_MOVE_PRESENTATION_FORMAL_AUTHORITY_20260823.md`
+
+Formal PMD main hash: `726cf94166333ea49512e05925fad3f6925ff796c669bd729d29801125103490`
 
 ## Goal
 
 Expand from the accepted representative Integration I set to the broader move catalog without reopening sealed ownership.
 
-The audit keeps two independent questions separate:
+The audit kept two independent questions separate:
 
 1. **Interaction semantic**: contact / projectile / area / status / sustained / multi
 2. **Visible body semantic**: swing / dash / charge / strike / punch / kick / bite / spin / shot / cast / etc.
 
 A move being physical, special, or contact does not by itself choose the visible body motion.
 
-## Sealed inheritance
+## Sealed inheritance retained
 
-Do not change without new evidence:
 - StadiumBattleFX VFX-only ownership; no `BattleHost.begin()` presentation lifecycle
 - sole HIT_FRAME owner = `BattleState.applyHitFx`
 - source-pose de-dup
@@ -32,79 +36,82 @@ Do not change without new evidence:
 - DS lighting refresh parity
 - Surf and Fury Swipes accepted fixes
 
-## Static audit findings from formal v0.2.13a
+## Closed findings / corrections
 
-### 1. Damage category is still mixed with presentation semantics
+### Damage category vs presentation semantics
 
-`moveActionForQueue()` enters a broad `isSpecial` branch after several explicit physical tables. Some move-name semantic tables are only consulted inside that branch. This can make a visually projectile/cast move fall through to generic `strike` when Gen1 type/category metadata classifies it as physical.
+Resolved structurally: high-confidence move/effect semantics now resolve before broad Gen1 damage-category fallback where required.
 
-High-priority examples to verify:
-- `GUST`: no explicit semantic mapping in the current formal router; can fall through to `strike` even though Stadium presents wind/projectile VFX.
-- `NIGHT SHADE`: listed in `SPECIAL_CAST_DAMAGE_NAMES`, but Ghost is not one of the Gen1 special-type fallbacks; the name rule may be bypassed when category metadata is absent.
-- `ACID`, `SLUDGE`, `SMOG`: listed in `PROJECTILE_SPECIAL_NAMES`, but Poison is not a Gen1 special-type fallback; the name rule may be bypassed when category metadata is absent.
-- `SKY ATTACK`, `RAZOR WIND`: listed in `BEAM_CHARGE_MOVE_NAMES`, but both can miss that table if their metadata does not enter `isSpecial`.
+Accepted examples include:
+- Gust / Acid / Sludge / Smog -> projectile semantics
+- Night Shade -> special-cast semantics
+- Sky Attack / Razor Wind -> charge semantics
+- Swift / Rock Throw / Bonemerang / Egg Bomb and other physical-by-type ranged moves -> projectile semantics
+- Earthquake / Fissure -> area-release semantics
 
-Audit rule: **move-effect/interaction semantics must be name/effect-driven before damage-class fallback where appropriate.** Damage classification must not silently redefine whether a move is contact, projectile, area, cast, or sustained.
+### Species override
 
-### 2. Species preference can outrank move semantics
+Electric-species shock preference was tightened so species identity cannot silently force unrelated special moves into shock presentation.
 
-The current special branch may choose `shock` for `PIKACHU`, `RAICHU`, or `JOLTEON` before several move-specific special mappings. Bubble/Bubblebeam already required an explicit exception for this reason.
+### Multi-hit / visible body safety
 
-Audit target: restrict species-preferred `shock` to genuinely Electric-compatible move semantics rather than allowing species identity alone to dominate unrelated special moves.
+Multi-hit mappings were retained under full-body asset safety. Unsafe visible `head` and native `lunge` assets remain prohibited.
 
-### 3. Multi-hit visible-body semantics need safety-aware review
+### AV timing
 
-Current multi body map includes:
-- DoubleSlap -> strike
-- Comet Punch -> punch
-- Fury Attack -> strike
-- Fury Swipes -> swing
-- Double Kick -> strike
-- Twineedle -> strike
-- Pin Missile/Barrage/Spike Cannon -> shot
+The audit replaced the original broad post-impact-tail concept with phase-aware ownership:
+- exact move Source ownership for non-beam adaptive AV timing;
+- Beam primary and impact as separate timing domains;
+- Beam SE stretches the emitted beam/travel phase, never the target impact phase;
+- later sound rows do not steal Beam primary timing ownership;
+- residual static final-frame hold remains bounded.
 
-Do not automatically make names more literal. `head` and native `lunge` are formally unsafe, and any promotion of punch/kick/bite-specific assets must retain complete-body integrity.
+### Status / auxiliary ownership
 
-### 4. A/V tail policy remains a catalog concern
+Accepted follow-up corrections:
+- Freeze feedback target ownership;
+- status-self vs status-target split;
+- String Shot / Leech Seed target-projectile semantics;
+- Powder/Spore target-field semantics;
+- Leech Seed residual drain-only phase;
+- stale auxiliary animation context cannot override queue-side ownership;
+- Protect / Reflect self-guard presentation.
 
-Integration I fixed representative synchronization ownership, but the next audit must classify moves whose Stadium visual lifetime, native animation release, and audio tail differ materially.
+### Two-turn movement / grapple extension
 
-The target rule is not "cut every sound at visual end." The correct audit records:
-- source-body HANDOFF
-- Stadium visual start/end
-- native animation release
-- HIT
-- audio-tail release
-- recovery complete
+The later Audit III follow-up closed two high-risk movement families:
+- Fly / Dig now use single-source PMD-body-owned two-turn choreography;
+- first-turn auxiliary native visuals are suppressed only as presentation rows;
+- second-turn native move rows become hit-only with exact hit tables preserved;
+- `applyHitFx` remains target hit/damage authority;
+- PMD returns HOME and ambient animation is explicitly resumed;
+- Seismic Toss / Submission use grapple-specific presentation families.
 
-Then classify intentional tails versus visible desynchronization.
+## Closure evidence
 
-## Phase plan
+v0.2.17d:
+- Fly/Dig charge native suppression = PASS
+- Fly/Dig release hit-only = PASS
+- Fly/Dig ambient resume = PASS
+- forbidden HOME-anchored two-turn source VFX = `0`
+- no duplicate HIT / continuation re-arm / unsafe head/lunge / Lua / FATAL / ANR regressions
 
-### Audit II-A — static semantic routing matrix
+v0.2.17e:
+- embedded B-key TEST fixture removed
+- exact candidate hashes matched device
+- `ERROR_ROWS=0`
+- `TEST_FIXTURE_RUNTIME_ROWS=0`
+- representative normal battle PMD + Stadium lifecycle completed
+- battle ended normally
+- user accepted smoke with `ok 繼續推進`
 
-Produce a move-name matrix that records:
-- current family
-- current visible body action
-- expected interaction semantic
-- whether routing depends on Gen1 damage category
-- whether species override can change it
-- unsafe-body risk
+## Next lane
 
-No runtime change in this subphase.
+Future move-presentation work must branch from **v0.2.17e Formal Authority** and should use a stricter pre-delivery rule:
 
-### Audit II-B — priority semantic corrections
-
-Correct only high-confidence structural mismatches found by II-A. Prefer generic policy changes over move-specific exceptions.
-
-### Audit II-C — AV-tail runtime matrix
-
-Run a compact representative matrix covering projectile, beam, screen/area, sustained, multi, status and contact families. Record visual/audio release ownership without inventing a second hit clock.
-
-### Audit II-D — closure
-
-Remove TEST-only hooks and promote only after user visual acceptance and exact hash pinning.
-
-## Immediate next target
-
-Start with II-A and specifically verify `GUST`, `NIGHT SHADE`, `ACID`, `SLUDGE`, `SMOG`, `SURF`, `SKY ATTACK`, `RAZOR WIND`, `DOUBLE KICK`, and the Electric-species `shock` preference path.
+- verify event order;
+- verify spatial source ownership;
+- verify there is exactly one visible source/travel authority;
+- verify target HIT ownership;
+- verify HOME/ambient state restoration;
+- do not treat phase-marker presence alone as visual correctness.
