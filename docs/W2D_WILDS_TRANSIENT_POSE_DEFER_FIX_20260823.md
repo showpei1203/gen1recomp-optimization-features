@@ -1,6 +1,7 @@
 # W2D Wilds Transient Pose Defer Fix
 
 Date: 2026-08-23
+Runtime acceptance: 2026-08-24
 
 ## Accepted W2C visual state
 
@@ -36,13 +37,35 @@ No changes to Wilds encounter logic, save format, True Size, Sprite Style provid
 
 ## Runtime acceptance
 
-Collector gates:
-- at least 3 normal Wilds spawns;
-- at least 1 `GEN1RECOMP_W2D_VOXEL_DEFER`;
-- at least 1 `GEN1RECOMP_W2D_VOXEL_RESUME`;
-- `POSE_NIL_ROWS=0`;
-- `SPATIAL_OVERLAY_EMERGENCY_ROWS=0`;
-- `RUNTIME_ERROR_ROWS=0`.
+Evidence: `GEN1RECOMP_W2D_POSE_DEFER_EVIDENCE_20260824_062448.zip`
+
+Collector result: `PASS`
+
+Observed:
+- `WILD_SPAWN_ROWS=18`
+- `W2D_DEFER_ROWS=15`
+- `W2D_RESUME_ROWS=15`
+- `POSE_NIL_ROWS=0`
+- `SPATIAL_OVERLAY_EMERGENCY_ROWS=0`
+- `W2C_SKY_BIND_ROWS=4`
+- `RUNTIME_ERROR_ROWS=0`
+- `W2D_ADAPTER_EXACT_HASH=True`
+
+The defer/resume pair was seen repeatedly across normal spawns, while the previous nil-pose and emergency-overlay warnings were fully eliminated during the same run. Wild Skies W2C continued binding flyers in the same session.
+
+## Accepted integration hashes
+
+- Wilds `main.lua`: `cc5da502de2d240b03c879f58a4ef2754db94cdc854e517a304a2868c54c7625`
+- Wilds W2D `lib/voxel_adapter.lua`: `767868dc2beadb9516cdb18ebf4416494a3c8969aa9b163f6964e79796a7b838`
+- Wild Skies W2C `main.lua`: `7509b0d494eabfc52ad6a1cd049128a07d6bdc3e24534e110342506f492beb61`
+
+## Formal status
+
+**W2C + W2D = RUNTIME + VISUAL PASS.**
+
+The former Wilds transient `pose() returned nil sprite -> spatial overlay emergency` issue is closed for this accepted stack.
+
+Remaining work is ordinary long-session soak/regression only. Do not reopen the PMD Sky bridge path or alter the accepted Wilds art-authority design without new evidence.
 
 ## Test build
 
