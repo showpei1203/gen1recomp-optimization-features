@@ -39,20 +39,34 @@ A user may explicitly approve a narrowly-scoped deterministic promotion exceptio
 
 ## Current formal integration authority
 
-**PMD + StadiumBattleFX Move Presentation Authority: v0.2.17e FORMAL AUTHORITY (2026-08-23).**
+**PMD + StadiumBattleFX Move Presentation Authority: v0.2.18b FORMAL AUTHORITY (2026-08-23).**
 
 Canonical authority document:
-`docs/PMD_SBFX_MOVE_PRESENTATION_FORMAL_AUTHORITY_20260823.md`
+`docs/PMD_SBFX_MOVE_PRESENTATION_FORMAL_AUTHORITY_v0.2.18b_20260823.md`
 
 Formal production hashes:
-- PMD `main.lua`: `726cf94166333ea49512e05925fad3f6925ff796c669bd729d29801125103490`
-- PMD `manifest.json`: `b2b0844ba43dbdc05efd57453353ad5c6f1aca003b470c53e90037f0b0d5009c`
-- StadiumFxPlayer: `5d5d774994f107c567d413f4b195a6806875a729d5a1e7578b83c57e782a3c4f`
-- Formal Authority archive ZIP: `b1ae2db1f6c1d66c147210af9715f0c89c415793cb9d1a9c07b879865c461526`
+- PMD `main.lua`: `b67b2f57bb955eea1834210a471ddf0c2ef20cd50f82c145e074c9a5e0d36d46`
+- PMD `manifest.json`: `f75aca6b3d0a98c56b131cc3cb6730aba772f9499df581b9cc3fdeaf261f1563`
+- StadiumFxPlayer: `7e40e164f24e89c0671d6ef8a0b4fd21f68b0443232f68410b2070f100c17cd7`
+- Promotion candidate ZIP: `07ee27d1aab71174bd3051e8ff6db2d2b57e4f9da20f022be936e9a7cd59b637`
+- Promotion smoke evidence ZIP: `be4a06e20ad0bf468adca0e4cda412930791ce03a310b11b9b96ce6b1d391e94`
 
-This formal authority supersedes `v0.2.13a` for the PMD/StadiumBattleFX integration lane. The v0.2.13a document remains historical authority for the Integration I closure and its inherited rules.
+This formal authority supersedes `v0.2.17e` for the PMD/StadiumBattleFX integration lane. The v0.2.17e document remains historical/inherited authority.
+
+New sealed rule added by v0.2.18b: true self / own-side support moves use source-only visual ownership; opponent target anchors are forbidden for their self-support VFX. Reflect / Light Screen / Barrier / Recover passed runtime and user visual acceptance.
 
 This source authority does not by itself replace the still-separate full runnable binary baseline authority.
+
+## Current development lane
+
+**Kanto Dynamic Weather + Wild Skies integration** begins from the exact v0.2.18b formal hashes above.
+
+Integration constraints:
+- do not regress PMD/Stadium battle presentation ownership;
+- preserve DRAMATIC_SHAPE 1.8.2 and Kanto First Person / THOR compatibility unless explicitly superseded;
+- Kanto Dynamic Weather 1.0.3 upstream only declares DRAMATIC_SHAPE `>=1.7.2 <1.8.0`, so DS 1.8.2 requires a verified compatibility bridge rather than a dependency-range bypass;
+- Wild Skies remains an overworld air-entity lane; weather integration must not steal its encounter/battle ownership;
+- combined render integration requires explicit occlusion, draw-order, transition, performance, and AYN Thor validation.
 
 ## Lane separation
 
@@ -62,4 +76,4 @@ Optimization and new feature work must be developed and accepted independently f
 
 Never modify the only known-good runnable baseline in place. Preserve exact source packages and hashes before experimentation.
 
-Future PMD battle-presentation work must branch from the exact v0.2.17e formal hashes above and preserve its sealed rules unless a later authority explicitly supersedes them.
+Future PMD battle-presentation work must branch from the exact v0.2.18b formal hashes above and preserve its sealed rules unless a later authority explicitly supersedes them.
