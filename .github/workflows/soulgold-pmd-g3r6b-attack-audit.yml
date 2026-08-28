@@ -1,0 +1,72 @@
+name: SoulGold PMD G3R6B Attack Composite Audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "tools/audit_soulgold_g3r6b_attack_composite.py"
+      - ".github/workflows/soulgold-pmd-g3r6b-attack-audit.yml"
+
+env:
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+
+jobs:
+  audit-attack-composite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+
+      - name: Install Pillow
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-pil
+
+      - name: Audit lossless Attack composite geometry
+        run: |
+          python3 framework/tools/audit_soulgold_g3r6b_attack_composite.py \
+            --spritecollab spritecollab \
+            --output G3R6B_ATTACK_COMPOSITE_AUDIT.json
+
+      - name: Gate pinned Attack semantics and GBA chunk budget
+        run: |
+          python3 - <<'PY'
+          import json
+          s=json.load(open('G3R6B_ATTACK_COMPOSITE_AUDIT.json',encoding='utf-8'))
+          assert s['phase']=='G3R6B_ATTACK_COMPOSITE_AUDIT'
+          assert s['renderer_policy']=='LOSSLESS_BODY_LOCAL_32X32_SUBSPRITE_GRID'
+          assert s['cropping'] is False and s['scaling'] is False
+          assert s['semantic_move_ownership']=='NOT_YET_WIRED'
+          cy=s['targets']['Cyndaquil']; ma=s['targets']['Marill']
+          assert cy['source_frame_size']==[64,72]
+          assert ma['source_frame_size']==[64,80]
+          assert cy['durations']==[2,4,1,1,1,2,2,2,2,2]
+          assert ma['durations']==[2,4,1,1,1,2,2,2,2,2,2]
+          for rec in (cy,ma):
+              assert [rec['rush_frame'],rec['hit_frame'],rec['return_frame']]==[1,3,6]
+              grid=rec['composite_grid']
+              assert grid['chunk_size']==[32,32]
+              assert 1 <= grid['capacity_chunks'] <= 12
+              assert 1 <= grid['max_occupied_chunks_in_one_frame'] <= grid['capacity_chunks']
+              assert rec['single_obj_safe_by_source_dimensions'] is False
+              print(rec['species'], 'union=',rec['opaque_union_body_local'], 'grid=',grid)
+          print('G3R6B Attack composite audit PASS')
+          PY
+
+      - name: Upload Attack audit evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g3r6b-attack-composite-audit
+          path: G3R6B_ATTACK_COMPOSITE_AUDIT.json
