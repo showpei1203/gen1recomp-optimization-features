@@ -9,12 +9,18 @@ The safety rule is deliberately boring and therefore useful:
 
 No species is allowed to lose its native fallback. Form/variant directories are
 inventoried but not automatically mapped to SoulGold forms in this gate.
+
+PMDCollab legitimately permits CopyOf aliases without their own Index. The old
+prototype parser predates that source pattern, so this full-roster audit uses a
+source-compatible parser rather than misclassifying an otherwise healthy
+species because an unrelated alias omitted redundant metadata.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from PIL import Image
@@ -46,6 +52,79 @@ def parse_national_dex(path: Path) -> list[str]:
     return names
 
 
+def text_int(parent: ET.Element, tag: str):
+    node = parent.find(tag)
+    if node is None or node.text is None or not node.text.strip():
+        return None
+    return int(node.text.strip())
+
+
+def parse_anim_data_compat(path: Path) -> dict:
+    """Parse current PMDCollab XML, including CopyOf aliases without Index."""
+    root = ET.parse(path).getroot()
+    actions = {}
+    for anim in root.findall("./Anims/Anim"):
+        name_node = anim.find("Name")
+        if name_node is None or name_node.text is None or not name_node.text.strip():
+            raise ValueError("AnimData.xml contains an Anim without Name")
+        name = name_node.text.strip()
+        copy_node = anim.find("CopyOf")
+        copy_of = copy_node.text.strip() if copy_node is not None and copy_node.text and copy_node.text.strip() else None
+        index = text_int(anim, "Index")
+        if index is None and copy_of is None:
+            raise ValueError(f"non-CopyOf action {name} lacks Index")
+        durations = tuple(
+            int(n.text.strip())
+            for n in anim.findall("./Durations/Duration")
+            if n.text and n.text.strip()
+        )
+        actions[name] = pmd.ActionMeta(
+            name=name,
+            index=index,
+            copy_of=copy_of,
+            frame_width=text_int(anim, "FrameWidth"),
+            frame_height=text_int(anim, "FrameHeight"),
+            durations=durations,
+            rush_frame=text_int(anim, "RushFrame"),
+            hit_frame=text_int(anim, "HitFrame"),
+            return_frame=text_int(anim, "ReturnFrame"),
+        )
+    if not actions:
+        raise ValueError(f"No animations found in {path}")
+    return actions
+
+
+def resolve_action_compat(name: str, actions: dict) -> pmd.ResolvedAction:
+    if name not in actions:
+        raise KeyError(f"Unknown PMD action: {name}")
+    requested = actions[name]
+    cur = requested
+    seen = set()
+    while cur.copy_of:
+        if cur.name in seen:
+            raise ValueError(f"CopyOf cycle while resolving {name}: {sorted(seen)}")
+        seen.add(cur.name)
+        if cur.copy_of not in actions:
+            raise KeyError(f"{cur.name} CopyOf references missing action {cur.copy_of}")
+        cur = actions[cur.copy_of]
+    if cur.index is None:
+        raise ValueError(f"resolved source action {cur.name} lacks Index")
+    if cur.frame_width is None or cur.frame_height is None or not cur.durations:
+        raise ValueError(f"Resolved PMD action {cur.name} lacks dimensions/durations")
+    index = requested.index if requested.index is not None else cur.index
+    return pmd.ResolvedAction(
+        requested_name=name,
+        source_action=cur.name,
+        index=index,
+        frame_width=cur.frame_width,
+        frame_height=cur.frame_height,
+        durations=cur.durations,
+        rush_frame=requested.rush_frame if requested.rush_frame is not None else cur.rush_frame,
+        hit_frame=requested.hit_frame if requested.hit_frame is not None else cur.hit_frame,
+        return_frame=requested.return_frame if requested.return_frame is not None else cur.return_frame,
+    )
+
+
 def source_layout(sheet_size: tuple[int, int], action: pmd.ResolvedAction) -> str:
     expected_w = action.frame_width * action.frame_count
     w, h = sheet_size
@@ -64,7 +143,7 @@ def inspect_action(species_dir: Path, action_name: str, actions: dict) -> dict:
         rec["reason"] = "ACTION_NOT_IN_ANIMDATA"
         return rec
     try:
-        action = pmd.resolve_action(action_name, actions)
+        action = resolve_action_compat(action_name, actions)
     except Exception as exc:
         rec["reason"] = f"ACTION_RESOLVE_ERROR:{type(exc).__name__}:{exc}"
         return rec
@@ -108,10 +187,10 @@ def nested_variant_dirs(species_dir: Path) -> list[str]:
     out = []
     if not species_dir.is_dir():
         return out
-    for p in sorted(species_dir.rglob("AnimData.xml")):
-        if p.parent == species_dir:
+    for path in sorted(species_dir.rglob("AnimData.xml")):
+        if path.parent == species_dir:
             continue
-        out.append(str(p.parent.relative_to(species_dir)))
+        out.append(str(path.parent.relative_to(species_dir)))
     return out
 
 
@@ -149,7 +228,7 @@ def main() -> int:
             records.append(rec)
             continue
         try:
-            actions = pmd.parse_anim_data(animdata)
+            actions = parse_anim_data_compat(animdata)
         except Exception as exc:
             rec["eligibility"] = "NATIVE_FALLBACK_MISSING_OR_INVALID_CORE"
             rec["reason"] = f"ANIMDATA_PARSE_ERROR:{type(exc).__name__}:{exc}"
@@ -179,6 +258,7 @@ def main() -> int:
         "soulgold_national_dex_count": len(dex_names),
         "core_actions": list(CORE_ACTIONS),
         "optional_capability_actions": list(OPTIONAL_ACTIONS),
+        "xml_policy": "PMDCOLLAB_COPYOF_ALIAS_MAY_OMIT_INDEX_AND_INHERIT_SOURCE_INDEX",
         "policy": "PMD_ELIGIBLE_ONLY_WHEN_CORE_SOURCE_COMPLETE; OTHERWISE_NATIVE_SOULGOLD_FALLBACK",
         "form_policy": "NESTED_PMDCOLLAB_VARIANTS_INVENTORIED_BUT_NOT_AUTO_MAPPED",
         "oversize_policy": "NO_CROP_NO_SCALE; MARK_NEEDS_MULTI_OBJ",
