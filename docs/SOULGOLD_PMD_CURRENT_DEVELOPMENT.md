@@ -1,7 +1,7 @@
 # Pokémon SoulGold PMD Animated Prototype — CURRENT DEVELOPMENT
 
 Date: 2026-08-28
-Status: ACTIVE / GBA-FIRST / G1 PLAYER-SIDE VISUAL PASS / G2 STARTED
+Status: ACTIVE / GBA-FIRST / G1 SEALED / G2 BEHAVIOR PASS / G3 ACTIVE
 
 ## Current baseline authority
 
@@ -13,129 +13,111 @@ Status: ACTIVE / GBA-FIRST / G1 PLAYER-SIDE VISUAL PASS / G2 STARTED
 - PMD source: `PMDCollab/SpriteCollab` species `0155`
 - PMD source revision: `4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7`
 - Framework branch: `feature/pmd-portable-battle-framework`
-- G1 compile-PASS framework commit: `a28e7595a162566827dcc245b8823a778e59a579`
-- GitHub Actions run: `33149304212`
 
-## G1 authority — PLAYER-SIDE FORMAL PASS
+## G1 authority — PLAYER-SIDE FORMAL PASS / RENDERER SEALED
 
-User visual acceptance on desktop mGBA was received on 2026-08-28 using the produced G1 test ROM.
+User visual acceptance on desktop mGBA was received on 2026-08-28.
 
-Accepted observations:
+Accepted:
 
-- SoulGold boots normally.
-- Player-side Cyndaquil is replaced by the PMD presentation during move-selection idle.
-- PMD body scale and screen placement are acceptable.
-- Battle background, battle UI and HP/status boxes remain visually intact.
-- No visible palette garbage, checkerboard corruption, half-frame tearing or broken body was reported.
-- User explicitly judged the result positively and will continue using the same save progression for subsequent prototype ROMs.
+- PMD Cyndaquil body scale and battle placement are acceptable.
+- Background, UI and HP/status boxes remain intact.
+- Four Walk source frames play through the two existing resident image slots.
+- No visible palette garbage, checkerboard corruption, half-frame tearing or body corruption was reported.
 
-Evidence note:
-
-- The supplied screenshot proves static placement/body/UI integrity.
-- The user's live test report is the human authority for the animated behavior.
-- Opponent-side Cyndaquil visual acceptance remains pending a convenient encounter; it is not required to block G2 because the primary starter/player renderer path is now proven.
-- AYN THOR acceptance remains required before a later production/formal cross-device promotion.
-
-### G1 renderer contract — SEALED
+Sealed renderer contract:
 
 - `MAX_MON_PIC_FRAMES` remains `2`.
-- Animation frame count is independent of resident cache count.
-- Cyndaquil Walk uses `4` source frames through only `2` resident battler image slots.
-- Player direction: `UpRight`.
-- Opponent direction: `DownLeft`.
-- PMD Walk durations: `[6, 8, 6, 8]`.
-- Source frame size: `24x32`.
-- G1 presentation offsets remain `0/0`.
-- G1 uses the existing SoulGold Cyndaquil palette to isolate renderer/cache proof from palette ownership.
-- The adapter presents staged frames through `RequestSpriteFrameImageCopy(...)`.
+- Animation length is independent of resident cache count.
+- Presentation uses `RequestSpriteFrameImageCopy(...)`.
 - Native `sprite->anims` tables are not replaced.
-- `src/data.c` / global `MAX_MON_PIC_FRAMES` plumbing is not modified.
+- `src/data.c` / global frame-count plumbing is not modified.
+- Player battle-facing source row is `UpRight`; opponent row is `DownLeft`.
 
-G1 must not be rewritten merely to implement G2 behavior. New behavior layers must preserve this renderer contract.
+G1 must not be rewritten merely to add later behavior.
 
 ## Save-file continuity policy
 
 The user will continue one SoulGold save while prototype ROMs are updated.
 
-Policy:
+- Keep ROM/save compatibility unless a phase explicitly requires a save-breaking change.
+- Delivered live ROM basename should remain stable when practical.
+- Any future save-breaking change must be declared before delivery.
+- G1/G2/G3 do not change the save structure.
 
-- Keep ROM/save compatibility unless a phase explicitly requires a save-breaking engine/data change.
-- Prefer a stable delivered ROM filename so mGBA can continue to resolve the same `.sav` without manual work.
-- When versioned ROM filenames are unavoidable, the user can rename the existing `.sav` to the new ROM basename.
-- Any future save-breaking change must be declared before delivery; silent save-format changes are forbidden.
+## G2 authority — RICH AMBIENT BEHAVIOR PASS / VISUAL-FACING PARTIAL
 
-## G1 compile evidence — PASS
+G2 build ROM:
 
-The authoritative CI completed all of the following:
-
-1. checkout exact SoulGold source revision;
-2. checkout exact SpriteCollab revision;
-3. convert Cyndaquil PMD Walk for player and opponent directions;
-4. remap the G1 frames to SoulGold's existing Cyndaquil palette;
-5. install portable runtime + SoulGold adapter + prototype manager;
-6. verify scope invariants;
-7. compile and link the complete SoulGold ROM;
-8. audit `src/pmd_*` compiler output for warnings/errors;
-9. upload the actual test ROM artifact.
-
-Built ROM:
-
-- CI filename: `Soulgold_Beta_1.gba`
-- Test designation: `SoulGold-PMD-G1-Cyndaquil-Walk-Test`
 - bytes: `33554432`
-- SHA-256: `67beea6d040772325d6075391159a4128a8e794b7605800f82269911e3208ab8`
-- CRC32: `0EFB799C`
-- GBA title header: `POKEMON EMER`
-- game code: `BPEE`
-- maker code: `01`
+- SHA-256: `0831c1c1172ef789c1152bb2955db2789c43b8aeabb207295fae5505e9c42eae`
+- CRC32: `554857E1`
+- CI run: `33150904208`
 
-The Emerald header is expected because SoulGold is built from the pokeemerald-expansion/decomp lineage; it is not evidence that the wrong source was compiled.
+Human runtime observations received 2026-08-28:
 
-### Host-warning policy used for this gate
+1. Ambient action switching is fluid — **PASS**.
+2. During native move execution, the PMD body freezes/yields ownership; after the move it returns correctly to the idle/ecology loop — **PASS**.
+3. The five tested ambient behaviors are clearly distinguishable — **PASS**.
+4. Some actions do not visually preserve the desired 45-degree battle facing and therefore read as stiff/odd — **PARTIAL / RULE CREATED**.
+5. On initial battle entry, SoulGold still displays the legacy battle sprite before PMD takes over — **FAIL / G3 TARGET**.
 
-The pinned SoulGold source contains a pre-existing unrelated unused local variable in `src/comfy_anim.c`. Therefore the G1 integration build uses `UNUSED_ERROR=0` and `DEPRECATED_ERROR=0` so unrelated host warnings do not mask PMD integration status.
+G2 therefore proves the HOME/interruption/ecology state machine but is not the final visual-facing authority.
 
-This is not a blanket relaxation for PMD code. The workflow separately rejects the candidate if the build log contains a compiler warning/error originating from `src/pmd_*`.
+## Battle-facing asset policy — FORMAL RULE
 
-## G2 — Rich Ambient
+For current and future Pokémon battle ambient assets:
 
-Status: `IMPLEMENTATION STARTED`
+- The action must come from a genuine directional PMD source sheet; shared single-row/non-directional assets are not eligible for battle ambient presentation.
+- Player presentation selects the approved 45-degree `UpRight` source orientation; opponent presentation selects `DownLeft`.
+- HOME must begin and end at the approved 45-degree battle-facing orientation.
+- Intermediate frames are allowed to turn, nod, sit, breathe, rotate or otherwise change pose naturally.
+- A transitional-turn action is acceptable if it naturally settles back to the same 45-degree HOME at completion.
+- `Rotate` is explicitly **allowed** under this rule because it naturally returns to the battle-facing orientation.
+- Cyndaquil `LookUp` is explicitly **not allowed** because its source is a shared single-row animation without a genuine 45-degree directional row.
+- Import/build tooling should reject non-directional ambient candidates before ROM compilation rather than silently adapting them.
 
-Goal: replace the permanent Walk proof loop with species-aware ambient ecology while preserving the sealed two-slot renderer.
+This policy supersedes the overly strict interpretation that every intermediate frame must itself remain at 45 degrees.
 
-Initial Cyndaquil ecology benchmark:
+## G3 — BATTLE-FACING CLEANUP + PMD FROM FIRST BATTLE FRAME
 
-`HOME -> Idle -> HOME -> Walk -> HOME -> LookUp -> HOME -> DeepBreath -> HOME -> Rotate -> HOME`
+Status: `IMPLEMENTATION / CI ACTIVE`
 
-Rules inherited from Gen1recomp:
+### G3 ambient set
 
-- PMD Idle is an asset, not the complete idle behavior.
-- Logical battle position remains locked.
-- Presentation motion never changes battle coordinates.
-- Action timing follows PMD metadata plus species/body profile timing.
-- Every ambient action returns to an explicit HOME boundary.
-- Native move VFX/SFX and native battle ownership retain priority.
-- If native combat/sendout/switch/status ownership interrupts ambient behavior, the old ambient action is abandoned.
-- After interruption, presentation returns to HOME and starts a newly approved ambient sequence; it never resumes midway through the stale action.
-- G2 must not increase `MAX_MON_PIC_FRAMES` or replace native `sprite->anims`.
+Cyndaquil benchmark:
 
-### G2 first acceptance target
+`HOME -> Idle -> HOME -> Walk -> HOME -> DeepBreath -> HOME -> Nod -> HOME -> Sit -> HOME -> Rotate -> HOME`
 
-Player-side Cyndaquil at move selection should visibly cycle through multiple PMD behaviors over time, with pauses/Home holds that make it read as a living Pokémon rather than a looped GIF.
+All selected actions must pass the strict real-directional-sheet converter. `LookUp` is excluded.
 
-Required visual properties:
+### G3 battle-entry rule
 
-1. HOME is stable and does not drift.
-2. Walk, LookUp, DeepBreath and Rotate remain visually centered around HOME.
-3. No action causes logical battle displacement.
-4. No stale partial frame after choosing/finishing a move.
-5. Native move execution remains visually authoritative.
-6. After move execution, Cyndaquil returns HOME before ambient ecology resumes.
-7. G1 body integrity and palette quality do not regress.
+Goal: the Pokémon body must already be PMD when the native send-out Pokémon sprite is created.
+
+Implementation strategy:
+
+- Keep SoulGold's native Poké Ball/send-out motion, callback timing, affine effects and battle sequencing.
+- Immediately before native `CreateSprite(...)` for the Pokémon body, prime both resident battler image slots with the PMD HOME frame.
+- Both cache slots receive the same HOME image so native frame index 0/1 changes during send-out cannot reveal the legacy battle sprite.
+- After native send-out ownership settles, the existing G2 HOME/Rich Ambient state machine resumes normal rolling-cache presentation.
+
+This deliberately changes the body pixels, not the native send-out choreography.
+
+### G3 acceptance target
+
+1. Battle entry never visibly exposes the legacy Cyndaquil battle sprite.
+2. Native send-out timing/motion remains normal.
+3. Cyndaquil appears as PMD HOME from the first visible Pokémon-body frame.
+4. `LookUp` never appears in ambient behavior.
+5. `Rotate` remains and naturally returns to the 45-degree HOME.
+6. Idle/Walk/DeepBreath/Nod/Sit/Rotate remain visually distinct and smooth.
+7. Move interruption and post-move HOME recovery do not regress.
+8. Save continuity remains intact.
 
 ## User reference ROM
 
-The user's `Pokemon-SoulGold-v1.gba` is intended to be recorded as `USER_REFERENCE_ROM` rather than used as a destructive patch base. Its file size, GBA header, SHA-256 and CRC32 should be captured when the attachment becomes available to the execution environment. This reference fingerprint remains distinct from the reproducible source-build fingerprint above.
+The user's `Pokemon-SoulGold-v1.gba` remains intended as `USER_REFERENCE_ROM`, not a destructive patch base. Its exact fingerprint should be recorded when the attachment is available to the execution environment.
 
 ## Deferred intentionally
 
