@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit SoulGold G3 Cyndaquil directional Rich Ambient descriptors."""
+"""Emit SoulGold G3 Cyndaquil battle-facing-compatible Rich Ambient descriptors."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-ACTIONS = ("Idle", "Walk", "DeepBreath", "Nod", "Sit")
+ACTIONS = ("Idle", "Walk", "DeepBreath", "Nod", "Sit", "Rotate")
 
 
 def sym(text: str) -> str:
@@ -32,7 +32,7 @@ def main() -> int:
         raise SystemExit(f"IR missing required G3 actions: {missing}")
 
     lines = [
-        "/* Auto-generated SoulGold G3 directional Rich Ambient descriptors. */",
+        "/* Auto-generated SoulGold G3 battle-facing Rich Ambient descriptors. */",
         "#include \"global.h\"",
         "#include \"pmd_gba_runtime.h\"",
         "",
@@ -90,7 +90,7 @@ def main() -> int:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("\n".join(lines), encoding="utf-8")
-    print(f"Wrote {args.output} (G3 45-degree-only, variant={args.variant})")
+    print(f"Wrote {args.output} (G3 battle-facing-compatible, variant={args.variant})")
     return 0
 
 
