@@ -227,6 +227,7 @@ void PmdSoulGoldPrototype_Tick(void)
 
         if (battler >= gBattlersCount)
         {
+            PmdSoulGold_UpdateGroundShadow(battler, FALSE);
             ClearAmbient(battler);
             continue;
         }
@@ -234,13 +235,16 @@ void PmdSoulGoldPrototype_Tick(void)
         profile = FindProfile(battler);
         if (profile == NULL)
         {
+            /* A PMD battler may have switched/transformed away. Remove our
+             * owned shadow and restore SoulGold's native shadow callback. */
+            PmdSoulGold_UpdateGroundShadow(battler, FALSE);
             ClearAmbient(battler);
             continue;
         }
 
-        // G3R5 shadow ownership is intentionally independent from PMD frame
-        // presentation. It follows the battler base coordinate and is updated
-        // even while native move animation temporarily owns the body.
+        /* Ground shadow ownership is independent from body presentation. The
+         * PMD-authored mask follows base x/y only, so move-animation x2/y2 and
+         * G3R5 presentationY corrections never drag the ground layer around. */
         PmdSoulGold_UpdateGroundShadow(battler, TRUE);
 
         spriteId = gBattlerSpriteIds[battler];
