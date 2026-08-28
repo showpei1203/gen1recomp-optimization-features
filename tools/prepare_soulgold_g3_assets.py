@@ -24,6 +24,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from PIL import Image
+
 SPRITECOLLAB_REV = "4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7"
 SOULGOLD_REV = "b5122bdf188943862c13abe4938e88b7bb3c5c4a"
 ACTIONS = ("Idle", "Walk", "Nod", "Pose", "Rotate")
@@ -57,6 +59,22 @@ def copy_variant_assets(variant_dir: Path, target: Path) -> None:
     shutil.copy2(variant_dir / "manifest.ir.json", target / "manifest.ir.json")
 
 
+def shadow_alpha_delta(shadowed: Path, body_only: Path) -> int:
+    """Count pixels made opaque specifically by the PMD shadow compositor."""
+    a = Image.open(shadowed).convert("RGBA")
+    b = Image.open(body_only).convert("RGBA")
+    if a.size != b.size:
+        raise SystemExit(f"Shadow audit size mismatch: {shadowed}={a.size}, {body_only}={b.size}")
+    ap = a.load()
+    bp = b.load()
+    count = 0
+    for y in range(a.height):
+        for x in range(a.width):
+            if ap[x, y][3] > 0 and bp[x, y][3] == 0:
+                count += 1
+    return count
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--spritecollab", type=Path, required=True)
@@ -88,10 +106,8 @@ def main() -> int:
     (staging / "graphics" / "pmd" / "cyndaquil").mkdir(parents=True)
     (staging / "src").mkdir(parents=True)
 
-    # G3 uses a strict wrapper: it preserves the base 8-direction requirement
-    # and additionally composites authentic PMD shadow sheets under each body
-    # frame before anchor normalization. Single-row compatibility is forbidden.
     converter = framework / "tools" / "convert_soulgold_g3.py"
+    body_only_converter = framework / "tools" / "pmd_gba_converter.py"
     remapper = framework / "tools" / "pmd_gba_remap_host_palette.py"
     emitter = framework / "tools" / "emit_soulgold_g3_c.py"
     action_arg = ",".join(ACTIONS)
@@ -99,7 +115,7 @@ def main() -> int:
     variants = (("player", "UpRight"), ("opponent", "DownLeft"))
 
     summary: dict[str, object] = {
-        "phase": "G3_BATTLE_FACING_SENDOUT_SHADOW",
+        "phase": "G3R1_BATTLE_FACING_SENDOUT_SHADOW",
         "soulgold_revision": SOULGOLD_REV,
         "spritecollab_revision": SPRITECOLLAB_REV,
         "species": "Cyndaquil",
@@ -107,6 +123,7 @@ def main() -> int:
         "banned_from_ambient": list(BANNED_AMBIENT_ACTIONS),
         "direction_policy": "real_directional_sheet; 45-degree HOME start/end; transitional turning allowed when naturally returning",
         "shadow_policy": "authentic PMD per-frame Shadow.png mask, SpriteBot-compatible ShadowSize rules, composited below body",
+        "shadow_pixel_gate": "every emitted frame must add >0 opaque pixels versus an otherwise-identical body-only conversion",
         "home_source": "Idle frame 0",
         "palette_policy": "remap_combined_body_shadow_to_existing_soulgold_cyndaquil_palette",
         "renderer_contract": "G1 two-slot rolling cache SEALED/REUSED",
@@ -115,18 +132,53 @@ def main() -> int:
 
     for variant, direction in variants:
         variant_dir = work / variant
-        run([
-            sys.executable, str(converter),
+        body_only_dir = work / f"{variant}_body_only"
+        common_args = [
             "--source", str(species_dir),
-            "--output", str(variant_dir),
             "--species", "Cyndaquil",
             "--national-dex", "155",
             "--actions", action_arg,
             "--direction", direction,
             "--source-revision", SPRITECOLLAB_REV,
             "--source-repo-path", "sprite/0155",
+        ]
+
+        run([
+            sys.executable, str(converter),
+            *common_args,
+            "--output", str(variant_dir),
             "--host-asset-root", f"graphics/pmd/cyndaquil/{variant}",
         ])
+        run([
+            sys.executable, str(body_only_converter),
+            *common_args,
+            "--output", str(body_only_dir),
+            "--host-asset-root", f"graphics/pmd/cyndaquil/{variant}_body_only",
+        ])
+
+        manifest = json.loads((variant_dir / "manifest.ir.json").read_text(encoding="utf-8"))
+        if manifest.get("shadow", {}).get("shadow_size") != 1:
+            raise SystemExit(f"Unexpected Cyndaquil PMD ShadowSize metadata: {manifest.get('shadow')}")
+
+        shadow_counts: dict[str, list[int]] = {}
+        for action in ACTIONS:
+            counts = []
+            frames = manifest["actions"][action]["frames"]
+            for frame in frames:
+                idx = int(frame["index"])
+                shadowed = variant_dir / action.lower() / f"frame_{idx:02d}.png"
+                body_only = body_only_dir / action.lower() / f"frame_{idx:02d}.png"
+                extra = shadow_alpha_delta(shadowed, body_only)
+                if extra <= 0:
+                    raise SystemExit(
+                        f"PMD shadow pixel gate FAIL: {variant}/{action}/frame_{idx:02d} adds {extra} opaque shadow pixels"
+                    )
+                counts.append(extra)
+            shadow_counts[action] = counts
+
+        # Palette remap is deliberately after the alpha-delta gate. Remapping
+        # changes RGB indices but preserves alpha, so a proven non-empty shadow
+        # remains a visible opaque part of the final GBA frame.
         run([
             sys.executable, str(remapper),
             "--frames-root", str(variant_dir),
@@ -147,13 +199,10 @@ def main() -> int:
             staging / "graphics" / "pmd" / "cyndaquil" / variant,
         )
 
-        manifest = json.loads((variant_dir / "manifest.ir.json").read_text(encoding="utf-8"))
-        if manifest.get("shadow", {}).get("shadow_size") != 1:
-            raise SystemExit(f"Unexpected Cyndaquil PMD ShadowSize metadata: {manifest.get('shadow')}")
-
         summary["variants"][variant] = {
             "direction": direction,
             "shadow": manifest["shadow"],
+            "shadow_extra_opaque_pixels": shadow_counts,
             "actions": {
                 action: {
                     "frame_count": len(manifest["actions"][action]["frames"]),
@@ -168,7 +217,7 @@ def main() -> int:
         }
 
     (out / "G3_ASSET_SUMMARY.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    print(f"Prepared SoulGold G3 directional+shadow staging bundle: {staging}")
+    print(f"Prepared SoulGold G3R1 directional+shadow staging bundle: {staging}")
     return 0
 
 
