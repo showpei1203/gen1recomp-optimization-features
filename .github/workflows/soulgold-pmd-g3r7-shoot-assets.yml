@@ -1,0 +1,113 @@
+name: SoulGold PMD G3R7 Shoot Source Asset Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "tools/convert_soulgold_g3r7_shoot.py"
+      - "tools/emit_soulgold_g3r7_shoot_c.py"
+      - "tools/prepare_soulgold_g3r7_shoot_assets.py"
+      - ".github/workflows/soulgold-pmd-g3r7-shoot-assets.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+
+jobs:
+  audit-g3r7-shoot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+
+      - name: Install asset dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3 python3-pil libpng-dev
+
+      - name: Prepare G3R7 Shoot assets
+        run: |
+          python3 framework/tools/prepare_soulgold_g3r7_shoot_assets.py \
+            --framework-root framework \
+            --spritecollab spritecollab \
+            --soulgold soulgold \
+            --output g3r7_shoot_assets
+
+      - name: Audit pinned Shoot metadata and lossless conversion
+        run: |
+          python3 - <<'PY'
+          import json
+          s=json.load(open('g3r7_shoot_assets/G3R7_SHOOT_ASSET_SUMMARY.json',encoding='utf-8'))
+          assert s['phase']=='G3R7_SHOOT_SOURCE_ASSETS'
+          assert s['move_selector_policy']=='NOT_IMPLEMENTED_SOURCE_ASSET_GATE_ONLY'
+          assert s['combat_timing_policy']=='SOULGOLD_REMAINS_AUTHORITATIVE'
+          assert s['known_ambient_1px_defect']=='DEFERRED_ROOT_CAUSE_UNRESOLVED'
+          expected={
+              'Cyndaquil_player': {
+                  'size':[32,48], 'frames':10,
+                  'durations':[3,6,2,2,2,2,2,2,2,2],
+                  'markers':{'rush':None,'hit':3,'return':3},
+                  'atlas':40,
+              },
+              'Marill_opponent': {
+                  'size':[40,48], 'frames':11,
+                  'durations':[2,6,1,1,2,2,2,2,2,2,2],
+                  'markers':{'rush':None,'hit':1,'return':4},
+                  'atlas':42,
+              },
+          }
+          for key,want in expected.items():
+              rec=s['targets'][key]
+              assert rec['shoot_source_frame_size']==want['size'], (key,rec['shoot_source_frame_size'])
+              assert rec['shoot_frame_count']==want['frames'], (key,rec['shoot_frame_count'])
+              assert rec['shoot_durations']==want['durations'], (key,rec['shoot_durations'])
+              assert rec['shoot_markers']==want['markers'], (key,rec['shoot_markers'])
+              assert rec['visible_pixel_conservation'] is True
+              assert len(rec['opaque_destination_bboxes'])==want['frames']
+              assert len(rec['shoot_shadow_frames'])==want['frames']
+              assert rec['expanded_shadow_atlas_frame_count']==want['atlas'], (key,rec['expanded_shadow_atlas_frame_count'])
+              print(key,'Shoot PASS',rec['shoot_source_frame_size'],rec['shoot_durations'],rec['shoot_markers'])
+          print('G3R7 source-authoritative Shoot asset gate PASS')
+          PY
+
+      - name: Verify generated C source contracts
+        run: |
+          grep -q "gPmdCyndaquilPlayerShootAction" g3r7_shoot_assets/staging/src/pmd_cyndaquil_player_shoot.c
+          grep -q "gPmdCyndaquilPlayerShootHitFrame = 3" g3r7_shoot_assets/staging/src/pmd_cyndaquil_player_shoot.c
+          grep -q "gPmdCyndaquilPlayerShootReturnFrame = 3" g3r7_shoot_assets/staging/src/pmd_cyndaquil_player_shoot.c
+          grep -q "gPmdMarillOpponentShootAction" g3r7_shoot_assets/staging/src/pmd_marill_opponent_shoot.c
+          grep -q "gPmdMarillOpponentShootHitFrame = 1" g3r7_shoot_assets/staging/src/pmd_marill_opponent_shoot.c
+          grep -q "gPmdMarillOpponentShootReturnFrame = 4" g3r7_shoot_assets/staging/src/pmd_marill_opponent_shoot.c
+          grep -q "gPmdCyndaquilPlayerShootShadowAction" g3r7_shoot_assets/staging/src/pmd_cyndaquil_player_shadow.c
+          grep -q "gPmdMarillOpponentShootShadowAction" g3r7_shoot_assets/staging/src/pmd_marill_opponent_shadow.c
+
+      - name: Upload G3R7 Shoot evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g3r7-shoot-source-evidence
+          path: |
+            g3r7_shoot_assets/G3R7_SHOOT_ASSET_SUMMARY.json
+            g3r7_shoot_assets/staging/src/pmd_cyndaquil_player_shoot.c
+            g3r7_shoot_assets/staging/src/pmd_marill_opponent_shoot.c
+            g3r7_shoot_assets/staging/src/pmd_cyndaquil_player_shadow.c
+            g3r7_shoot_assets/staging/src/pmd_marill_opponent_shadow.c
