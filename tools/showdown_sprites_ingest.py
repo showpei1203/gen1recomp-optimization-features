@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Ingest Pokémon Showdown animated battle GIFs into GBA-friendly assets.
 
-S0 goals:
+S0/S1 goals:
 - accept official sprites.zip (or a locally extracted source tree)
 - preserve a stable whole-GIF coordinate system to avoid frame jitter
 - fit each animation into a 64x64 battler canvas without upscaling
-- use one shared 15-color + transparent palette per animation
+- use one shared 15-color + transparent palette per animation, or optionally
+  remap to an existing host 16-color JASC palette for conservative integration
 - preserve GIF frame timing, quantized to 60 Hz GBA ticks
 - emit PNG previews, raw 4bpp tiles, BGR555 palette, and JSON manifest
 
-This tool intentionally does not patch SoulGold yet. S1 owns runtime integration.
+This tool does not patch SoulGold. Runtime integration belongs to S1.
 """
 from __future__ import annotations
 
@@ -53,6 +54,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--species", nargs="+", required=True,
                    help="Showdown file stems, e.g. cyndaquil pikachu charizard-mega-x")
     p.add_argument("--lanes", nargs="+", choices=sorted(LANE_DIRS), default=["front", "back"])
+    p.add_argument("--host-palette", type=Path,
+                   help="Optional 16-entry JASC palette. Visible pixels map to entries 1..15.")
     p.add_argument("--force", action="store_true")
     return p.parse_args()
 
@@ -68,6 +71,22 @@ def download_zip(cache_dir: Path) -> Path:
         shutil.copyfileobj(r, f)
     tmp.replace(dst)
     return dst
+
+
+def read_jasc_palette(path: Path) -> list[tuple[int, int, int]]:
+    lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    if len(lines) < 3 or lines[0] != "JASC-PAL" or lines[1] != "0100":
+        raise ValueError(f"Not a JASC-PAL 0100 file: {path}")
+    count = int(lines[2])
+    entries: list[tuple[int, int, int]] = []
+    for line in lines[3:3 + count]:
+        parts = [int(x) for x in line.split()]
+        if len(parts) != 3 or any(x < 0 or x > 255 for x in parts):
+            raise ValueError(f"Invalid palette row: {line}")
+        entries.append(tuple(parts))
+    if count != 16 or len(entries) != 16:
+        raise ValueError(f"GBA host palette must contain exactly 16 entries, got {len(entries)}")
+    return entries
 
 
 def find_zip_member(zf: zipfile.ZipFile, lane_dir: str, species: str) -> str:
@@ -173,19 +192,19 @@ def nearest_color(rgb: tuple[int, int, int], palette: list[tuple[int, int, int]]
     return best_i
 
 
-def index_frame(img: Image.Image, palette: list[tuple[int, int, int]]) -> Image.Image:
+def index_frame(img: Image.Image, visible_palette: list[tuple[int, int, int]], transparent_rgb=(0, 0, 0)) -> Image.Image:
     out = Image.new("P", img.size, 0)
-    pal_bytes = [0, 0, 0]
-    for c in palette:
+    pal_bytes = list(transparent_rgb)
+    for c in visible_palette:
         pal_bytes.extend(c)
     pal_bytes.extend([0] * (768 - len(pal_bytes)))
     out.putpalette(pal_bytes)
     indices = []
     for r, g, b, a in img.getdata():
-        if a < 128 or not palette:
+        if a < 128 or not visible_palette:
             indices.append(0)
         else:
-            indices.append(nearest_color((r, g, b), palette) + 1)
+            indices.append(nearest_color((r, g, b), visible_palette) + 1)
     out.putdata(indices)
     out.info["transparency"] = 0
     return out
@@ -199,10 +218,16 @@ def gba_bgr555(rgb: tuple[int, int, int]) -> int:
     return r5 | (g5 << 5) | (b5 << 10)
 
 
-def encode_palette(palette: list[tuple[int, int, int]]) -> bytes:
-    values = [0] + [gba_bgr555(c) for c in palette]
-    values += [0] * (16 - len(values))
-    return b"".join(v.to_bytes(2, "little") for v in values[:16])
+def encode_full_palette(entries: list[tuple[int, int, int]]) -> bytes:
+    if len(entries) != 16:
+        raise ValueError(f"Expected 16 palette entries, got {len(entries)}")
+    return b"".join(gba_bgr555(c).to_bytes(2, "little") for c in entries)
+
+
+def encode_generated_palette(visible: list[tuple[int, int, int]]) -> bytes:
+    entries = [(0, 0, 0)] + list(visible)
+    entries += [(0, 0, 0)] * (16 - len(entries))
+    return encode_full_palette(entries[:16])
 
 
 def encode_4bpp(img: Image.Image) -> bytes:
@@ -227,15 +252,34 @@ def ms_to_ticks(ms: int) -> int:
     return max(1, int(round(ms / GBA_TICK_MS)))
 
 
-def ingest_one(data: bytes, species: str, lane: str, out_root: Path, source_desc: str) -> dict:
+def ingest_one(
+    data: bytes,
+    species: str,
+    lane: str,
+    out_root: Path,
+    source_desc: str,
+    host_palette: list[tuple[int, int, int]] | None,
+    host_palette_desc: str | None,
+) -> dict:
     raw_frames, source_size = read_gif(data)
     frames = transform_frames(raw_frames, source_size)
-    palette = make_shared_palette(frames)
-    indexed = [index_frame(f.image, palette) for f in frames]
+
+    if host_palette is None:
+        visible_palette = make_shared_palette(frames)
+        transparent_rgb = (0, 0, 0)
+        palette_bytes = encode_generated_palette(visible_palette)
+        palette_policy = "generated_shared_15_plus_transparent"
+    else:
+        visible_palette = list(host_palette[1:16])
+        transparent_rgb = host_palette[0]
+        palette_bytes = encode_full_palette(host_palette)
+        palette_policy = "host_jasc_entries_1_to_15"
+
+    indexed = [index_frame(f.image, visible_palette, transparent_rgb) for f in frames]
 
     out_dir = out_root / species / lane
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "palette.pal").write_bytes(encode_palette(palette))
+    (out_dir / "palette.pal").write_bytes(palette_bytes)
 
     frame_records = []
     for i, (f, idx) in enumerate(zip(frames, indexed)):
@@ -252,7 +296,7 @@ def ingest_one(data: bytes, species: str, lane: str, out_root: Path, source_desc
         })
 
     manifest = {
-        "format": "soulgold-showdown-s0-v1",
+        "format": "soulgold-showdown-s0-v2",
         "species": species,
         "lane": lane,
         "source": source_desc,
@@ -260,7 +304,9 @@ def ingest_one(data: bytes, species: str, lane: str, out_root: Path, source_desc
         "gba_canvas": [64, 64],
         "scale": fit_scale(source_size),
         "anchor": "bottom-center",
-        "palette_entries_visible": len(palette),
+        "palette_policy": palette_policy,
+        "host_palette": host_palette_desc,
+        "palette_entries_visible": len(visible_palette),
         "palette_entries_total": 16,
         "frame_count": len(frames),
         "loop_ticks_60hz": sum(r["duration_ticks_60hz"] for r in frame_records),
@@ -276,6 +322,12 @@ def main() -> int:
         raise SystemExit(f"Output {args.output} is not empty; use --force")
     args.output.mkdir(parents=True, exist_ok=True)
 
+    host_palette = None
+    host_palette_desc = None
+    if args.host_palette:
+        host_palette = read_jasc_palette(args.host_palette)
+        host_palette_desc = str(args.host_palette)
+
     zip_path: Path | None = None
     if args.download:
         zip_path = download_zip(args.cache_dir)
@@ -289,18 +341,23 @@ def main() -> int:
                 for lane in args.lanes:
                     lane_dir = LANE_DIRS[lane]
                     member = find_zip_member(zf, lane_dir, species)
-                    results.append(ingest_one(zf.read(member), species, lane, args.output,
-                                              f"sprites.zip:{member}"))
+                    results.append(ingest_one(
+                        zf.read(member), species, lane, args.output,
+                        f"sprites.zip:{member}", host_palette, host_palette_desc,
+                    ))
     else:
         assert args.source_dir is not None
         for species in args.species:
             for lane in args.lanes:
                 lane_dir = LANE_DIRS[lane]
                 src = find_source_file(args.source_dir, lane_dir, species)
-                results.append(ingest_one(src.read_bytes(), species, lane, args.output, str(src)))
+                results.append(ingest_one(
+                    src.read_bytes(), species, lane, args.output, str(src),
+                    host_palette, host_palette_desc,
+                ))
 
     summary = {
-        "format": "soulgold-showdown-s0-summary-v1",
+        "format": "soulgold-showdown-s0-summary-v2",
         "official_source": OFFICIAL_ZIP_URL,
         "animations": results,
     }
