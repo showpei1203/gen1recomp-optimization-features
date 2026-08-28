@@ -7,6 +7,7 @@ on:
       - feature/pmd-portable-battle-framework
     paths:
       - "prototype/soulgold_g3/**"
+      - "tools/convert_soulgold_g3.py"
       - "tools/emit_soulgold_g3_c.py"
       - "tools/prepare_soulgold_g3_assets.py"
       - "tools/install_soulgold_g3.py"
@@ -52,7 +53,7 @@ jobs:
             python3 \
             python3-pil
 
-      - name: Prepare G3 directional Cyndaquil assets
+      - name: Prepare G3 directional and PMD-shadow Cyndaquil assets
         run: |
           python3 framework/tools/prepare_soulgold_g3_assets.py \
             --framework-root framework \
@@ -74,18 +75,33 @@ jobs:
           grep -q "PmdSoulGoldPrototype_PrimeBattlerBody" soulgold/src/battle_controllers.c
           grep -q "PmdSoulGold_PrimeBodyFrame" soulgold/src/pmd_soulgold_adapter.c
           grep -q "RotateAction" soulgold/src/pmd_soulgold_prototype.c
-          ! grep -q "LookUpAction" soulgold/src/pmd_soulgold_prototype.c || {
-            echo "G3 must not schedule Cyndaquil LookUp in battle ambient" >&2
-            exit 1
-          }
+          grep -q "PoseAction" soulgold/src/pmd_soulgold_prototype.c
+          for banned in LookUp DeepBreath Sit; do
+            ! grep -q "${banned}Action" soulgold/src/pmd_soulgold_prototype.c || {
+              echo "G3 must not schedule non-directional ${banned} in battle ambient" >&2
+              exit 1
+            }
+          done
           test -f soulgold/src/pmd_cyndaquil_player_ambient.c
           test -f soulgold/src/pmd_cyndaquil_opponent_ambient.c
-          for action in idle walk deepbreath nod sit rotate; do
+          for action in idle walk nod pose rotate; do
             test -d "soulgold/graphics/pmd/cyndaquil/player/${action}"
             test -d "soulgold/graphics/pmd/cyndaquil/opponent/${action}"
           done
-          test ! -d soulgold/graphics/pmd/cyndaquil/player/lookup
-          test ! -d soulgold/graphics/pmd/cyndaquil/opponent/lookup
+          for banned in lookup deepbreath sit; do
+            test ! -d "soulgold/graphics/pmd/cyndaquil/player/${banned}"
+            test ! -d "soulgold/graphics/pmd/cyndaquil/opponent/${banned}"
+          done
+          python3 - <<'PY'
+          import json
+          for side in ("player", "opponent"):
+              p = f"soulgold/graphics/pmd/cyndaquil/{side}/manifest.ir.json"
+              d = json.load(open(p, encoding="utf-8"))
+              s = d.get("shadow", {})
+              assert s.get("shadow_size") == 1, (side, s)
+              assert s.get("body_shadow_frame_sync") == "atomic_same_frame", (side, s)
+          print("PMD shadow metadata PASS")
+          PY
           test -z "$(git -C soulgold diff -- src/data.c)" || {
             echo "G3 must not modify src/data.c / MAX_MON_PIC_FRAMES plumbing" >&2
             exit 1
@@ -128,9 +144,10 @@ jobs:
             echo "soulgold_revision=${SOULGOLD_REV}"
             echo "spritecollab_revision=${SPRITECOLLAB_REV}"
             echo "framework_commit=${GITHUB_SHA}"
-            echo "gate=Cyndaquil 45-degree-HOME-compatible ambient + PMD sendout body prime"
-            echo "ambient=HOME+Idle+Walk+DeepBreath+Nod+Sit+Rotate"
-            echo "banned_ambient=LookUp"
+            echo "gate=Cyndaquil 45-degree-HOME-compatible ambient + PMD sendout body prime + authentic per-frame PMD shadow"
+            echo "ambient=HOME+Idle+Walk+Nod+Pose+Rotate"
+            echo "banned_ambient=LookUp,DeepBreath,Sit"
+            echo "shadow=PMD Shadow.png / ShadowSize=1 / body-shadow atomic frame sync"
             echo "sendout_motion_owner=SOULGOLD_NATIVE"
             echo "g1_renderer_contract=SEALED_REUSED"
             echo "save_structure=UNCHANGED"
@@ -169,6 +186,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: SoulGold-PMD-G3-Battle-Facing-Sendout-Test-ROM
+          name: SoulGold-PMD-G3-Facing-Sendout-Shadow-Test-ROM
           if-no-files-found: error
           path: soulgold/Soulgold_Beta_1.gba
