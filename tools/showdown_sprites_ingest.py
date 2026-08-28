@@ -21,7 +21,7 @@ import shutil
 import urllib.request
 import zipfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from PIL import Image
 
@@ -90,10 +90,19 @@ def read_jasc_palette(path: Path) -> list[tuple[int, int, int]]:
 
 
 def find_zip_member(zf: zipfile.ZipFile, lane_dir: str, species: str) -> str:
-    wanted = f"{lane_dir}/{species}.gif".lower()
-    matches = [n for n in zf.namelist() if n.lower().endswith(wanted)]
+    filename = f"{species}.gif".lower()
+    lane = lane_dir.lower()
+    matches = []
+    for name in zf.namelist():
+        parts = PurePosixPath(name).parts
+        if len(parts) < 2:
+            continue
+        if parts[-2].lower() == lane and parts[-1].lower() == filename:
+            matches.append(name)
     if len(matches) != 1:
-        raise FileNotFoundError(f"Expected exactly one *{wanted} in zip, found {len(matches)}")
+        raise FileNotFoundError(
+            f"Expected exactly one exact {lane_dir}/{species}.gif in zip, found {len(matches)}: {matches[:5]}"
+        )
     return matches[0]
 
 
