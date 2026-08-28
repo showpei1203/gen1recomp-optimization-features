@@ -1,0 +1,199 @@
+name: SoulGold PMD G3R6A Hurt Reaction Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "tools/emit_soulgold_g3r6a_c.py"
+      - "tools/prepare_soulgold_g3r6a_assets.py"
+      - "tools/install_soulgold_g3r6a.py"
+      - "prototype/soulgold_g3r6a/**"
+      - ".github/workflows/soulgold-pmd-g3r6a-build.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  UNIQUE_ROM_PATH: soulgold/SoulGold-PMD-G3R6A.gba
+
+jobs:
+  compile-g3r6a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3 python3-pil
+
+      - name: Prepare G3R6A Hurt assets
+        run: |
+          python3 framework/tools/prepare_soulgold_g3r6a_assets.py \
+            --framework-root framework \
+            --spritecollab spritecollab \
+            --soulgold soulgold \
+            --output g3r6a_assets
+
+      - name: Audit PMDCollab Hurt source contract
+        run: |
+          python3 - <<'PY'
+          import json
+          s=json.load(open('g3r6a_assets/G3R6A_ASSET_SUMMARY.json',encoding='utf-8'))
+          assert s['phase']=='G3R6A_HURT_REACTION'
+          assert s['hurt_body_policy']=='PMDCOLLAB_GREEN_BODY_CENTER_ZERO_PRESENTATION_CORRECTION'
+          assert s['hurt_trigger']=='SOULGOLD_CONTROLLER_HITANIMATION_PMDOwnership_OVERRIDE'
+          for key,rec in s['targets'].items():
+              assert rec['hurt_frame_count']==2, (key,rec['hurt_frame_count'])
+              assert rec['hurt_durations']==[2,8], (key,rec['hurt_durations'])
+              assert rec['body_presentation_corrections']['Hurt']==[0,0]
+              assert len(rec['dynamic_shadow']['actions']['Hurt'])==2
+              print(key,'Hurt size=',rec['hurt_frame_size'],'durations=',rec['hurt_durations'],
+                    'shadow=',rec['dynamic_shadow']['actions']['Hurt'])
+          print('G3R6A Hurt source contract PASS')
+          PY
+
+      - name: Install G3R6A candidate
+        run: |
+          python3 framework/tools/install_soulgold_g3r6a.py \
+            --framework-root framework \
+            --soulgold soulgold \
+            --assets-staging g3r6a_assets/staging
+
+      - name: Verify ownership and choreography invariants
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          text=Path('soulgold/src/battle_main.c').read_text()
+          start=text.index('static void RunBattleSoftwareTick(void)\n{')
+          end=text.index('\n}',start)
+          fn=text[start:end]
+          assert fn.index('AnimateSprites();') < fn.index('PmdSoulGoldPrototype_Tick();') < fn.index('BuildOamBuffer();') < fn.index('RunTasks();')
+          assert fn.count('PmdSoulGoldPrototype_Tick();')==1
+          for p in ['src/battle_controller_player.c','src/battle_controller_opponent.c']:
+              t=Path('soulgold',p).read_text()
+              assert t.count('[CONTROLLER_HITANIMATION]')==1
+              assert 'PmdSoulGoldPrototype_HandleHitAnimation' in t
+          print('G3R4B timing and PMD hit-dispatch ownership preserved')
+          PY
+          grep -q "new_action=HURT" soulgold/PMD_G3R6A_INSTALL_STATUS.txt
+          grep -q "PmdSoulGold_SetReactivePresentation" soulgold/include/pmd_soulgold_adapter.h
+          grep -q "!InBattleChoosingMoves() && !sPmdReactivePresentation\[battler\]" soulgold/src/pmd_soulgold_adapter.c
+          grep -q "gPmdCyndaquilPlayerHurtAction" soulgold/src/pmd_cyndaquil_player_ambient.c
+          grep -q "gPmdMarillOpponentHurtAction" soulgold/src/pmd_marill_opponent_ambient.c
+          grep -q "gPmdCyndaquilPlayerHurtShadowAction" soulgold/src/pmd_cyndaquil_player_shadow.c
+          grep -q "gPmdMarillOpponentHurtShadowAction" soulgold/src/pmd_marill_opponent_shadow.c
+          grep -q "PMD_PHASE_HURT_RETURN" soulgold/src/pmd_soulgold_prototype.c
+          grep -q "BtlController_Complete(battler)" soulgold/src/pmd_soulgold_prototype.c
+          test -z "$(git -C soulgold diff -- src/save.c src/save_failed_screen.c include/save.h)"
+
+      - name: Build SoulGold G3R6A
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee PMD_G3R6A_BUILD.log
+
+      - name: Audit PMD warnings or errors
+        run: |
+          if grep -E "src/pmd_.*(warning:|error:)" soulgold/PMD_G3R6A_BUILD.log; then exit 1; fi
+
+      - name: Verify ELF symbols and ROM
+        run: |
+          mkdir -p evidence
+          arm-none-eabi-nm -C soulgold/Soulgold_Beta_1.elf | sort > evidence/PMD_G3R6A_SYMBOLS.txt
+          for required in PmdSoulGoldPrototype_Tick PmdSoulGoldPrototype_HandleHitAnimation \
+            PmdSoulGold_SetReactivePresentation PmdSoulGoldDynamicShadow_Update PmdGbaRuntime_GetFrameIndex \
+            gPmdCyndaquilPlayerHurtAction gPmdCyndaquilPlayerHurtShadowAction \
+            gPmdMarillOpponentHurtAction gPmdMarillOpponentHurtShadowAction; do
+            grep -q "${required}$" evidence/PMD_G3R6A_SYMBOLS.txt || exit 1
+          done
+          cp "${ROM_PATH}" "${UNIQUE_ROM_PATH}"
+          test "$(stat -c %s "${UNIQUE_ROM_PATH}")" -eq 33554432
+
+      - name: Record G3R6A evidence
+        if: always()
+        run: |
+          mkdir -p evidence/installed_source
+          cp g3r6a_assets/G3R6A_ASSET_SUMMARY.json evidence/ || true
+          cp soulgold/PMD_G3R6A_INSTALL_STATUS.txt evidence/ || true
+          cp soulgold/src/pmd_cyndaquil_player_ambient.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_cyndaquil_player_shadow.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_marill_opponent_ambient.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_marill_opponent_shadow.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_soulgold_prototype.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_soulgold_adapter.c evidence/installed_source/ || true
+          git -C soulgold diff -- src/battle_main.c src/battle_controller_player.c src/battle_controller_opponent.c include/pmd_soulgold_prototype.h include/pmd_soulgold_adapter.h > evidence/SOULGOLD_G3R6A_HOST_PATCH.diff || true
+          {
+            echo "SoulGold PMD G3R6A Hurt reaction evidence"
+            echo "framework_commit=${GITHUB_SHA}"
+            echo "soulgold_revision=${SOULGOLD_REV}"
+            echo "spritecollab_revision=${SPRITECOLLAB_REV}"
+            echo "parent=G3R5C_SHADOW_RUNTIME_ACCEPTED_AMBIENT_1PX_DEFERRED"
+            echo "new_action=HURT"
+            echo "hurt_trigger=CONTROLLER_HITANIMATION"
+            echo "hurt_body=PMDCOLLAB_OFFSETS_GREEN_CENTER_ZERO_RUNTIME_GROUNDING"
+            echo "hurt_shadow=FRAME_SYNCHRONOUS_PMDCOLLAB_HURT_SHADOW_PNG"
+            echo "return_policy=HURT_TO_HOME_BEFORE_CONTROLLER_RELEASE"
+            echo "non_pmd_controller_hit_visual=UNCHANGED"
+            echo "known_ambient_1px_defect=DEFERRED_NOT_CLAIMED_FIXED"
+            echo "runtime_visual_status=PENDING_USER_ACCEPTANCE"
+            if [ -f "${UNIQUE_ROM_PATH}" ]; then
+              echo "build_status=PASS"
+              stat -c "rom_bytes=%s" "${UNIQUE_ROM_PATH}"
+              sha256sum "${UNIQUE_ROM_PATH}"
+              python3 - <<'PY'
+          import os,zlib
+          p=os.environ['UNIQUE_ROM_PATH']; crc=0
+          with open(p,'rb') as f:
+              for c in iter(lambda:f.read(1024*1024),b''): crc=zlib.crc32(c,crc)
+          print(f"rom_crc32={crc & 0xffffffff:08X}")
+          PY
+            else
+              echo "build_status=FAIL_OR_NO_ROM"
+            fi
+          } | tee evidence/PMD_G3R6A_CI_EVIDENCE.txt
+
+      - name: Upload G3R6A evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g3r6a-build-evidence
+          path: |
+            evidence/
+            soulgold/PMD_G3R6A_BUILD.log
+
+      - name: Upload G3R6A test ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-PMD-G3R6A-ROM
+          path: soulgold/SoulGold-PMD-G3R6A.gba
