@@ -1,0 +1,22 @@
+name: SoulGold Showdown S0 Ingest
+
+on:
+  push:
+    branches:
+      - feature/showdown-animated-battlers
+    paths:
+      - 'tools/showdown_sprites_ingest.py'
+      - 'tests/test_showdown_s0_ingest.py'
+      - '.github/workflows/soulgold-showdown-s0-ingest.yml'
+  workflow_dispatch:
+
+jobs:
+  synthetic-ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --upgrade pip pillow
+      - run: python tests/test_showdown_s0_ingest.py
