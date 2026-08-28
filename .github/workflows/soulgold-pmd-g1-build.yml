@@ -75,7 +75,7 @@ jobs:
           test -f soulgold/src/pmd_soulgold_prototype.c
           test "$(find soulgold/graphics/pmd/cyndaquil/player/walk -name 'frame_*.png' | wc -l)" -eq 4
           test "$(find soulgold/graphics/pmd/cyndaquil/opponent/walk -name 'frame_*.png' | wc -l)" -eq 4
-          git -C soulgold diff -- src/data.c | grep -q '^$' || {
+          test -z "$(git -C soulgold diff -- src/data.c)" || {
             echo "G1 must not modify src/data.c / MAX_MON_PIC_FRAMES plumbing" >&2
             exit 1
           }
