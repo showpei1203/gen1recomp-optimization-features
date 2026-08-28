@@ -1,5 +1,6 @@
 #include "global.h"
 #include "battle.h"
+#include "battle_main.h"
 #include "data.h"
 #include "decompress.h"
 #include "pokemon.h"
@@ -32,6 +33,15 @@ static bool32 SoulGold_CanPresentBattler(u8 battler)
     // A real mon battler created from SetMultiuseSpriteTemplateToPokemon owns
     // this position's MonSpritesGfx frame-image table.
     if (sprite->images != gMonSpritesGfxPtr->frameImages[position])
+        return FALSE;
+
+    // Native send-out/switch/front/back animation callbacks own x2/y2 and body
+    // presentation until they settle on one of SoulGold's idle callbacks.
+    // SpriteCallbackDummy_2 is also a stable post-launch callback used by the
+    // stock front/back animation path; animFromTableActive below keeps PMD out
+    // until that animation task has actually completed.
+    if (sprite->callback != SpriteCallbackDummy
+     && sprite->callback != SpriteCallbackDummy_2)
         return FALSE;
 
     // G1 must not fight existing battle-presentation owners.
