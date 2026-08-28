@@ -108,13 +108,19 @@ jobs:
           PY
           grep -q "new_action=HURT" soulgold/PMD_G3R6A_INSTALL_STATUS.txt
           grep -q "hurt_crop_or_scale=FALSE" soulgold/PMD_G3R6A_INSTALL_STATUS.txt
+          grep -q "native_hit_busy_flag=PRESERVED_GDOINGBATTLEANIM" soulgold/PMD_G3R6A_INSTALL_STATUS.txt
+          grep -q "native_hit_healthbox_effect=PRESERVED" soulgold/PMD_G3R6A_INSTALL_STATUS.txt
           grep -q "PmdSoulGold_SetReactivePresentation" soulgold/include/pmd_soulgold_adapter.h
           grep -q "!InBattleChoosingMoves() && !sPmdReactivePresentation\[battler\]" soulgold/src/pmd_soulgold_adapter.c
+          grep -q "gDoingBattleAnim && !sPmdReactivePresentation\[battler\]" soulgold/src/pmd_soulgold_adapter.c
           grep -q "gPmdCyndaquilPlayerHurtAction" soulgold/src/pmd_cyndaquil_player_ambient.c
           grep -q "gPmdMarillOpponentHurtAction" soulgold/src/pmd_marill_opponent_ambient.c
           grep -q "gPmdCyndaquilPlayerHurtShadowAction" soulgold/src/pmd_cyndaquil_player_shadow.c
           grep -q "gPmdMarillOpponentHurtShadowAction" soulgold/src/pmd_marill_opponent_shadow.c
           grep -q "PMD_PHASE_HURT_RETURN" soulgold/src/pmd_soulgold_prototype.c
+          grep -q "gDoingBattleAnim = TRUE" soulgold/src/pmd_soulgold_prototype.c
+          grep -q "DoHitAnimHealthboxEffect(battler)" soulgold/src/pmd_soulgold_prototype.c
+          grep -q "gDoingBattleAnim = FALSE" soulgold/src/pmd_soulgold_prototype.c
           grep -q "BtlController_Complete(battler)" soulgold/src/pmd_soulgold_prototype.c
           test -z "$(git -C soulgold diff -- src/save.c src/save_failed_screen.c include/save.h)"
 
@@ -172,6 +178,8 @@ jobs:
             echo "hurt_body=ACTION_SPECIFIC_CLIP_SAFE_CANVAS_PLUS_EXACT_BATTLE_ANCHOR_COMPENSATION"
             echo "hurt_crop_or_scale=FALSE"
             echo "hurt_shadow=FRAME_SYNCHRONOUS_PMDCOLLAB_HURT_SHADOW_PNG_PLUS_BODY_X2Y2"
+            echo "native_hit_busy_flag=PRESERVED"
+            echo "native_hit_healthbox_effect=PRESERVED"
             echo "return_policy=HURT_TO_HOME_BEFORE_CONTROLLER_RELEASE"
             echo "non_pmd_controller_hit_visual=UNCHANGED"
             echo "known_ambient_1px_defect=DEFERRED_NOT_CLAIMED_FIXED"
