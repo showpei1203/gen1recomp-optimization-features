@@ -81,9 +81,10 @@ jobs:
           assert len(loads) >= 4, len(loads)
           for m in loads:
               tail = ctl[m.end():].splitlines()
-              assert tail, m.group(0)
+              next_nonempty = next((line for line in tail if line.strip()), None)
+              assert next_nonempty is not None, m.group(0)
               expected = f"{m.group('i')}PmdSoulGoldPrototype_PrimeBattlerBody({m.group('b')});"
-              assert tail[0] == expected, (m.group(0), tail[0], expected)
+              assert next_nonempty == expected, (m.group(0), next_nonempty, expected)
 
           summary = json.load(open("g3r2_assets/G3R2_ASSET_SUMMARY.json", encoding="utf-8"))
           for side in ("player", "opponent"):
