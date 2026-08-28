@@ -10,9 +10,9 @@ struct PmdGbaBattlerState
 };
 
 static const struct PmdGbaHostOps *sHost;
-static struct PmdGbaBattlerState sBattlers[MAX_BATTLERS_COUNT];
+static struct PmdGbaBattlerState sBattlers[PMD_GBA_MAX_BATTLERS];
 
-static bool32 StageAndPresent(enum BattlerId battler, u8 frameIndex, u8 slot)
+static bool32 StageAndPresent(u8 battler, u8 frameIndex, u8 slot)
 {
     struct PmdGbaBattlerState *state = &sBattlers[battler];
     const struct PmdGbaFrame *frame;
@@ -43,7 +43,7 @@ void PmdGbaRuntime_Reset(void)
 {
     u8 battler;
 
-    for (battler = 0; battler < MAX_BATTLERS_COUNT; battler++)
+    for (battler = 0; battler < PMD_GBA_MAX_BATTLERS; battler++)
     {
         sBattlers[battler].action = NULL;
         sBattlers[battler].ticksLeft = 0;
@@ -53,13 +53,13 @@ void PmdGbaRuntime_Reset(void)
     }
 }
 
-bool32 PmdGbaRuntime_Bind(enum BattlerId battler, const struct PmdGbaAction *action)
+bool32 PmdGbaRuntime_Bind(u8 battler, const struct PmdGbaAction *action)
 {
     struct PmdGbaBattlerState *state;
 
     if (sHost == NULL || action == NULL || action->frames == NULL || action->frameCount == 0)
         return FALSE;
-    if (battler >= MAX_BATTLERS_COUNT || !sHost->CanPresentBattler(battler))
+    if (battler >= PMD_GBA_MAX_BATTLERS || !sHost->CanPresentBattler(battler))
         return FALSE;
 
     state = &sBattlers[battler];
@@ -72,9 +72,9 @@ bool32 PmdGbaRuntime_Bind(enum BattlerId battler, const struct PmdGbaAction *act
     return StageAndPresent(battler, 0, 0);
 }
 
-void PmdGbaRuntime_Unbind(enum BattlerId battler)
+void PmdGbaRuntime_Unbind(u8 battler)
 {
-    if (battler >= MAX_BATTLERS_COUNT)
+    if (battler >= PMD_GBA_MAX_BATTLERS)
         return;
 
     sBattlers[battler].action = NULL;
@@ -89,12 +89,12 @@ void PmdGbaRuntime_Unbind(enum BattlerId battler)
 
 void PmdGbaRuntime_Tick(void)
 {
-    enum BattlerId battler;
+    u8 battler;
 
     if (sHost == NULL)
         return;
 
-    for (battler = 0; battler < MAX_BATTLERS_COUNT; battler++)
+    for (battler = 0; battler < PMD_GBA_MAX_BATTLERS; battler++)
     {
         struct PmdGbaBattlerState *state = &sBattlers[battler];
         u8 nextFrame;
