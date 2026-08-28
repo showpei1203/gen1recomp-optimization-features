@@ -1,0 +1,82 @@
+name: SoulGold PMD G3R9 Special-State View Audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "tools/audit_soulgold_g3r9_special_state_views.py"
+      - ".github/workflows/soulgold-pmd-g3r9-special-state-view-audit.yml"
+
+env:
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+
+jobs:
+  audit-g3r9-special-state-views:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+      - name: Install audit dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3 python3-pil
+      - name: Audit special-state source views
+        run: |
+          PYTHONPATH=framework/tools python3 framework/tools/audit_soulgold_g3r9_special_state_views.py \
+            --spritecollab spritecollab \
+            --output G3R9_SPECIAL_STATE_VIEW_AUDIT.json
+      - name: Gate mixed per-action source layouts
+        run: |
+          python3 - <<'PY'
+          import json
+          s=json.load(open('G3R9_SPECIAL_STATE_VIEW_AUDIT.json',encoding='utf-8'))
+          assert s['phase']=='G3R9_SPECIAL_STATE_SOURCE_VIEW_AUDIT'
+          assert s['policy']=='RESOLVE_VIEW_PER_ACTION_FROM_ANIM_OFFSETS_SHADOW_GEOMETRY'
+          assert s['runtime_policy']=='SOURCE_AUDIT_ONLY_NO_EVENT_SLEEP_OR_WAKE_HOOKS'
+          expected={
+              'Cyndaquil': {
+                  'Sleep':([24,24],2,[30,35],'DIRECTIONLESS_SINGLE_ROW',None),
+                  'EventSleep':([24,24],2,[30,35],'DIRECTIONAL_8_ROWS','UpRight'),
+                  'Wake':([24,24],5,[8,6,14,4,10],'DIRECTIONAL_8_ROWS','UpRight'),
+              },
+              'Marill': {
+                  'Sleep':([40,24],2,[30,35],'DIRECTIONLESS_SINGLE_ROW',None),
+                  'EventSleep':([24,24],2,[30,35],'DIRECTIONAL_8_ROWS','DownLeft'),
+                  'Wake':([32,32],5,[8,6,14,4,10],'DIRECTIONAL_8_ROWS','DownLeft'),
+              },
+          }
+          for species,actions in expected.items():
+              r=s['targets'][species]
+              for name,(size,count,durations,layout,direction) in actions.items():
+                  a=r['actions'][name]
+                  assert a['frame_size']==size,(species,name,a['frame_size'])
+                  assert a['frame_count']==count
+                  assert a['durations']==durations
+                  assert a['source_layout']==layout,(species,name,a['source_layout'])
+                  assert a['applied_source_direction']==direction,(species,name,a['applied_source_direction'])
+                  assert a['shadow_frame_count']==count
+                  if layout=='DIRECTIONLESS_SINGLE_ROW':
+                      assert a['source_row']==0
+                      assert a['view_policy']=='PRESERVE_PMDCOLLAB_SPECIAL_STATE_SOURCE_VIEW'
+                  else:
+                      assert a['view_policy']=='USE_REQUESTED_BATTLE_DIRECTION_WHEN_SOURCE_IS_DIRECTIONAL'
+              print(species,'per-action source view PASS')
+          print('G3R9 mixed special-state layout contract PASS')
+          PY
+      - name: Upload G3R9 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g3r9-special-state-view-evidence
+          path: G3R9_SPECIAL_STATE_VIEW_AUDIT.json
