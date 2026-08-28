@@ -1,0 +1,202 @@
+name: SoulGold PMD G3R7B Marker Bridge Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "tools/install_soulgold_g3r7b_marker_bridge.py"
+      - ".github/workflows/soulgold-pmd-g3r7b-marker-build.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  UNIQUE_ROM_PATH: soulgold/SoulGold-PMD-G3R7B.gba
+
+jobs:
+  compile-g3r7b:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3 python3-pil
+
+      - name: Prepare G3R7 assets
+        run: |
+          python3 framework/tools/prepare_soulgold_g3r7_shoot_assets.py \
+            --framework-root framework \
+            --spritecollab spritecollab \
+            --soulgold soulgold \
+            --output g3r7b_assets
+
+      - name: Install G3R7B marker bridge
+        run: |
+          python3 framework/tools/install_soulgold_g3r7b_marker_bridge.py \
+            --framework-root framework \
+            --soulgold soulgold \
+            --assets-staging g3r7b_assets/staging
+
+      - name: Audit marker bridge is presentation-only
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('soulgold/src/pmd_soulgold_prototype.c').read_text()
+          h=Path('soulgold/include/pmd_soulgold_prototype.h').read_text()
+          assert 'PMD_SOULGOLD_MOVE_MARKER_RUSH' in h
+          assert 'PMD_SOULGOLD_MOVE_MARKER_HIT' in h
+          assert 'PMD_SOULGOLD_MOVE_MARKER_RETURN' in h
+          assert 'PmdSoulGoldPrototype_ConsumeMoveMarkers' in p
+          assert 'PmdSoulGoldPrototype_GetMoveMarkerSeenMask' in p
+          assert 'RecordMoveMarker(battler, state);' in p
+          assert 'frame == *rush' in p and 'frame == *hit' in p and 'frame == *ret' in p
+          assert 'PmdGbaRuntime_IsPresenting(battler)' in p
+          assert 'GetMoveCategory(move) == DAMAGE_CATEGORY_STATUS' in p
+          assert 'MoveMakesContact(move)' in p
+
+          # The native move controller lifecycle remains exactly the G3R7/G3R6B
+          # ownership contract. Marker bridge must not be wired into damage or
+          # controller decisions.
+          c=Path('soulgold/src/battle_controllers.c').read_text()
+          s=c.index('static void Controller_DoMoveAnimation(enum BattlerId battler)\n{')
+          e=c.index('\nvoid BtlController_HandleMoveAnimation(enum BattlerId battler)',s)
+          fn=c[s:e]
+          assert fn.count('PmdSoulGoldPrototype_BeginMoveAction(battler, move);')==1
+          assert fn.count('PmdSoulGoldPrototype_EndMoveAction(battler);')==1
+          assert fn.count('PmdSoulGoldPrototype_IsMoveReturnReady(battler)')==1
+          assert 'ConsumeMoveMarkers' not in fn
+          assert 'GetMoveMarkerSeenMask' not in fn
+          assert 'DoMoveAnim(move);' in fn
+          assert 'gAnimScriptCallback();' in fn
+          assert 'BtlController_Complete(battler);' in fn
+
+          for path in ['src/battle_script_commands.c','src/battle_move_resolution.c','src/battle_util.c']:
+              if Path('soulgold',path).exists():
+                  assert 'ConsumeMoveMarkers' not in Path('soulgold',path).read_text(errors='ignore')
+          print('G3R7B marker bridge is observable but non-authoritative PASS')
+          PY
+          grep -q "combat_damage_timing=UNCHANGED_SOULGOLD_NATIVE" soulgold/PMD_G3R7B_INSTALL_STATUS.txt
+          grep -q "move_fx_timing=UNCHANGED_SOULGOLD_NATIVE" soulgold/PMD_G3R7B_INSTALL_STATUS.txt
+          grep -q "controller_timing=UNCHANGED_SOULGOLD_NATIVE" soulgold/PMD_G3R7B_INSTALL_STATUS.txt
+          test -z "$(git -C soulgold diff -- src/save.c src/save_failed_screen.c include/save.h)"
+
+      - name: Build SoulGold G3R7B
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee PMD_G3R7B_BUILD.log
+
+      - name: Audit PMD warnings or errors
+        run: |
+          if grep -E "src/pmd_.*(warning:|error:)" soulgold/PMD_G3R7B_BUILD.log; then exit 1; fi
+
+      - name: Verify ELF symbols and ROM
+        run: |
+          mkdir -p evidence
+          arm-none-eabi-nm -C soulgold/Soulgold_Beta_1.elf | sort > evidence/PMD_G3R7B_SYMBOLS.txt
+          for required in \
+            PmdSoulGoldPrototype_Tick \
+            PmdSoulGoldPrototype_BeginMoveAction \
+            PmdSoulGoldPrototype_ConsumeMoveMarkers \
+            PmdSoulGoldPrototype_GetMoveMarkerSeenMask \
+            gPmdCyndaquilPlayerAttackRushFrame \
+            gPmdCyndaquilPlayerAttackHitFrame \
+            gPmdCyndaquilPlayerAttackReturnFrame \
+            gPmdCyndaquilPlayerShootHitFrame \
+            gPmdCyndaquilPlayerShootReturnFrame \
+            gPmdMarillOpponentAttackRushFrame \
+            gPmdMarillOpponentShootHitFrame \
+            gPmdMarillOpponentShootReturnFrame; do
+            grep -q "${required}$" evidence/PMD_G3R7B_SYMBOLS.txt || exit 1
+          done
+          cp "${ROM_PATH}" "${UNIQUE_ROM_PATH}"
+          test "$(stat -c %s "${UNIQUE_ROM_PATH}")" -eq 33554432
+
+      - name: Record G3R7B evidence
+        if: always()
+        run: |
+          mkdir -p evidence/installed_source
+          cp soulgold/PMD_G3R7B_INSTALL_STATUS.txt evidence/ || true
+          cp g3r7b_assets/G3R7_SHOOT_ASSET_SUMMARY.json evidence/ || true
+          cp soulgold/src/pmd_soulgold_prototype.c evidence/installed_source/ || true
+          cp soulgold/include/pmd_soulgold_prototype.h evidence/installed_source/ || true
+          cp soulgold/src/pmd_cyndaquil_player_attack.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_cyndaquil_player_shoot.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_marill_opponent_attack.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_marill_opponent_shoot.c evidence/installed_source/ || true
+          {
+            echo "SoulGold PMD G3R7B marker bridge evidence"
+            echo "framework_commit=${GITHUB_SHA}"
+            echo "soulgold_revision=${SOULGOLD_REV}"
+            echo "spritecollab_revision=${SPRITECOLLAB_REV}"
+            echo "parent=G3R7_ATTACK_SHOOT_SELECTOR_BUILD_GATE"
+            echo "markers=RUSH_HIT_RETURN_FRAME_ENTRY"
+            echo "marker_source=PINNED_PMDCOLLAB_ANIMDATA_XML"
+            echo "marker_authority=PRESENTATION_OBSERVABILITY_ONLY"
+            echo "combat_damage_timing=SOULGOLD_NATIVE_UNCHANGED"
+            echo "move_fx_timing=SOULGOLD_NATIVE_UNCHANGED"
+            echo "controller_timing=SOULGOLD_NATIVE_UNCHANGED"
+            echo "known_ambient_1px_defect=DEFERRED_ROOT_CAUSE_UNRESOLVED"
+            echo "runtime_visual_status=PENDING_USER_ACCEPTANCE"
+            if [ -f "${UNIQUE_ROM_PATH}" ]; then
+              echo "build_status=PASS"
+              stat -c "rom_bytes=%s" "${UNIQUE_ROM_PATH}"
+              sha256sum "${UNIQUE_ROM_PATH}"
+              python3 - <<'PY'
+          import os,zlib
+          p=os.environ['UNIQUE_ROM_PATH']; crc=0
+          with open(p,'rb') as f:
+              for c in iter(lambda:f.read(1024*1024),b''): crc=zlib.crc32(c,crc)
+          print(f"rom_crc32={crc & 0xffffffff:08X}")
+          PY
+            else
+              echo "build_status=FAIL_OR_NO_ROM"
+            fi
+          } | tee evidence/PMD_G3R7B_CI_EVIDENCE.txt
+
+      - name: Upload G3R7B evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g3r7b-build-evidence
+          path: |
+            evidence/
+            soulgold/PMD_G3R7B_BUILD.log
+
+      - name: Upload G3R7B ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-PMD-G3R7B-ROM
+          path: soulgold/SoulGold-PMD-G3R7B.gba
