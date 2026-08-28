@@ -13,6 +13,7 @@ extern const struct PmdGbaAction gPmdCyndaquilPlayerWalkAction;
 extern const struct PmdGbaAction gPmdCyndaquilPlayerDeepBreathAction;
 extern const struct PmdGbaAction gPmdCyndaquilPlayerNodAction;
 extern const struct PmdGbaAction gPmdCyndaquilPlayerSitAction;
+extern const struct PmdGbaAction gPmdCyndaquilPlayerRotateAction;
 
 extern const struct PmdGbaAction gPmdCyndaquilOpponentHomeAction;
 extern const struct PmdGbaAction gPmdCyndaquilOpponentIdleAction;
@@ -20,6 +21,7 @@ extern const struct PmdGbaAction gPmdCyndaquilOpponentWalkAction;
 extern const struct PmdGbaAction gPmdCyndaquilOpponentDeepBreathAction;
 extern const struct PmdGbaAction gPmdCyndaquilOpponentNodAction;
 extern const struct PmdGbaAction gPmdCyndaquilOpponentSitAction;
+extern const struct PmdGbaAction gPmdCyndaquilOpponentRotateAction;
 
 enum PmdAmbientPhase
 {
@@ -36,10 +38,14 @@ struct PmdCyndaquilAmbientState
     u16 homeTicksLeft;
 };
 
-#define CYND_AMBIENT_ACTION_COUNT 5
+#define CYND_AMBIENT_ACTION_COUNT 6
 
 static struct PmdCyndaquilAmbientState sAmbient[PMD_GBA_MAX_BATTLERS];
 
+// G3 battle-facing policy:
+// every ambient action starts from the selected 45-degree source row and must
+// settle back to the same 45-degree HOME. Transitional turning is permitted
+// when the source action naturally returns, which is why Rotate remains valid.
 static const u16 sCyndaquilHomeHolds[CYND_AMBIENT_ACTION_COUNT] =
 {
     28, // Idle
@@ -47,6 +53,7 @@ static const u16 sCyndaquilHomeHolds[CYND_AMBIENT_ACTION_COUNT] =
     30, // DeepBreath
     24, // Nod
     34, // Sit
+    24, // Rotate
 };
 
 static const struct PmdGbaAction *GetHomeAction(u8 battler)
@@ -70,8 +77,10 @@ static const struct PmdGbaAction *GetAmbientAction(u8 battler, u8 sequenceIndex)
         return player ? &gPmdCyndaquilPlayerDeepBreathAction : &gPmdCyndaquilOpponentDeepBreathAction;
     case 3:
         return player ? &gPmdCyndaquilPlayerNodAction : &gPmdCyndaquilOpponentNodAction;
-    default:
+    case 4:
         return player ? &gPmdCyndaquilPlayerSitAction : &gPmdCyndaquilOpponentSitAction;
+    default:
+        return player ? &gPmdCyndaquilPlayerRotateAction : &gPmdCyndaquilOpponentRotateAction;
     }
 }
 
