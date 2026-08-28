@@ -66,12 +66,14 @@ static void SoulGold_PresentSlot(u8 battler, u8 cacheSlot)
         return;
 
     sprite = &gSprites[spriteId];
+    if (sprite->images == NULL)
+        return;
 
-    // Opponent species frontAnimFrames may expose only animation 0. PMD
-    // rolling-cache presentation always uses the generic 0/1 frame table after
-    // the stock entry animation has released ownership.
-    sprite->anims = gAnims_MonPic;
-    StartSpriteAnim(sprite, cacheSlot);
+    // Critical compatibility rule:
+    // copy the selected backing image directly to this battler's OBJ tiles.
+    // Do NOT replace sprite->anims. Native SoulGold front/back animation tables
+    // remain intact for send-out, affine/body effects and later combat owners.
+    RequestSpriteFrameImageCopy(cacheSlot, sprite->oam.tileNum, sprite->images);
 }
 
 static void SoulGold_SetPresentationOffset(u8 battler, s16 x, s16 y)
@@ -81,9 +83,8 @@ static void SoulGold_SetPresentationOffset(u8 battler, s16 x, s16 y)
     if (spriteId >= MAX_SPRITES)
         return;
 
-    // G1 uses x2/y2 only while SoulGold_CanPresentBattler() is true.
-    // G2 must introduce explicit HOME/suspend ownership before combat actions
-    // are allowed to coexist with non-zero PMD presentation offsets.
+    // G1 frame-swap evidence keeps these values at 0/0. G2 introduces explicit
+    // HOME/suspend ownership before Rich Ambient displacement is enabled.
     gSprites[spriteId].x2 = x;
     gSprites[spriteId].y2 = y;
 }
