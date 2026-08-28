@@ -1,0 +1,197 @@
+name: SoulGold PMD G3R10 Sleep Entry Transition Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "tools/convert_soulgold_g3r10_special_state.py"
+      - "tools/emit_soulgold_g3r10_special_state_c.py"
+      - "tools/prepare_soulgold_g3r10_special_state_assets.py"
+      - "tools/install_soulgold_g3r10_sleep_entry.py"
+      - ".github/workflows/soulgold-pmd-g3r10-sleep-entry-build.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  UNIQUE_ROM_PATH: soulgold/SoulGold-PMD-G3R10.gba
+
+jobs:
+  compile-g3r10:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3 python3-pil
+      - name: Prepare G3R10 special-state transition assets
+        run: |
+          python3 framework/tools/prepare_soulgold_g3r10_special_state_assets.py \
+            --framework-root framework --spritecollab spritecollab \
+            --soulgold soulgold --output g3r10_assets
+      - name: Audit per-action source views
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path('g3r10_assets/G3R10_SPECIAL_STATE_ASSET_SUMMARY.json').read_text())
+          assert s['phase']=='G3R10_SLEEP_ENTRY_TRANSITION_ASSETS'
+          for key,rec in s['targets'].items():
+              assert rec['Sleep']['source_layout']=='DIRECTIONLESS_SINGLE_ROW'
+              assert rec['Sleep']['applied_direction'] is None
+              assert rec['EventSleep']['source_layout']=='DIRECTIONAL_8_ROWS'
+              assert rec['EventSleep']['applied_direction']==rec['requested_battle_direction']
+              assert rec['EventSleep']['durations']==[30,35]
+              assert rec['EventSleep']['visible_pixel_conservation']
+              assert rec['Wake']['source_layout']=='DIRECTIONAL_8_ROWS'
+              assert rec['Wake']['applied_direction']==rec['requested_battle_direction']
+              assert rec['Wake']['durations']==[8,6,14,4,10]
+              assert rec['Wake']['visible_pixel_conservation']
+          print('G3R10 per-action special-state source views PASS')
+          PY
+      - name: Install G3R10 sleep-entry runtime
+        run: |
+          python3 framework/tools/install_soulgold_g3r10_sleep_entry.py \
+            --framework-root framework --soulgold soulgold \
+            --assets-staging g3r10_assets/staging
+      - name: Audit sleep-entry ownership invariants
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('soulgold/src/pmd_soulgold_prototype.c').read_text()
+          a=Path('soulgold/src/pmd_soulgold_adapter.c').read_text()
+          s=Path('soulgold/PMD_G3R10_INSTALL_STATUS.txt').read_text()
+          assert 'PMD_PHASE_SLEEP_ENTER' in p
+          assert 'static bool32 BindEventSleep' in p
+          assert 'state->sleepEnterPending = TRUE;' in p
+          assert 'if (!gDoingBattleAnim && !BindEventSleep(battler, profile))' in p
+          assert 'if (PmdGbaRuntime_IsComplete(battler))' in p
+          assert 'return state->profile->shadowEventSleep;' in p
+          assert 'gPmdCyndaquilPlayerWakeAction' in p
+          assert 'gPmdMarillOpponentWakeAction' in p
+          assert 'BindWake' not in p
+          assert 'wake_runtime=DEFERRED_NATIVE_ATTACK_CANCELER_SYNC_REQUIRED' in s
+          assert 'status_authority=SOULGOLD_STATUS1_SLEEP' in s
+          assert 'combat_status_logic=UNCHANGED_SOULGOLD_NATIVE' in s
+          assert 'if (gDoingBattleAnim && !sPmdReactivePresentation[battler])' in a
+          assert 'sPmdPersistentPresentation' in a
+          c=Path('soulgold/src/battle_move_resolution.c').read_text()
+          assert 'static enum CancelerResult CancelerAsleepOrFrozen' in c
+          assert 'gBattleMons[ctx->battlerAtk].status1 &= ~STATUS1_SLEEP;' in c
+          print('G3R10 sleep-entry presentation ownership PASS')
+          PY
+          grep -q ".loop = FALSE" soulgold/src/pmd_cyndaquil_player_event_sleep.c
+          grep -q ".loop = FALSE" soulgold/src/pmd_marill_opponent_event_sleep.c
+          grep -q ".loop = FALSE" soulgold/src/pmd_cyndaquil_player_wake.c
+          grep -q ".loop = FALSE" soulgold/src/pmd_marill_opponent_wake.c
+          test -z "$(git -C soulgold diff -- src/save.c src/save_failed_screen.c include/save.h)"
+      - name: Build SoulGold G3R10
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee PMD_G3R10_BUILD.log
+      - name: Audit PMD warnings or errors
+        run: |
+          if grep -E "src/pmd_.*(warning:|error:)" soulgold/PMD_G3R10_BUILD.log; then exit 1; fi
+      - name: Verify symbols and ROM
+        run: |
+          mkdir -p evidence
+          arm-none-eabi-nm -C soulgold/Soulgold_Beta_1.elf | sort > evidence/PMD_G3R10_SYMBOLS.txt
+          for required in \
+            PmdSoulGoldPrototype_Tick \
+            gPmdCyndaquilPlayerEventSleepAction \
+            gPmdCyndaquilPlayerEventSleepShadowAction \
+            gPmdCyndaquilPlayerWakeAction \
+            gPmdCyndaquilPlayerWakeShadowAction \
+            gPmdMarillOpponentEventSleepAction \
+            gPmdMarillOpponentEventSleepShadowAction \
+            gPmdMarillOpponentWakeAction \
+            gPmdMarillOpponentWakeShadowAction; do
+            grep -q "${required}$" evidence/PMD_G3R10_SYMBOLS.txt || exit 1
+          done
+          cp "${ROM_PATH}" "${UNIQUE_ROM_PATH}"
+          test "$(stat -c %s "${UNIQUE_ROM_PATH}")" -eq 33554432
+      - name: Record G3R10 evidence
+        if: always()
+        run: |
+          mkdir -p evidence/installed_source
+          cp soulgold/PMD_G3R10_INSTALL_STATUS.txt evidence/ || true
+          cp soulgold/PMD_G3R8C_INSTALL_STATUS.txt evidence/ || true
+          cp g3r10_assets/G3R10_SPECIAL_STATE_ASSET_SUMMARY.json evidence/ || true
+          cp soulgold/src/pmd_soulgold_adapter.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_soulgold_prototype.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_cyndaquil_player_event_sleep.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_cyndaquil_player_wake.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_marill_opponent_event_sleep.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_marill_opponent_wake.c evidence/installed_source/ || true
+          {
+            echo "SoulGold PMD G3R10 sleep-entry transition evidence"
+            echo "framework_commit=${GITHUB_SHA}"
+            echo "soulgold_revision=${SOULGOLD_REV}"
+            echo "spritecollab_revision=${SPRITECOLLAB_REV}"
+            echo "event_sleep_view=PMDCOLLAB_DIRECTIONAL_SOURCE_ROW"
+            echo "sleep_view=PMDCOLLAB_DIRECTIONLESS_SOURCE_AUTHORITY"
+            echo "event_sleep_trigger=STATUS1_SLEEP_FALSE_TO_TRUE_EDGE"
+            echo "event_sleep_busy_policy=DEFER_WHILE_gDoingBattleAnim"
+            echo "wake_assets=SOURCE_READY"
+            echo "wake_runtime=DEFERRED_NATIVE_ATTACK_CANCELER_SYNC_REQUIRED"
+            echo "combat_logic=SOULGOLD_NATIVE_UNCHANGED"
+            echo "known_ambient_1px_defect=DEFERRED_ROOT_CAUSE_UNRESOLVED"
+            echo "runtime_visual_status=PENDING_USER_DEFERRED_TESTING"
+            if [ -f "${UNIQUE_ROM_PATH}" ]; then
+              echo "build_status=PASS"
+              stat -c "rom_bytes=%s" "${UNIQUE_ROM_PATH}"
+              sha256sum "${UNIQUE_ROM_PATH}"
+              python3 - <<'PY'
+          import os,zlib
+          p=os.environ['UNIQUE_ROM_PATH']; crc=0
+          with open(p,'rb') as f:
+              for c in iter(lambda:f.read(1024*1024),b''): crc=zlib.crc32(c,crc)
+          print(f"rom_crc32={crc & 0xffffffff:08X}")
+          PY
+            else
+              echo "build_status=FAIL_OR_NO_ROM"
+            fi
+          } | tee evidence/PMD_G3R10_CI_EVIDENCE.txt
+      - name: Upload G3R10 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g3r10-build-evidence
+          path: |
+            evidence/
+            soulgold/PMD_G3R10_BUILD.log
+      - name: Upload G3R10 ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-PMD-G3R10-ROM
+          path: soulgold/SoulGold-PMD-G3R10.gba
