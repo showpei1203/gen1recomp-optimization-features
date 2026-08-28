@@ -82,7 +82,8 @@ jobs:
           import json
           summary = json.load(open("g3r4_assets/G3R4_ASSET_SUMMARY.json", encoding="utf-8"))
           assert summary["phase"] == "G3R4_REGRESSION_RECOVERY"
-          assert summary["body_anchor_policy"] == "PMD_BODY_CENTER_PER_FRAME_G2_RESTORED"
+          assert summary["body_anchor_policy"] == "PMD_BODY_CENTER_PER_FRAME_G2_RESTORED_SPECIES_CLIP_SAFE"
+          assert summary["desired_g2_anchor"] == [32, 44]
           assert summary["shadow_policy"].startswith("NOT_INCLUDED_IN_BODY")
           expected = {
               "Cyndaquil_player": ("Cyndaquil", "player", "UpRight"),
@@ -91,12 +92,17 @@ jobs:
           for key, values in expected.items():
               rec = summary["targets"][key]
               assert (rec["species"], rec["variant"], rec["direction"]) == values
+              ax, ay = rec["resolved_anchor"]
+              xlo, xhi = rec["legal_anchor_intersection"]["x"]
+              ylo, yhi = rec["legal_anchor_intersection"]["y"]
+              assert xlo <= ax <= xhi and ylo <= ay <= yhi
               slug = rec["species"].lower()
               manifest = json.load(open(f"soulgold/graphics/pmd/{slug}/{rec['variant']}/manifest.ir.json", encoding="utf-8"))
               assert manifest["grounding"]["body_anchor_policy"] == "PMD_BODY_CENTER_PER_FRAME_G2_RESTORED"
               assert manifest["shadow"]["included_in_body_frames"] is False
               assert manifest["shadow"]["policy"] == "SEPARATE_GROUND_LAYER_REQUIRED_AFTER_BODY_RECOVERY"
               anchor = manifest["body_profile"]["anchor_target"]
+              assert [anchor["x"], anchor["y"]] == rec["resolved_anchor"]
               for action in ("Idle", "Walk", "Nod", "Rotate"):
                   frames = manifest["actions"][action]["frames"]
                   assert frames
@@ -104,7 +110,7 @@ jobs:
                       assert f["source_center_x"] + f["paste_x"] == anchor["x"]
                       assert f["source_center_y"] + f["paste_y"] == anchor["y"]
                       assert (f["presentation_dx"], f["presentation_dy"]) == (0, 0)
-          print("G3R4 body-center + separate-shadow + two-sided metadata PASS")
+          print("G3R4 species clip-safe body-center + separate-shadow metadata PASS")
           PY
           test -z "$(git -C soulgold diff -- src/data.c)" || exit 1
           ! grep -R "sprite->anims = gAnims_MonPic" -n soulgold/src/pmd_* || exit 1
@@ -167,7 +173,7 @@ jobs:
             echo "player=Cyndaquil UpRight"
             echo "opponent=Marill DownLeft"
             echo "ambient=HOME+Idle+Walk+Nod+Rotate"
-            echo "body_anchor=PMD green body center per frame (G2 restored)"
+            echo "body_anchor=PMD green body center per frame with clip-safe species anchor"
             echo "shadow_in_body=FALSE"
             echo "created_sprite_vram_prime_paths=2"
             echo "opponent_callback_whitelist=REMOVED"
