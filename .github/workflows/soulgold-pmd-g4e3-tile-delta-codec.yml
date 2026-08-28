@@ -1,0 +1,171 @@
+name: SoulGold PMD G4E3 Tile Delta Codec Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "tools/audit_soulgold_g4d_lossless_single_obj.py"
+      - "tools/audit_soulgold_g4e_delta_pack.py"
+      - "tools/audit_soulgold_g4e3_tile_delta_codec.py"
+      - ".github/workflows/soulgold-pmd-g4e3-tile-delta-codec.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  UNIQUE_ROM_PATH: soulgold/SoulGold-PMD-G4E3.gba
+
+jobs:
+  audit-g4e3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3 python3-pil
+      - name: Prepare G3R11 parent assets
+        run: |
+          python3 framework/tools/prepare_soulgold_g3r10_special_state_assets.py \
+            --framework-root framework --spritecollab spritecollab \
+            --soulgold soulgold --output g4e3_assets
+      - name: Install G4B generated registry parent
+        run: |
+          python3 framework/tools/install_soulgold_g4b_generated_registry.py \
+            --framework-root framework --soulgold soulgold \
+            --assets-staging g4e3_assets/staging
+      - name: Build unchanged runtime parent
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee PMD_G4E3_BUILD.log
+      - name: Verify parent ROM
+        run: |
+          cp "${ROM_PATH}" "${UNIQUE_ROM_PATH}"
+          test "$(stat -c %s "${UNIQUE_ROM_PATH}")" -eq 33554432
+      - name: Rebuild corrected G4D authority
+        run: |
+          mkdir -p evidence
+          python3 framework/tools/audit_soulgold_g4d_lossless_single_obj.py \
+            --soulgold soulgold --spritecollab spritecollab \
+            --output evidence/G4E3_CORRECTED_G4D.json \
+            | tee evidence/G4E3_CORRECTED_G4D.txt
+          python3 - <<'PY'
+          import json
+          d=json.load(open('evidence/G4E3_CORRECTED_G4D.json'))
+          c=d['counts']
+          assert c['LOSSLESS_SINGLE_OBJ_BOTH_SIDES']==901, c
+          assert c['MULTI_OBJ_REQUIRED']==25, c
+          assert c['NATIVE_FALLBACK_MISSING_OR_INVALID_CORE']==99, c
+          assert d['source_usable_core_count']==926
+          print('Corrected G4D authority PASS',c)
+          PY
+      - name: Audit G4E3 tile-delta codec
+        run: |
+          python3 framework/tools/audit_soulgold_g4e3_tile_delta_codec.py \
+            --soulgold soulgold --spritecollab spritecollab \
+            --g4d-audit evidence/G4E3_CORRECTED_G4D.json \
+            --rom "${UNIQUE_ROM_PATH}" \
+            --output evidence/G4E3_TILE_DELTA_CODEC_AUDIT.json \
+            | tee evidence/G4E3_TILE_DELTA_CODEC_AUDIT.txt
+      - name: Verify G4E3 codec contract
+        run: |
+          python3 - <<'PY'
+          import json
+          d=json.load(open('evidence/G4E3_TILE_DELTA_CODEC_AUDIT.json'))
+          t=d['totals']
+          assert d['phase']=='G4E3_TILE_DICTIONARY_DELTA_CODEC_AUDIT'
+          assert d['activation_change']=='NONE_AUDIT_ONLY'
+          assert d['reconstruction']=='BYTE_EXACT_2048_BYTE_4BPP_FRAME_VERIFIED_FOR_EVERY_FRAME'
+          assert d['fallback']=='MISSING_INVALID_OR_MULTI_OBJ_REMAINS_NATIVE_SOULGOLD'
+          assert t['eligible_species']==901
+          assert t['species_side_packs']==1802
+          assert t['frames']>0
+          assert t['dictionary_lz77_bytes']>0
+          assert t['lz77_command_bytes']>0
+          assert t['packed_total_bytes_compressed_dictionary']>0
+          assert t['max_raw_action_command_bytes_per_battler']<=65535
+          assert d['ewram']['worst_case_four_battler_bytes']<262144
+          print('G4E3 codec contract PASS')
+          print('dict lz',t['dictionary_lz77_bytes'])
+          print('commands lz',t['lz77_command_bytes'])
+          print('packed total',t['packed_total_bytes_compressed_dictionary'])
+          print('free',d['rom']['trailing_ff_free_bytes'])
+          print('additional required',d['additional_bytes_required_beyond_current_free'])
+          print('worst 4-battler EWRAM',d['ewram']['worst_case_four_battler_bytes'])
+          PY
+      - name: Verify fallback registry remains unchanged
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          r=Path('soulgold/src/pmd_soulgold_species_registry.c').read_text()
+          p=Path('soulgold/src/pmd_soulgold_prototype.c').read_text()
+          assert r.count('.species = SPECIES_')==2
+          assert 'return NULL;' in r
+          assert 'PmdSoulGoldSpeciesRegistry_Find(GetBattlerVisualSpecies(battler), GetBattlerSide(battler))' in p
+          print('No new battler activation; native fallback preserved')
+          PY
+      - name: Audit PMD warnings or errors
+        run: |
+          if grep -E "src/pmd_.*(warning:|error:)" soulgold/PMD_G4E3_BUILD.log; then exit 1; fi
+      - name: Record G4E3 evidence
+        if: always()
+        run: |
+          {
+            echo "SoulGold PMD G4E3 Tile Delta Codec evidence"
+            echo "framework_commit=${GITHUB_SHA}"
+            echo "soulgold_revision=${SOULGOLD_REV}"
+            echo "spritecollab_revision=${SPRITECOLLAB_REV}"
+            echo "runtime_parent=G4B_G3R11"
+            echo "activation_change=NONE_AUDIT_ONLY"
+            echo "codec=LZ77_TILE_DICTIONARY_PLUS_HOME_MAP_PLUS_LZ77_TILE_DELTA_COMMANDS"
+            echo "corrected_g4d=901_SINGLE_25_MULTI_99_NATIVE_FALLBACK"
+            if [ -f "${UNIQUE_ROM_PATH}" ]; then
+              echo "build_status=PASS"
+              stat -c "rom_bytes=%s" "${UNIQUE_ROM_PATH}"
+              sha256sum "${UNIQUE_ROM_PATH}"
+            else
+              echo "build_status=FAIL_OR_NO_ROM"
+            fi
+          } | tee evidence/PMD_G4E3_CI_EVIDENCE.txt
+      - name: Upload G4E3 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g4e3-tile-delta-codec-evidence
+          path: |
+            evidence/
+            soulgold/PMD_G4E3_BUILD.log
+      - name: Upload G4E3 ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-PMD-G4E3-ROM
+          path: soulgold/SoulGold-PMD-G4E3.gba
