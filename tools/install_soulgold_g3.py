@@ -7,6 +7,8 @@ machine. It adds two narrowly-scoped host integrations:
 - src/battle_controllers.c: prime both mon image slots with PMD HOME immediately
   before the native Pokemon sprite is created.
 
+Generated G3 frames already contain authentic PMD per-frame shadows under the
+body, so send-out and ambient use one atomic body+shadow frame contract.
 The send-out animation/timing/callbacks remain native SoulGold ownership.
 """
 
@@ -141,8 +143,6 @@ def main() -> int:
 
     require_clean_exact_checkout(soulgold)
 
-    # G1/G2 renderer and interruption semantics remain intact; only G3 host
-    # adapter/manager behavior is new.
     copy_file(g2 / "pmd_gba_runtime.c", soulgold / "src" / "pmd_gba_runtime.c")
     copy_file(g2 / "pmd_gba_runtime.h", soulgold / "include" / "pmd_gba_runtime.h")
     copy_file(g3 / "pmd_soulgold_adapter.c", soulgold / "src" / "pmd_soulgold_adapter.c")
@@ -170,11 +170,12 @@ def main() -> int:
 
     status = git(soulgold, "status", "--short")
     (soulgold / "PMD_G3_INSTALL_STATUS.txt").write_text(
-        "SoulGold G3 PMD battle-facing/sendout candidate installed.\n"
+        "SoulGold G3 PMD battle-facing/sendout/shadow candidate installed.\n"
         f"baseline={SOULGOLD_REV}\n"
-        "scope=Cyndaquil HOME+Idle+Walk+DeepBreath+Nod+Sit+Rotate\n"
-        "banned_ambient=LookUp(shared-single-row)\n"
+        "scope=Cyndaquil HOME+Idle+Walk+Nod+Pose+Rotate\n"
+        "banned_ambient=LookUp,DeepBreath,Sit (shared single-row/non-directional)\n"
         "direction_policy=45-degree HOME start/end; transitional turn allowed; real directional source required\n"
+        "shadow_policy=authentic PMD per-frame Shadow.png / ShadowSize=1 / composited below body / atomic frame sync\n"
         "host_files_modified=src/battle_main.c,src/battle_controllers.c\n"
         f"sendout_prime_paths={prime_paths}\n"
         "sendout_motion_owner=SOULGOLD_NATIVE\n"
@@ -188,7 +189,7 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    print("G3 candidate prepared. Next gate: strict directional asset conversion + full compile + send-out visual test.")
+    print("G3 candidate prepared. Next gate: full compile + PMD-from-entry + shadow visual test.")
     return 0
 
 
