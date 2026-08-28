@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit SoulGold G3R5 support-stabilized PMD ambient descriptors."""
+"""Emit SoulGold G3R5 PMD shadow-grounded ambient descriptors."""
 
 from __future__ import annotations
 
@@ -25,10 +25,10 @@ def main() -> int:
 
     ir = json.loads(args.ir.read_text(encoding="utf-8"))
     grounding = ir.get("grounding", {})
-    if grounding.get("battle_vertical_authority") != "ROBUST_OPAQUE_SUPPORT_BASELINE":
-        raise SystemExit("G3R5 emitter refuses IR without ROBUST_OPAQUE_SUPPORT_BASELINE authority")
-    if ir.get("shadow", {}).get("policy") != "SEPARATE_PMD_OWNED_32X8_GROUND_OBJ":
-        raise SystemExit("G3R5 emitter refuses IR without separate PMD shadow contract")
+    if grounding.get("battle_vertical_authority") != "PMD_SHADOW_CENTER_BASELINE":
+        raise SystemExit("G3R5 emitter refuses IR without PMD_SHADOW_CENTER_BASELINE authority")
+    if ir.get("shadow", {}).get("policy") != "SEPARATE_AUTHENTIC_PMD_SHADOW_MASK":
+        raise SystemExit("G3R5 emitter refuses IR without authentic PMD shadow-mask contract")
 
     species = ir["species"]["name"]
     species_sym = sym(species)
@@ -38,9 +38,9 @@ def main() -> int:
         raise SystemExit(f"IR missing required G3R5 ambient actions: {missing}")
 
     lines = [
-        "/* Auto-generated SoulGold G3R5 support-stabilized PMD ambient descriptors. */",
-        "/* Vertical presentation offsets are bounded, audited ground-contact corrections. */",
-        "/* Shadow is a separate PMD-owned ground OBJ and is never baked into body frames. */",
+        "/* Auto-generated SoulGold G3R5 PMD shadow-grounded ambient descriptors. */",
+        "/* presentationY is derived from PMDCollab *-Shadow.png center authority. */",
+        "/* Shadow artwork/mask is a separate PMD-owned OBJ and never baked into body frames. */",
         "#include \"global.h\"",
         "#include \"pmd_gba_runtime.h\"",
         "",
@@ -87,7 +87,7 @@ def main() -> int:
     idle0 = frame_symbols[("Idle", 0)]
     home_dy = int(ir["actions"]["Idle"]["frames"][0].get("presentation_dy", 0))
     if home_dy != 0:
-        raise SystemExit(f"G3R5 Idle0 authority must remain zero-offset, got {home_dy}")
+        raise SystemExit(f"G3R5 Idle0 shadow-ground authority must remain zero-offset, got {home_dy}")
     lines.extend([
         f"static const struct PmdGbaFrame s{home_prefix}Frames[] =",
         "{",
@@ -105,7 +105,7 @@ def main() -> int:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("\n".join(lines), encoding="utf-8")
-    print(f"Wrote {args.output} (G3R5 support-stabilized, species={species}, variant={args.variant})")
+    print(f"Wrote {args.output} (G3R5 PMD-shadow-grounded, species={species}, variant={args.variant})")
     return 0
 
 
