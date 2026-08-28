@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Install SoulGold G3R5 PMD grounding + separate-shadow candidate."""
+"""Install SoulGold G3R5 PMD shadow-grounding + authentic-shadow candidate.
+
+Parent authority is G3R4B: PMD presentation must run after AnimateSprites() but
+before BuildOamBuffer(). G3R5 preserves that timing fix, then adds:
+- PMDCollab Shadow.png-center vertical grounding corrections;
+- one separate authentic PMD shadow-mask OBJ per PMD-controlled battler;
+- selective suppression/restoration of SoulGold's native enemy shadow.
+"""
 
 from __future__ import annotations
 
@@ -60,15 +67,31 @@ def patch_battle_main(path: Path) -> None:
         raise SystemExit("RunBattleSoftwareTick boundary not found")
     tick_fn = text[tick_start:tick_end]
     if "    PmdSoulGoldPrototype_Tick();\n" not in tick_fn:
-        tail = "    RunTasks();\n}"
-        if tail not in tick_fn:
-            raise SystemExit("RunBattleSoftwareTick tail anchor not found")
-        tick_fn = tick_fn.replace(tail, "    RunTasks();\n    PmdSoulGoldPrototype_Tick();\n}")
+        native = (
+            "    AnimateSprites();\n"
+            "    BuildOamBuffer();\n"
+            "    RunTextPrinters();\n"
+            "    UpdatePaletteFade();\n"
+            "    RunTasks();\n"
+        )
+        replacement = (
+            "    // G3R4B/G3R5 ownership: native callbacks run first, then PMD clamps\n"
+            "    // presentation before the visible OAM snapshot is built.\n"
+            "    AnimateSprites();\n"
+            "    PmdSoulGoldPrototype_Tick();\n"
+            "    BuildOamBuffer();\n"
+            "    RunTextPrinters();\n"
+            "    UpdatePaletteFade();\n"
+            "    RunTasks();\n"
+        )
+        if native not in tick_fn:
+            raise SystemExit("Native RunBattleSoftwareTick sequence not found; refusing blind G3R5 timing patch")
+        tick_fn = tick_fn.replace(native, replacement, 1)
         text = text[:tick_start] + tick_fn + text[tick_end:]
 
     if text != original:
         path.write_text(text, encoding="utf-8")
-        print("PATCH src/battle_main.c: G3R5 init + software tick")
+        print("PATCH src/battle_main.c: G3R4B timing preserved + G3R5 init")
 
 
 def patch_battle_gfx_sfx_util(path: Path) -> None:
@@ -181,6 +204,7 @@ def main() -> int:
 
     for slug, variant in TARGETS:
         copy_file(staging / "src" / f"pmd_{slug}_{variant}_ambient.c", soulgold / "src" / f"pmd_{slug}_{variant}_ambient.c")
+        copy_file(staging / "src" / f"pmd_{slug}_{variant}_shadow.c", soulgold / "src" / f"pmd_{slug}_{variant}_shadow.c")
         src_graphics = staging / "graphics" / "pmd" / slug / variant
         dst_graphics = soulgold / "graphics" / "pmd" / slug / variant
         if not src_graphics.is_dir():
@@ -196,15 +220,18 @@ def main() -> int:
 
     status = git(soulgold, "status", "--short")
     (soulgold / "PMD_G3R5_INSTALL_STATUS.txt").write_text(
-        "SoulGold G3R5 PMD ground-contact + shadow-ownership candidate installed.\n"
+        "SoulGold G3R5 PMD shadow-ground + authentic-shadow candidate installed.\n"
         f"baseline={SOULGOLD_REV}\n"
+        "parent=G3R4B_OAM_TIMING_PASS\n"
         "player=Cyndaquil PMD UpRight HOME+Idle+Walk+Nod+Rotate\n"
         "opponent=Marill PMD DownLeft HOME+Idle+Walk+Nod+Rotate\n"
         "body_canvas=G3R4 clip-safe green-center\n"
-        "battle_grounding=robust opaque support baseline to Idle0\n"
-        "shadow=separate PMD-owned compact 32x8 OBJ for both sides\n"
-        "native PMD-species shadow=hidden\n"
-        "shadow_follows=base x/y only; ignores PMD presentation x2/y2\n"
+        "battle_grounding=PMDCollab Shadow.png center baseline to Idle0\n"
+        "shadow=separate authentic PMDCollab Idle0 component-mask OBJ for both sides\n"
+        "shadow_size=from pinned AnimData.xml ShadowSize\n"
+        "native PMD-opponent shadow=selectively suppressed; restored when PMD ownership ends\n"
+        "shadow_follows=body base x/y plus PMD-authored offset; ignores presentation x2/y2\n"
+        "software_tick=AnimateSprites -> PMD Tick -> BuildOamBuffer -> RunTasks\n"
         f"template_prime_paths={template_paths}\n"
         f"created_sprite_vram_prime_paths={created_paths}\n"
         "save_structure=UNCHANGED\n"
@@ -214,7 +241,7 @@ def main() -> int:
         "runtime_status=PENDING\n\n" + status + "\n",
         encoding="utf-8",
     )
-    print("G3R5 installed. Next gate: compile + support correction audit + separate-shadow runtime test.")
+    print("G3R5 installed. Gate: compile + PMD shadow-center correction + authentic separate-shadow runtime test.")
     return 0
 
 
