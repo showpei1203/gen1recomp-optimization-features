@@ -12,7 +12,9 @@
 
 static bool32 SoulGold_CanPresentBattler(u8 battler)
 {
+    enum BattlerPosition position;
     u8 spriteId;
+    struct Sprite *sprite;
 
     if (battler >= gBattlersCount)
         return FALSE;
@@ -21,6 +23,15 @@ static bool32 SoulGold_CanPresentBattler(u8 battler)
 
     spriteId = gBattlerSpriteIds[battler];
     if (spriteId >= MAX_SPRITES || !gSprites[spriteId].inUse || gSprites[spriteId].invisible)
+        return FALSE;
+
+    position = GetBattlerPosition(battler);
+    sprite = &gSprites[spriteId];
+
+    // Do not mistake trainer/send-out slide sprites for the actual Pokémon.
+    // A real mon battler created from SetMultiuseSpriteTemplateToPokemon owns
+    // this position's MonSpritesGfx frame-image table.
+    if (sprite->images != gMonSpritesGfxPtr->frameImages[position])
         return FALSE;
 
     // G1 must not fight existing battle-presentation owners.
