@@ -97,25 +97,42 @@ static const struct PmdGbaHostOps sSoulGoldPmdHostOps =
 
 bool32 PmdSoulGold_PrimeBodyFrame(u8 battler, const struct PmdGbaFrame *frame)
 {
-    enum BattlerPosition position;
     u8 slot;
+    const struct SpriteFrameImage *images;
 
     if (frame == NULL || frame->gfx == NULL)
         return FALSE;
-    if (gMonSpritesGfxPtr == NULL || battler >= gBattlersCount)
+    if (battler >= gBattlersCount)
         return FALSE;
 
-    position = GetBattlerPosition(battler);
+    // This function is called immediately after
+    // SetMultiuseSpriteTemplateToPokemon() and immediately before CreateSprite().
+    // Therefore gMultiuseSpriteTemplate.images is the authoritative image array
+    // for the exact Pokemon sprite that SoulGold is about to create. Do not
+    // assume gMonSpritesGfxPtr owns that array at this point: SoulGold may use
+    // another MonSpritesGfxManager while preparing send-out graphics.
+    images = gMultiuseSpriteTemplate.images;
+    if (images == NULL)
+        return FALSE;
 
-    // G3 send-out rule: before SoulGold creates the Pokemon OBJ, replace both
-    // resident image slots with the same PMD HOME body. Native send-out motion,
-    // affine callbacks and timing remain authoritative, but frame 0/1 can no
-    // longer reveal the legacy battle sprite during intro/recreation.
+    // Both resident image slots must be real full-mon frame buffers. The image
+    // descriptors are const metadata, but their data pointers refer to the
+    // writable EWRAM backing buffers managed by SoulGold.
     for (slot = 0; slot < PMD_GBA_CACHE_SLOTS; slot++)
     {
-        u8 *dest = gMonSpritesGfxPtr->spritesGfx[position] + slot * MON_PIC_SIZE;
-        DecompressDataWithHeaderWram(frame->gfx, dest);
+        if (images[slot].data == NULL)
+            return FALSE;
+        if (images[slot].relativeFrames)
+            return FALSE;
+        if (images[slot].size < MON_PIC_SIZE)
+            return FALSE;
     }
+
+    // G3R1 send-out rule: prime the exact image buffers that CreateSprite() will
+    // consume. Both frame indices receive the same PMD HOME body+shadow frame,
+    // so native send-out frame 0/1 transitions cannot expose the legacy body.
+    for (slot = 0; slot < PMD_GBA_CACHE_SLOTS; slot++)
+        DecompressDataWithHeaderWram(frame->gfx, (void *)images[slot].data);
 
     return TRUE;
 }
