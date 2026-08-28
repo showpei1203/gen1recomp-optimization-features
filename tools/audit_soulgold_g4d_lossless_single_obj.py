@@ -6,14 +6,12 @@ screen. G3R6B already proved that this is too pessimistic: PMD canvases may be
 larger than 64x64 while every opaque pixel still fits a 64x64 GBA battler OBJ.
 Transparent source overflow is harmless; opaque overflow is not.
 
-G4D therefore audits every core action frame on both SoulGold battle views. It
-aligns PMDCollab's green body-center marker to ONE common action-independent
-64x64 anchor per side, intersects the exact legal anchor ranges of all opaque
-pixels, and requires every visible source pixel to fit. No crop, scale,
-resample, or per-action body-center drift is permitted.
-
-Species that fail remain candidates for a later multi-OBJ renderer. Missing or
-malformed PMD source remains native SoulGold by policy.
+G4D audits every core action frame on both SoulGold battle views. It aligns the
+PMDCollab green body-center marker to one common action-independent 64x64 anchor
+per side and requires every visible source pixel to fit. Missing or malformed
+PMD source is native-fallback authority, not a multi-OBJ request. Multi-OBJ is
+reserved strictly for otherwise-valid source whose visible geometry cannot fit
+a single 64x64 OBJ or whose core actions cannot share one safe anchor.
 """
 from __future__ import annotations
 
@@ -52,11 +50,10 @@ def crop_frame(sheet: Image.Image, action: pmd.ResolvedAction, direction: str, i
 
 
 def opaque_bbox(frame: Image.Image):
-    alpha = frame.getchannel("A")
-    box = alpha.getbbox()
+    box = frame.getchannel("A").getbbox()
     if box is None:
         raise ValueError("frame has no opaque pixels")
-    return box  # left, top, right-exclusive, bottom-exclusive
+    return box
 
 
 def legal_anchor(center: tuple[int, int], box: tuple[int, int, int, int]) -> dict:
@@ -97,8 +94,7 @@ def inspect_view(species_dir: Path, actions: dict, direction: str) -> dict:
                 body = crop_frame(anim, action, direction, i)
                 off = crop_frame(offsets, action, direction, i)
                 center = pmd.body_center_from_offsets(off)
-                box = opaque_bbox(body)
-                legal = legal_anchor(center, box)
+                legal = legal_anchor(center, opaque_bbox(body))
                 fxlo, fxhi = legal["x"]
                 fylo, fyhi = legal["y"]
                 if fxlo > fxhi or fylo > fyhi:
@@ -142,6 +138,12 @@ def inspect_view(species_dir: Path, actions: dict, direction: str) -> dict:
         "failure": failure,
         "actions": action_records,
     }
+
+
+def is_geometry_failure(failure: str | None) -> bool:
+    if failure is None:
+        return False
+    return failure.startswith("NO_COMMON_CORE_ANCHOR:") or "opaque extent cannot fit 64x64 at any anchor" in failure
 
 
 def main() -> int:
@@ -188,24 +190,25 @@ def main() -> int:
 
         for side, direction in VIEWS:
             rec["views"][side] = inspect_view(species_dir, actions, direction)
-        if all(rec["views"][side]["lossless_single_obj"] for side, _ in VIEWS):
+
+        failures = [v["failure"] for v in rec["views"].values() if v["failure"]]
+        if not failures:
             rec["eligibility"] = "LOSSLESS_SINGLE_OBJ_BOTH_SIDES"
             rec["reason"] = "ALL_CORE_OPAQUE_PIXELS_FIT_ONE_COMMON_64X64_ANCHOR_PER_SIDE"
-        elif any(
-            v["failure"] and ("FileNotFoundError" in v["failure"] or "ACTION" in v["failure"] or "size mismatch" in v["failure"])
-            for v in rec["views"].values()
-        ):
-            rec["eligibility"] = "NATIVE_FALLBACK_MISSING_OR_INVALID_CORE"
-            rec["reason"] = "CORE_SOURCE_INVALID_OR_INCOMPLETE"
-        else:
+        elif all(is_geometry_failure(failure) for failure in failures):
             rec["eligibility"] = "MULTI_OBJ_REQUIRED"
-            rec["reason"] = "VISIBLE_PIXELS_OR_COMMON_BODY_ANCHOR_EXCEED_SINGLE_OBJ_ON_ONE_OR_BOTH_SIDES"
+            rec["reason"] = "VALID_CORE_SOURCE_EXCEEDS_SINGLE_OBJ_GEOMETRY_OR_COMMON_ANCHOR"
+        else:
+            rec["eligibility"] = "NATIVE_FALLBACK_MISSING_OR_INVALID_CORE"
+            rec["reason"] = "CORE_SOURCE_OR_METADATA_INVALID_OR_INCOMPLETE"
+
         counts[rec["eligibility"]] += 1
         records.append(rec)
 
-    source_complete = counts["LOSSLESS_SINGLE_OBJ_BOTH_SIDES"] + counts["MULTI_OBJ_REQUIRED"]
+    source_usable = counts["LOSSLESS_SINGLE_OBJ_BOTH_SIDES"] + counts["MULTI_OBJ_REQUIRED"]
     summary = {
         "phase": "G4D_LOSSLESS_SINGLE_OBJ_AUDIT",
+        "classification_revision": "G4D_INVALID_METADATA_NATIVE_FALLBACK",
         "soulgold_revision": SOULGOLD_REV,
         "spritecollab_revision": SPRITECOLLAB_REV,
         "national_dex_count": len(dex_names),
@@ -217,8 +220,9 @@ def main() -> int:
         "opaque_source_overflow": "FORBIDDEN_FOR_SINGLE_OBJ",
         "crop_scale_resample": "FORBIDDEN",
         "fallback": "MISSING_OR_INVALID_PMD_REMAINS_NATIVE_SOULGOLD",
+        "multi_obj_definition": "VALID_PMD_CORE_SOURCE_WITH_GEOMETRIC_SINGLE_OBJ_FAILURE_ONLY",
         "counts": counts,
-        "source_complete_core_count": source_complete,
+        "source_usable_core_count": source_usable,
         "records": records,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
