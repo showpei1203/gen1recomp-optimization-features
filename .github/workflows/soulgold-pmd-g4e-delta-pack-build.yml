@@ -1,0 +1,170 @@
+name: SoulGold PMD G4E Delta Pack Storage Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "tools/audit_soulgold_g4e_delta_pack.py"
+      - ".github/workflows/soulgold-pmd-g4e-delta-pack-build.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  UNIQUE_ROM_PATH: soulgold/SoulGold-PMD-G4E.gba
+
+jobs:
+  audit-g4e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3 python3-pil
+      - name: Prepare G3R11 parent assets
+        run: |
+          python3 framework/tools/prepare_soulgold_g3r10_special_state_assets.py \
+            --framework-root framework --spritecollab spritecollab \
+            --soulgold soulgold --output g4e_assets
+      - name: Install G4B generated registry parent
+        run: |
+          python3 framework/tools/install_soulgold_g4b_generated_registry.py \
+            --framework-root framework --soulgold soulgold \
+            --assets-staging g4e_assets/staging
+      - name: Build unchanged runtime parent
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee PMD_G4E_BUILD.log
+      - name: Verify parent ROM
+        run: |
+          cp "${ROM_PATH}" "${UNIQUE_ROM_PATH}"
+          test "$(stat -c %s "${UNIQUE_ROM_PATH}")" -eq 33554432
+      - name: Rebuild G4D lossless eligibility authority
+        run: |
+          mkdir -p evidence
+          python3 framework/tools/audit_soulgold_g4d_lossless_single_obj.py \
+            --soulgold soulgold --spritecollab spritecollab \
+            --output evidence/G4E_G4D_LOSSLESS_SINGLE_OBJ.json \
+            | tee evidence/G4E_G4D_LOSSLESS_SINGLE_OBJ.txt
+          python3 - <<'PY'
+          import json
+          d=json.load(open('evidence/G4E_G4D_LOSSLESS_SINGLE_OBJ.json'))
+          assert d['counts']['LOSSLESS_SINGLE_OBJ_BOTH_SIDES'] == 901
+          assert d['counts']['MULTI_OBJ_REQUIRED'] == 30
+          assert d['counts']['NATIVE_FALLBACK_MISSING_OR_INVALID_CORE'] == 94
+          print('G4D authority reproduced exactly')
+          PY
+      - name: Audit G4E delta-pack storage
+        run: |
+          python3 framework/tools/audit_soulgold_g4e_delta_pack.py \
+            --soulgold soulgold --spritecollab spritecollab \
+            --g4d-audit evidence/G4E_G4D_LOSSLESS_SINGLE_OBJ.json \
+            --rom "${UNIQUE_ROM_PATH}" \
+            --output evidence/G4E_DELTA_PACK_STORAGE_AUDIT.json \
+            | tee evidence/G4E_DELTA_PACK_STORAGE_AUDIT.txt
+      - name: Verify G4E storage contract
+        run: |
+          python3 - <<'PY'
+          import json
+          d=json.load(open('evidence/G4E_DELTA_PACK_STORAGE_AUDIT.json'))
+          t=d['totals']
+          assert d['phase']=='G4E_DELTA_PACK_STORAGE_AUDIT'
+          assert d['activation_change']=='NONE_AUDIT_ONLY'
+          assert d['body_storage']=='ONE_GBA_LZ77_HOME_KEYFRAME_PLUS_EXACT_CHANGED_BYTE_RUN_PATCHES'
+          assert d['fallback']=='MISSING_INVALID_OR_NON_SINGLE_OBJ_REMAINS_NATIVE_SOULGOLD'
+          assert t['eligible_species']==901
+          assert t['species_side_packs']==1802
+          assert t['frames'] > 0
+          assert t['home_lz_bytes'] > 0
+          assert t['patch_bytes'] > 0
+          assert t['packed_total_bytes'] > 0
+          print('G4E storage model contract PASS')
+          print('packed bytes',t['packed_total_bytes'])
+          print('free bytes',d['rom']['trailing_ff_free_bytes'])
+          print('additional required',d['additional_bytes_required_beyond_current_free'])
+          PY
+      - name: Verify native fallback registry remains unchanged
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          r=Path('soulgold/src/pmd_soulgold_species_registry.c').read_text()
+          p=Path('soulgold/src/pmd_soulgold_prototype.c').read_text()
+          assert r.count('.species = SPECIES_') == 2
+          assert 'return NULL;' in r
+          assert 'PmdSoulGoldSpeciesRegistry_Find(GetBattlerVisualSpecies(battler), GetBattlerSide(battler))' in p
+          print('G4E audit activates no new battlers; fallback boundary preserved')
+          PY
+      - name: Audit PMD warnings or errors
+        run: |
+          if grep -E "src/pmd_.*(warning:|error:)" soulgold/PMD_G4E_BUILD.log; then exit 1; fi
+      - name: Record G4E evidence
+        if: always()
+        run: |
+          {
+            echo "SoulGold PMD G4E Delta Pack Storage evidence"
+            echo "framework_commit=${GITHUB_SHA}"
+            echo "soulgold_revision=${SOULGOLD_REV}"
+            echo "spritecollab_revision=${SPRITECOLLAB_REV}"
+            echo "runtime_parent=G4B_G3R11"
+            echo "activation_change=NONE_AUDIT_ONLY"
+            echo "body_storage=HOME_LZ77_PLUS_CHANGED_BYTE_RUN_PATCHES"
+            echo "shadow_storage=PMDCOLLAB_METADATA_PLUS_SHARED_MASKS"
+            echo "missing_or_unsafe_pmd=KEEP_NATIVE_SOULGOLD_BATTLER"
+            if [ -f "${UNIQUE_ROM_PATH}" ]; then
+              echo "build_status=PASS"
+              stat -c "rom_bytes=%s" "${UNIQUE_ROM_PATH}"
+              sha256sum "${UNIQUE_ROM_PATH}"
+              python3 - <<'PY'
+          import os,zlib
+          p=os.environ['UNIQUE_ROM_PATH']; crc=0
+          with open(p,'rb') as f:
+              for c in iter(lambda:f.read(1024*1024),b''): crc=zlib.crc32(c,crc)
+          print(f"rom_crc32={crc & 0xffffffff:08X}")
+          PY
+            else
+              echo "build_status=FAIL_OR_NO_ROM"
+            fi
+          } | tee evidence/PMD_G4E_CI_EVIDENCE.txt
+      - name: Upload G4E evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g4e-delta-pack-evidence
+          path: |
+            evidence/
+            soulgold/PMD_G4E_BUILD.log
+      - name: Upload G4E ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-PMD-G4E-ROM
+          path: soulgold/SoulGold-PMD-G4E.gba
