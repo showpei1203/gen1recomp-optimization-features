@@ -92,11 +92,24 @@ jobs:
           GAME_REVISION: 0
           GAME_LANGUAGE: ENGLISH
           COMPARE: 0
-          UNUSED_ERROR: 1
-          DEPRECATED_ERROR: 1
+          # The pinned SoulGold host currently has an unrelated unused local
+          # in src/comfy_anim.c. Do not let a pre-existing host warning mask
+          # whether the PMD integration itself compiles and links.
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
         run: |
           set -o pipefail
           make -j$(nproc) -O all 2>&1 | tee PMD_G1_BUILD.log
+
+      - name: Audit PMD sources for warnings or errors
+        if: always()
+        run: |
+          if [ -f soulgold/PMD_G1_BUILD.log ]; then
+            if grep -E "src/pmd_.*(warning:|error:)" soulgold/PMD_G1_BUILD.log; then
+              echo "PMD source emitted a compiler warning/error; rejecting G1 compile gate." >&2
+              exit 1
+            fi
+          fi
 
       - name: Record build evidence
         if: always()
@@ -108,6 +121,8 @@ jobs:
             echo "spritecollab_revision=${SPRITECOLLAB_REV}"
             echo "framework_commit=${GITHUB_SHA}"
             echo "gate=Cyndaquil Walk 4F through 2-slot rolling cache"
+            echo "host_unrelated_unused_deprecated_warnings_nonfatal=true"
+            echo "pmd_source_warning_audit=REQUIRED_ZERO"
             echo "runtime_visual_status=PENDING"
             if [ -f "${ROM_PATH}" ]; then
               echo "build_status=PASS"
