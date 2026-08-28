@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-ACTIONS = ("Idle", "Walk", "DeepBreath", "Nod", "Sit", "Rotate")
+ACTIONS = ("Idle", "Walk", "Nod", "Pose", "Rotate")
 
 
 def sym(text: str) -> str:
@@ -33,6 +33,7 @@ def main() -> int:
 
     lines = [
         "/* Auto-generated SoulGold G3 battle-facing Rich Ambient descriptors. */",
+        "/* PMD shadows are already composited into each generated body frame. */",
         "#include \"global.h\"",
         "#include \"pmd_gba_runtime.h\"",
         "",
@@ -90,7 +91,7 @@ def main() -> int:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("\n".join(lines), encoding="utf-8")
-    print(f"Wrote {args.output} (G3 battle-facing-compatible, variant={args.variant})")
+    print(f"Wrote {args.output} (G3 directional+shadow, variant={args.variant})")
     return 0
 
 
