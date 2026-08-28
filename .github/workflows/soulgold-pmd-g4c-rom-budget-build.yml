@@ -1,0 +1,148 @@
+name: SoulGold PMD G4C ROM Storage Budget Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "tools/audit_soulgold_g4c_rom_budget.py"
+      - ".github/workflows/soulgold-pmd-g4c-rom-budget-build.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  UNIQUE_ROM_PATH: soulgold/SoulGold-PMD-G4C.gba
+
+jobs:
+  compile-g4c:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3 python3-pil
+      - name: Prepare G3R11 parent assets
+        run: |
+          python3 framework/tools/prepare_soulgold_g3r10_special_state_assets.py \
+            --framework-root framework --spritecollab spritecollab \
+            --soulgold soulgold --output g4c_assets
+      - name: Install G4B generated registry parent
+        run: |
+          python3 framework/tools/install_soulgold_g4b_generated_registry.py \
+            --framework-root framework --soulgold soulgold \
+            --assets-staging g4c_assets/staging
+      - name: Audit corrected full-roster PMD coverage
+        run: |
+          mkdir -p evidence
+          python3 framework/tools/audit_soulgold_g4a_pmd_roster_coverage.py \
+            --soulgold soulgold --spritecollab spritecollab \
+            --output evidence/G4C_PMD_ROSTER_COVERAGE.json | tee evidence/G4C_PMD_ROSTER_COVERAGE.txt
+      - name: Build SoulGold G4C parent image
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee PMD_G4C_BUILD.log
+      - name: Audit PMD warnings or errors
+        run: |
+          if grep -E "src/pmd_.*(warning:|error:)" soulgold/PMD_G4C_BUILD.log; then exit 1; fi
+      - name: Record ROM and PMD storage budget
+        run: |
+          cp "${ROM_PATH}" "${UNIQUE_ROM_PATH}"
+          test "$(stat -c %s "${UNIQUE_ROM_PATH}")" -eq 33554432
+          python3 framework/tools/audit_soulgold_g4c_rom_budget.py \
+            --rom "${UNIQUE_ROM_PATH}" \
+            --coverage evidence/G4C_PMD_ROSTER_COVERAGE.json \
+            --output evidence/G4C_ROM_STORAGE_BUDGET.json | tee evidence/G4C_ROM_STORAGE_BUDGET.txt
+          python3 - <<'PY'
+          import json
+          p=json.load(open('evidence/G4C_ROM_STORAGE_BUDGET.json'))
+          assert p['rom_bytes']==33554432
+          assert p['trailing_ff_free_bytes'] > 0
+          assert p['decision'] in ('PACKED_FRAME_ARCHITECTURE_REQUIRED_BEFORE_LARGE_BATCH','CURRENT_FRAME_ARCHITECTURE_HAS_NOMINAL_RAW_BUDGET')
+          assert p['hard_fallback']=='Any species/action not safely packed remains SoulGold-native.'
+          print('G4C storage-budget source gate PASS:', p['decision'])
+          PY
+      - name: Verify registry fallback still owns safety boundary
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          r=Path('soulgold/src/pmd_soulgold_species_registry.c').read_text()
+          p=Path('soulgold/src/pmd_soulgold_prototype.c').read_text()
+          assert 'return NULL;' in r
+          assert 'PmdSoulGoldSpeciesRegistry_Find(GetBattlerVisualSpecies(battler), GetBattlerSide(battler))' in p
+          assert r.count('.species = SPECIES_') == 2
+          print('G4C does not batch-activate species before storage architecture is proven')
+          PY
+      - name: Record G4C evidence
+        if: always()
+        run: |
+          mkdir -p evidence/installed_source
+          cp soulgold/PMD_G4B_INSTALL_STATUS.txt evidence/ || true
+          cp soulgold/src/pmd_soulgold_species_registry.c evidence/installed_source/ || true
+          cp soulgold/include/pmd_soulgold_species_registry.h evidence/installed_source/ || true
+          {
+            echo "SoulGold PMD G4C ROM Storage Budget evidence"
+            echo "framework_commit=${GITHUB_SHA}"
+            echo "soulgold_revision=${SOULGOLD_REV}"
+            echo "spritecollab_revision=${SPRITECOLLAB_REV}"
+            echo "runtime_parent=G4B_G3R11"
+            echo "activation_change=NONE_BUDGET_GATE_ONLY"
+            echo "missing_or_unsafe_pmd=KEEP_NATIVE_SOULGOLD_BATTLER"
+            echo "runtime_visual_status=PENDING_USER_DEFERRED_TESTING"
+            if [ -f "${UNIQUE_ROM_PATH}" ]; then
+              echo "build_status=PASS"
+              stat -c "rom_bytes=%s" "${UNIQUE_ROM_PATH}"
+              sha256sum "${UNIQUE_ROM_PATH}"
+              python3 - <<'PY'
+          import os,zlib
+          p=os.environ['UNIQUE_ROM_PATH']; crc=0
+          with open(p,'rb') as f:
+              for c in iter(lambda:f.read(1024*1024),b''): crc=zlib.crc32(c,crc)
+          print(f"rom_crc32={crc & 0xffffffff:08X}")
+          PY
+            else
+              echo "build_status=FAIL_OR_NO_ROM"
+            fi
+          } | tee evidence/PMD_G4C_CI_EVIDENCE.txt
+      - name: Upload G4C evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g4c-rom-budget-evidence
+          path: |
+            evidence/
+            soulgold/PMD_G4C_BUILD.log
+      - name: Upload G4C ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-PMD-G4C-ROM
+          path: soulgold/SoulGold-PMD-G4C.gba
