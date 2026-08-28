@@ -3,6 +3,7 @@
 
 No network access and no copyrighted sprite assets are required. The test creates a
 small synthetic animated GIF, runs front/back ingestion, and checks GBA output sizes.
+It also exercises the S1 host-palette remap path.
 """
 from __future__ import annotations
 
@@ -36,6 +37,14 @@ def make_gif(path: Path) -> None:
     )
 
 
+def make_palette(path: Path) -> None:
+    entries = [(0, 0, 0)] + [(i * 16, 255 - i * 12, i * 8) for i in range(1, 16)]
+    path.write_text(
+        "JASC-PAL\n0100\n16\n" + "\n".join(f"{r} {g} {b}" for r, g, b in entries) + "\n",
+        encoding="utf-8",
+    )
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--tool", type=Path, default=Path("tools/showdown_sprites_ingest.py"))
@@ -45,6 +54,8 @@ def main() -> int:
         root = Path(td)
         src = root / "src"
         out = root / "out"
+        palette = root / "host.pal"
+        make_palette(palette)
         for lane in ("ani", "ani-back"):
             make_gif(src / lane / "cyndaquil.gif")
 
@@ -56,6 +67,7 @@ def main() -> int:
                 "--output", str(out),
                 "--species", "cyndaquil",
                 "--lanes", "front", "back",
+                "--host-palette", str(palette),
             ],
             check=True,
         )
@@ -69,6 +81,8 @@ def main() -> int:
             assert manifest["gba_canvas"] == [64, 64]
             assert manifest["frame_count"] == 3
             assert manifest["scale"] == 0.8
+            assert manifest["palette_policy"] == "host_jasc_entries_1_to_15"
+            assert manifest["palette_entries_visible"] == 15
             assert (d / "palette.pal").stat().st_size == 32
             for i in range(3):
                 assert (d / f"frame_{i:03d}.4bpp").stat().st_size == 2048
