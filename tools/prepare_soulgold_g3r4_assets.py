@@ -17,6 +17,8 @@ SPRITECOLLAB_REV = "4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7"
 SOULGOLD_REV = "b5122bdf188943862c13abe4938e88b7bb3c5c4a"
 ACTIONS = ("Idle", "Walk", "Nod", "Rotate")
 DIRECTIONS = ["Down", "DownRight", "Right", "UpRight", "Up", "UpLeft", "Left", "DownLeft"]
+DESIRED_G2_ANCHOR = (32, 44)
+CANVAS = 64
 
 TARGETS = (
     {
@@ -119,6 +121,39 @@ def audit_directional_body_source(species_dir: Path, direction: str) -> dict[str
     return audit
 
 
+def resolve_species_anchor(source_audit: dict[str, object]) -> tuple[int, int, dict[str, list[int]]]:
+    """Clamp the accepted G2 anchor into the intersection legal for all frames.
+
+    For one dimension, base normalization pastes at anchor - source_center.
+    Clipping is forbidden, so every frame requires:
+        source_center <= anchor <= source_center + (64 - frame_size)
+    We intersect that interval over all selected frames, then choose the point
+    nearest the accepted G2 (32,44) anchor. This is deterministic species
+    geometry, not a hand-tuned per-action offset.
+    """
+    x_lo, y_lo = 0, 0
+    x_hi, y_hi = CANVAS, CANVAS
+
+    for rec in source_audit["actions"].values():
+        w = rec["frame_width"]
+        h = rec["frame_height"]
+        if w > CANVAS or h > CANVAS:
+            raise SystemExit(f"Selected body frame exceeds {CANVAS}x{CANVAS}: {w}x{h}")
+        for cx, cy in rec["green_body_centers"]:
+            x_lo = max(x_lo, cx)
+            y_lo = max(y_lo, cy)
+            x_hi = min(x_hi, cx + CANVAS - w)
+            y_hi = min(y_hi, cy + CANVAS - h)
+
+    if x_lo > x_hi or y_lo > y_hi:
+        raise SystemExit(f"No common body-center anchor fits all selected frames: x={x_lo}..{x_hi}, y={y_lo}..{y_hi}")
+
+    desired_x, desired_y = DESIRED_G2_ANCHOR
+    anchor_x = min(max(desired_x, x_lo), x_hi)
+    anchor_y = min(max(desired_y, y_lo), y_hi)
+    return anchor_x, anchor_y, {"x": [x_lo, x_hi], "y": [y_lo, y_hi]}
+
+
 def copy_variant_assets(variant_dir: Path, target: Path) -> None:
     if target.exists():
         shutil.rmtree(target)
@@ -161,7 +196,8 @@ def main() -> int:
         "soulgold_revision": SOULGOLD_REV,
         "spritecollab_revision": SPRITECOLLAB_REV,
         "actions": list(ACTIONS),
-        "body_anchor_policy": "PMD_BODY_CENTER_PER_FRAME_G2_RESTORED",
+        "desired_g2_anchor": list(DESIRED_G2_ANCHOR),
+        "body_anchor_policy": "PMD_BODY_CENTER_PER_FRAME_G2_RESTORED_SPECIES_CLIP_SAFE",
         "shadow_policy": "NOT_INCLUDED_IN_BODY; separate ground layer deferred",
         "runtime_offset_policy": "presentationX=0 presentationY=0",
         "renderer_contract": "sealed two-slot rolling cache",
@@ -181,6 +217,7 @@ def main() -> int:
             raise SystemExit(f"Missing SoulGold {species} palette: {host_palette}")
 
         source_audit = audit_directional_body_source(species_dir, direction)
+        anchor_x, anchor_y, legal_anchor = resolve_species_anchor(source_audit)
         variant_dir = work / f"{slug}_{variant}"
         run([
             sys.executable, str(converter),
@@ -189,6 +226,8 @@ def main() -> int:
             "--national-dex", target["dex"],
             "--actions", action_arg,
             "--direction", direction,
+            "--anchor-x", str(anchor_x),
+            "--anchor-y", str(anchor_y),
             "--source-revision", SPRITECOLLAB_REV,
             "--source-repo-path", f"sprite/{target['spritecollab_id']}",
             "--output", str(variant_dir),
@@ -217,12 +256,17 @@ def main() -> int:
             raise SystemExit(f"{species} unexpectedly includes PMD shadow in body frames")
         if manifest["grounding"]["body_anchor_policy"] != "PMD_BODY_CENTER_PER_FRAME_G2_RESTORED":
             raise SystemExit(f"{species} lost G2 body anchor recovery policy")
+        actual_anchor = manifest["body_profile"]["anchor_target"]
+        if [actual_anchor["x"], actual_anchor["y"]] != [anchor_x, anchor_y]:
+            raise SystemExit(f"{species} manifest anchor mismatch: {actual_anchor} != {(anchor_x, anchor_y)}")
 
         summary["targets"][f"{species}_{variant}"] = {
             "species": species,
             "variant": variant,
             "direction": direction,
             "host_palette": f"graphics/pokemon/{slug}/normal.pal",
+            "resolved_anchor": [anchor_x, anchor_y],
+            "legal_anchor_intersection": legal_anchor,
             "source_audit": source_audit,
             "actions": {
                 action: {
