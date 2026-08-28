@@ -1,0 +1,148 @@
+name: SoulGold PMD G4A Full Roster Coverage Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "tools/audit_soulgold_g4a_pmd_roster_coverage.py"
+      - ".github/workflows/soulgold-pmd-g4a-roster-coverage-build.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  UNIQUE_ROM_PATH: soulgold/SoulGold-PMD-G4A.gba
+
+jobs:
+  compile-g4a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3 python3-pil
+      - name: Prepare G3R11 parent assets
+        run: |
+          python3 framework/tools/prepare_soulgold_g3r10_special_state_assets.py \
+            --framework-root framework --spritecollab spritecollab \
+            --soulgold soulgold --output g4a_parent_assets
+      - name: Install proven G3R11 runtime parent
+        run: |
+          python3 framework/tools/install_soulgold_g3r11_wake_notify.py \
+            --framework-root framework --soulgold soulgold \
+            --assets-staging g4a_parent_assets/staging
+      - name: Audit complete National Dex PMD coverage
+        run: |
+          mkdir -p evidence
+          python3 framework/tools/audit_soulgold_g4a_pmd_roster_coverage.py \
+            --soulgold soulgold --spritecollab spritecollab \
+            --output evidence/G4A_PMD_ROSTER_COVERAGE.json | tee evidence/G4A_PMD_ROSTER_COVERAGE.txt
+          python3 - <<'PY'
+          import json
+          p=json.load(open('evidence/G4A_PMD_ROSTER_COVERAGE.json'))
+          c=p['counts']
+          assert p['soulgold_national_dex_count'] >= 251
+          assert sum(c.values()) == p['soulgold_national_dex_count']
+          assert c['FULL_PMD_SINGLE_OBJ'] > 0
+          assert 'NATIVE_SOULGOLD_FALLBACK' in p['policy']
+          assert p['form_policy']=='NESTED_PMDCOLLAB_VARIANTS_INVENTORIED_BUT_NOT_AUTO_MAPPED'
+          print('G4A PMD/native fallback roster policy PASS')
+          PY
+      - name: Verify fallback-safe runtime boundary
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('soulgold/src/pmd_soulgold_prototype.c').read_text()
+          assert 'SPECIES_CYNDAQUIL' in p and 'SPECIES_MARILL' in p
+          # G4A is inventory-only. It must not pretend all species are already
+          # activated before the generated registry exists.
+          assert 'G4A_GENERATED_SPECIES_REGISTRY' not in p
+          m=Path('soulgold/src/battle_main.c').read_text()
+          f=m[m.index('static void RunBattleSoftwareTick(void)\n{'):]
+          f=f[:f.index('\n}')+2]
+          assert f.index('AnimateSprites();') < f.index('PmdSoulGoldPrototype_Tick();') < f.index('BuildOamBuffer();')
+          print('G4A preserves two-species runtime parent and native fallback for all others')
+          PY
+      - name: Build SoulGold G4A
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee PMD_G4A_BUILD.log
+      - name: Audit PMD warnings or errors
+        run: |
+          if grep -E "src/pmd_.*(warning:|error:)" soulgold/PMD_G4A_BUILD.log; then exit 1; fi
+      - name: Verify ROM
+        run: |
+          cp "${ROM_PATH}" "${UNIQUE_ROM_PATH}"
+          test "$(stat -c %s "${UNIQUE_ROM_PATH}")" -eq 33554432
+      - name: Record G4A evidence
+        if: always()
+        run: |
+          {
+            echo "SoulGold PMD G4A Full Roster Coverage evidence"
+            echo "framework_commit=${GITHUB_SHA}"
+            echo "soulgold_revision=${SOULGOLD_REV}"
+            echo "spritecollab_revision=${SPRITECOLLAB_REV}"
+            echo "runtime_parent=G3R11"
+            echo "activation_scope=CYNDAQUIL_MARILL_ONLY_G4A_IS_COVERAGE_GATE"
+            echo "missing_pmd_policy=KEEP_NATIVE_SOULGOLD_BATTLE_SPRITE"
+            echo "oversize_pmd_policy=NO_CROP_NO_SCALE_NEEDS_MULTI_OBJ"
+            echo "forms_policy=INVENTORY_ONLY_UNTIL_EXACT_MAPPING"
+            echo "runtime_visual_status=PENDING_USER_DEFERRED_TESTING"
+            if [ -f "${UNIQUE_ROM_PATH}" ]; then
+              echo "build_status=PASS"
+              stat -c "rom_bytes=%s" "${UNIQUE_ROM_PATH}"
+              sha256sum "${UNIQUE_ROM_PATH}"
+              python3 - <<'PY'
+          import os,zlib
+          p=os.environ['UNIQUE_ROM_PATH']; crc=0
+          with open(p,'rb') as f:
+              for c in iter(lambda:f.read(1024*1024),b''): crc=zlib.crc32(c,crc)
+          print(f"rom_crc32={crc & 0xffffffff:08X}")
+          PY
+            else
+              echo "build_status=FAIL_OR_NO_ROM"
+            fi
+          } | tee evidence/PMD_G4A_CI_EVIDENCE.txt
+      - name: Upload G4A evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g4a-roster-coverage-evidence
+          path: |
+            evidence/
+            soulgold/PMD_G4A_BUILD.log
+      - name: Upload G4A ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-PMD-G4A-ROM
+          path: soulgold/SoulGold-PMD-G4A.gba
