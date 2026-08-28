@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""SoulGold G3R5B body-ground stabilizer.
+"""SoulGold G3R5B runtime-proven residual body-ground correction.
 
-G3R5 runtime proved that PMDCollab Shadow.png positions must not be used to move
-the body: Cyndaquil Idle frame 1 was emitted with presentationY=+1 and visibly
-stepped downward. Shadow.png describes shadow placement, not body grounding.
+G3R4B already removed native OAM bobbing with all PMD body presentation offsets
+at zero. Human runtime then isolated one residual defect: Cyndaquil UpRight Idle
+frame 1 appears 1 px too low. G3R5 incorrectly tried to use Shadow.png positions
+to solve body grounding and emitted +1 for that same frame.
 
-G3R5B therefore keeps G3R4 body-center normalization, derives a bounded visual
-support baseline from the actual Anim.png body pixels, and leaves PMD shadow
-metadata exclusively to the separate shadow layer.
+G3R5B stops using Shadow.png to move the body. It restores the G3R4B zero-offset
+body baseline for every ambient frame and applies exactly one evidence-backed
+visual override: Cyndaquil/UpRight/Idle/frame1 = -1 px. PMD Shadow.png remains
+exclusive authority for the separate shadow layer.
 """
 
 from __future__ import annotations
@@ -16,47 +18,8 @@ import json
 import sys
 from pathlib import Path
 
-from PIL import Image
-
 import convert_soulgold_g3r4 as g3r4
 import pmd_gba_converter as base
-
-DIRECTIONS = ["Down", "DownRight", "Right", "UpRight", "Up", "UpLeft", "Left", "DownLeft"]
-SUPPORT_MIN_PIXELS = 3
-MAX_EXPECTED_AMBIENT_CORRECTION = 4
-
-
-def robust_support_y(frame: Image.Image) -> int:
-    rgba = frame.convert("RGBA")
-    for y in range(rgba.height - 1, -1, -1):
-        count = 0
-        for x in range(rgba.width):
-            if rgba.getpixel((x, y))[3] != 0:
-                count += 1
-                if count >= SUPPORT_MIN_PIXELS:
-                    return y
-    raise ValueError("PMD source frame has no robust opaque support row")
-
-
-def source_support_rows(source: Path, direction: str, action_names: list[str]) -> dict[str, list[int]]:
-    if direction not in DIRECTIONS:
-        raise ValueError(f"Unsupported PMD direction: {direction}")
-    row = DIRECTIONS.index(direction)
-    metas = g3r4.parse_anim_data_g3r4(source / "AnimData.xml")
-    out: dict[str, list[int]] = {}
-
-    for action_name in action_names:
-        meta = metas[action_name]
-        if meta.frame_width is None or meta.frame_height is None or not meta.durations:
-            raise ValueError(f"PMD action lacks real geometry/durations: {action_name}")
-        sheet = Image.open(source / f"{action_name}-Anim.png").convert("RGBA")
-        w, h = meta.frame_width, meta.frame_height
-        rows = []
-        for i in range(len(meta.durations)):
-            crop = sheet.crop((i * w, row * h, (i + 1) * w, (row + 1) * h))
-            rows.append(robust_support_y(crop))
-        out[action_name] = rows
-    return out
 
 
 def convert_g3r5b(args) -> int:
@@ -66,45 +29,43 @@ def convert_g3r5b(args) -> int:
 
     manifest_path = args.output.resolve() / "manifest.ir.json"
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    action_names = list(data["actions"].keys())
-    supports = source_support_rows(args.source.resolve(), args.direction, action_names)
 
-    final_supports: dict[str, list[int]] = {}
-    for action_name in action_names:
-        frames = data["actions"][action_name]["frames"]
-        if len(frames) != len(supports[action_name]):
-            raise ValueError(f"{action_name} support/frame count mismatch")
-        final_supports[action_name] = [
-            supports[action_name][i] + int(frame["paste_y"])
-            for i, frame in enumerate(frames)
-        ]
-
-    target_y = final_supports["Idle"][0]
-    corrections: list[int] = []
-    for action_name in action_names:
-        for i, frame in enumerate(data["actions"][action_name]["frames"]):
-            dy = target_y - final_supports[action_name][i]
-            if abs(dy) > MAX_EXPECTED_AMBIENT_CORRECTION:
-                raise ValueError(
-                    f"{action_name} frame {i} requires suspicious body-ground correction {dy}px"
-                )
+    # G3R4B body presentation was structurally stable: no runtime x2/y2 offsets.
+    # Keep that baseline rather than conflating Shadow.png movement with body movement.
+    for action in data["actions"].values():
+        for frame in action["frames"]:
             frame["presentation_dx"] = 0
-            frame["presentation_dy"] = dy
-            corrections.append(dy)
+            frame["presentation_dy"] = 0
+
+    overrides = []
+    if data["species"]["name"] == "Cyndaquil" and args.direction == "UpRight":
+        idle = data["actions"].get("Idle")
+        if idle is None or len(idle["frames"]) < 2:
+            raise ValueError("Cyndaquil G3R5B requires Idle frame 1")
+        idle["frames"][1]["presentation_dy"] = -1
+        overrides.append({
+            "action": "Idle",
+            "frame": 1,
+            "presentation_dy": -1,
+            "evidence": "2026-08-28 G3R4B/G3R5 human runtime: Idle second frame appears 1 px low",
+        })
+
+    corrections = {
+        name: [int(f["presentation_dy"]) for f in rec["frames"]]
+        for name, rec in data["actions"].items()
+    }
+    all_values = [v for values in corrections.values() for v in values]
 
     data["grounding"] = {
         "body_canvas_policy": "G3R4_CLIP_SAFE_GREEN_BODY_CENTER",
-        "battle_vertical_authority": "ROBUST_BODY_SUPPORT_BASELINE",
-        "support_min_opaque_pixels": SUPPORT_MIN_PIXELS,
-        "support_target_y": target_y,
-        "support_source_rows": supports,
-        "final_support_before_correction": final_supports,
-        "presentation_corrections_y": {
-            action: [int(f["presentation_dy"]) for f in data["actions"][action]["frames"]]
-            for action in action_names
-        },
+        "battle_vertical_authority": "G3R4B_ZERO_PLUS_RUNTIME_ACCEPTANCE_OVERRIDE",
         "shadow_png_may_move_body": False,
-        "reason": "G3R5 runtime proved Shadow.png-derived body offsets caused Cyndaquil Idle frame 1 downward step",
+        "presentation_corrections_y": corrections,
+        "runtime_acceptance_overrides": overrides,
+        "reason": (
+            "G3R5 runtime proved PMD Shadow.png is shadow-placement metadata, not body-ground motion authority; "
+            "restore G3R4B zero body offsets and correct only the human-observed Cyndaquil Idle1 residual"
+        ),
     }
     data["shadow"] = {
         "included_in_body_frames": False,
@@ -112,7 +73,7 @@ def convert_g3r5b(args) -> int:
         "body_presentation_independent": True,
         "status": "G3R5B_RUNTIME_OWNERSHIP",
     }
-    data["g3r5b_body_ground_correction_range"] = [min(corrections), max(corrections)] if corrections else [0, 0]
+    data["g3r5b_body_ground_correction_range"] = [min(all_values), max(all_values)] if all_values else [0, 0]
     manifest_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return rc
 
