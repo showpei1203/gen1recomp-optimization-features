@@ -99,7 +99,7 @@ static bool32 PrimeImageArray(const struct SpriteFrameImage *images, const struc
 {
     u8 slot;
 
-    if (images == NULL)
+    if (images == NULL || frame == NULL || frame->gfx == NULL)
         return FALSE;
 
     for (slot = 0; slot < PMD_GBA_CACHE_SLOTS; slot++)
@@ -114,51 +114,52 @@ static bool32 PrimeImageArray(const struct SpriteFrameImage *images, const struc
     return TRUE;
 }
 
-bool32 PmdSoulGold_PrimeBodyFrame(u8 battler, const struct PmdGbaFrame *frame)
+bool32 PmdSoulGold_PrimeLoadedBody(u8 battler, const struct PmdGbaFrame *frame)
 {
     enum BattlerPosition position;
-    u8 spriteId;
     u8 slot;
-    bool32 wrote = FALSE;
 
     if (frame == NULL || frame->gfx == NULL || battler >= gBattlersCount)
+        return FALSE;
+    if (gMonSpritesGfxPtr == NULL)
+        return FALSE;
+
+    position = GetBattlerPosition(battler);
+    if (gMonSpritesGfxPtr->spritesGfx[position] == NULL)
+        return FALSE;
+
+    // Ownership boundary: this path may touch ONLY the canonical backing buffer
+    // for this battler position. It must never modify gMultiuseSpriteTemplate or
+    // another live sprite. BattleLoadMonSpriteGfx() calls this after native data
+    // has loaded, so PMD becomes the final body writer for supported battlers.
+    for (slot = 0; slot < PMD_GBA_CACHE_SLOTS; slot++)
+    {
+        u8 *dest = gMonSpritesGfxPtr->spritesGfx[position] + slot * MON_PIC_SIZE;
+        DecompressDataWithHeaderWram(frame->gfx, dest);
+    }
+
+    return TRUE;
+}
+
+bool32 PmdSoulGold_PrimeTemplateBody(u8 battler, const struct PmdGbaFrame *frame)
+{
+    enum BattlerPosition position;
+
+    if (frame == NULL || frame->gfx == NULL || battler >= gBattlersCount)
+        return FALSE;
+    if (gMonSpritesGfxPtr == NULL)
         return FALSE;
 
     position = GetBattlerPosition(battler);
 
-    // G3R2 authority: BattleLoadMonSpriteGfx() is a later native writer on
-    // several send-out/switch paths. Always overwrite the canonical battler
-    // backing buffers AFTER that writer when this function is called from the
-    // controller hook. This is the data source used by normal mon frameImages.
-    if (gMonSpritesGfxPtr != NULL && gMonSpritesGfxPtr->spritesGfx[position] != NULL)
-    {
-        for (slot = 0; slot < PMD_GBA_CACHE_SLOTS; slot++)
-        {
-            u8 *dest = gMonSpritesGfxPtr->spritesGfx[position] + slot * MON_PIC_SIZE;
-            DecompressDataWithHeaderWram(frame->gfx, dest);
-        }
-        wrote = TRUE;
-    }
+    // Ownership boundary: this path is valid only immediately after
+    // SetMultiuseSpriteTemplateToPokemon() for this battler. Requiring the exact
+    // frameImages pointer prevents a stale trainer/other-battler template from
+    // being overwritten. No canonical/live-sprite writes happen here.
+    if (gMultiuseSpriteTemplate.images != gMonSpritesGfxPtr->frameImages[position])
+        return FALSE;
 
-    // Before CreateSprite(), the active multiuse template is also authoritative
-    // and may refer to a different preparation manager. Keep the G3R1 coverage.
-    if (PrimeImageArray(gMultiuseSpriteTemplate.images, frame))
-        wrote = TRUE;
-
-    // After CreateSprite(), prime the exact image descriptors owned by the live
-    // battler as well. This covers callbacks that reload mon graphics later in
-    // the send-out lifecycle.
-    spriteId = gBattlerSpriteIds[battler];
-    if (spriteId < MAX_SPRITES && gSprites[spriteId].inUse)
-    {
-        if (PrimeImageArray(gSprites[spriteId].images, frame))
-        {
-            RequestSpriteFrameImageCopy(0, gSprites[spriteId].oam.tileNum, gSprites[spriteId].images);
-            wrote = TRUE;
-        }
-    }
-
-    return wrote;
+    return PrimeImageArray(gMultiuseSpriteTemplate.images, frame);
 }
 
 void PmdSoulGold_Init(void)
