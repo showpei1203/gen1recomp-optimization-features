@@ -2,6 +2,7 @@
 #include "battle.h"
 #include "battle_controllers.h"
 #include "battle_util.h"
+#include "pokeball.h"
 #include "sprite.h"
 #include "constants/species.h"
 #include "pmd_gba_runtime.h"
@@ -232,6 +233,13 @@ static const struct PmdSoulGoldShadowAction *GetCurrentShadowAction(const struct
     return state->profile->shadowAmbient[state->sequenceIndex % PMD_G3R6A_AMBIENT_COUNT];
 }
 
+static void CompletePmdHurt(enum BattlerId battler)
+{
+    PmdSoulGold_SetReactivePresentation(battler, FALSE);
+    gDoingBattleAnim = FALSE;
+    BtlController_Complete(battler);
+}
+
 static void WaitForPmdHurt(enum BattlerId battler)
 {
     struct PmdPresentationState *state;
@@ -239,6 +247,7 @@ static void WaitForPmdHurt(enum BattlerId battler)
 
     if (battler >= PMD_GBA_MAX_BATTLERS)
     {
+        gDoingBattleAnim = FALSE;
         BtlController_Complete(battler);
         return;
     }
@@ -246,8 +255,7 @@ static void WaitForPmdHurt(enum BattlerId battler)
     profile = FindProfile(battler);
     if (profile == NULL || state->profile != profile)
     {
-        PmdSoulGold_SetReactivePresentation(battler, FALSE);
-        BtlController_Complete(battler);
+        CompletePmdHurt(battler);
         return;
     }
 
@@ -262,38 +270,40 @@ static void WaitForPmdHurt(enum BattlerId battler)
 
     if (state->phase == PMD_PHASE_HURT_RETURN)
     {
-        /* Keep reactive ownership until HOME has actually replaced the last
-         * Hurt frame in OBJ VRAM, then release the controller command. */
+        /* Keep reactive ownership and SoulGold's battle-animation busy flag
+         * until HOME has actually replaced the last Hurt frame in OBJ VRAM. */
         if (!PmdGbaRuntime_IsPresenting(battler))
             return;
         state->phase = PMD_PHASE_HOME;
-        PmdSoulGold_SetReactivePresentation(battler, FALSE);
-        BtlController_Complete(battler);
+        CompletePmdHurt(battler);
         return;
     }
 
-    PmdSoulGold_SetReactivePresentation(battler, FALSE);
-    BtlController_Complete(battler);
+    CompletePmdHurt(battler);
 }
 
 void PmdSoulGoldPrototype_HandleHitAnimation(enum BattlerId battler)
 {
     const struct PmdSpeciesProfile *profile = FindProfile(battler);
+    u8 spriteId = gBattlerSpriteIds[battler];
 
-    if (profile == NULL || gBattlerSpriteIds[battler] >= MAX_SPRITES || gSprites[gBattlerSpriteIds[battler]].invisible)
+    if (profile == NULL || spriteId >= MAX_SPRITES || gSprites[spriteId].invisible)
     {
         BtlController_HandleHitAnimation(battler);
         return;
     }
 
-    /* For the prototype's PMD-owned battlers, CONTROLLER_HITANIMATION becomes
-     * the semantic trigger for PMDCollab Hurt. Gameplay/controller ordering is
-     * preserved; only the native blink/shake visual is replaced. */
+    /* CONTROLLER_HITANIMATION is the semantic trigger for PMDCollab Hurt.
+     * Preserve native command busy-state and healthbox feedback, replacing only
+     * the native body blink/shake visual for PMD-profiled battlers. */
     if (!BindHurt(battler, profile))
     {
         BtlController_HandleHitAnimation(battler);
         return;
     }
+    gDoingBattleAnim = TRUE;
+    gSprites[spriteId].data[1] = 0;
+    DoHitAnimHealthboxEffect(battler);
     gBattlerControllerFuncs[battler] = WaitForPmdHurt;
 }
 
@@ -382,9 +392,9 @@ void PmdSoulGoldPrototype_Tick(void)
 
         if (PmdGbaRuntime_ConsumeInterrupted(battler))
         {
-            /* Reactive Hurt owns its controller command. If it somehow loses
-             * presentation ownership, release safely instead of resuming a
-             * stale reaction frame. */
+            /* Reactive Hurt owns its controller command. If it loses PMD
+             * presentation ownership, abandon the stale reaction and return
+             * HOME; WaitForPmdHurt will release the controller safely. */
             if (state->phase == PMD_PHASE_HURT || state->phase == PMD_PHASE_HURT_RETURN)
                 PmdSoulGold_SetReactivePresentation(battler, FALSE);
             PmdSoulGoldDynamicShadow_Update(battler, FALSE, NULL, 0);
