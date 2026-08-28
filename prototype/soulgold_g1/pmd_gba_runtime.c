@@ -31,7 +31,7 @@ static bool32 StageAndPresent(u8 battler, u8 frameIndex, u8 slot)
 
     state->frameIndex = frameIndex;
     state->visibleSlot = slot;
-    state->ticksLeft = MAX(1, frame->duration);
+    state->ticksLeft = frame->duration > 0 ? frame->duration : 1;
     state->started = TRUE;
     state->needsRefresh = FALSE;
     return TRUE;
