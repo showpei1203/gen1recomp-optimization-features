@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""Prepare SoulGold G3 Cyndaquil battle-facing-compatible Rich Ambient assets.
+"""Prepare SoulGold G3R3 two-sided grounded PMD battle assets.
 
-Human visual acceptance established the following rule:
-- battle ambient actions must have a real directional PMD sheet;
-- player uses the UpRight row and opponent uses DownLeft;
-- an action may turn naturally during its sequence, but must return cleanly to
-  the same 45-degree HOME afterward;
-- shared single-row/non-directional actions are banned from battle ambient;
-- authentic PMD per-frame shadows are composited under the body before GBA
-  normalization, using SpriteBot-compatible ShadowSize marker rules.
+Acceptance target:
+- player Cyndaquil: PMD UpRight;
+- opponent Marill: PMD DownLeft;
+- both use HOME + Idle/Walk/Nod/Rotate;
+- every grounded frame is normalized by PMD's white shadow-origin marker;
+- PMD body+shadow remain one atomic 64x64 frame;
+- runtime presentation offsets remain zero.
 
-Audited directional set for Cyndaquil G3:
-Idle / Walk / Nod / Pose / Rotate.
-Rotate is intentionally retained because it naturally turns back to HOME.
+Pose is deliberately excluded. It is unnecessary for the renderer/ownership
+proof and Cyndaquil's Pose uses a different PMD ground origin, making it a poor
+candidate for the first stable grounded ecology gate.
 """
 
 from __future__ import annotations
@@ -22,14 +21,34 @@ import json
 import shutil
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from PIL import Image
 
 SPRITECOLLAB_REV = "4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7"
 SOULGOLD_REV = "b5122bdf188943862c13abe4938e88b7bb3c5c4a"
-ACTIONS = ("Idle", "Walk", "Nod", "Pose", "Rotate")
-BANNED_AMBIENT_ACTIONS = ("LookUp", "DeepBreath", "Sit")
+ACTIONS = ("Idle", "Walk", "Nod", "Rotate")
+DIRECTIONS = ["Down", "DownRight", "Right", "UpRight", "Up", "UpLeft", "Left", "DownLeft"]
+
+TARGETS = (
+    {
+        "species": "Cyndaquil",
+        "slug": "cyndaquil",
+        "dex": "155",
+        "spritecollab_id": "0155",
+        "variant": "player",
+        "direction": "UpRight",
+    },
+    {
+        "species": "Marill",
+        "slug": "marill",
+        "dex": "183",
+        "spritecollab_id": "0183",
+        "variant": "opponent",
+        "direction": "DownLeft",
+    },
+)
 
 
 def run(cmd: list[str], cwd: Path | None = None) -> None:
@@ -47,32 +66,75 @@ def require_revision(repo: Path, expected: str, label: str) -> None:
         raise SystemExit(f"{label} revision mismatch: expected {expected}, got {actual}")
 
 
+def parse_action_geometry(anim_xml: Path) -> tuple[int, dict[str, tuple[int, int, int]]]:
+    root = ET.parse(anim_xml).getroot()
+    shadow_node = root.find("ShadowSize")
+    if shadow_node is None or shadow_node.text is None:
+        raise SystemExit(f"ShadowSize missing: {anim_xml}")
+    shadow_size = int(shadow_node.text)
+    if shadow_size < 0 or shadow_size > 2:
+        raise SystemExit(f"Invalid ShadowSize={shadow_size}: {anim_xml}")
+
+    out: dict[str, tuple[int, int, int]] = {}
+    for anim in root.findall("./Anims/Anim"):
+        name = anim.findtext("Name")
+        if name not in ACTIONS:
+            continue
+        w = anim.findtext("FrameWidth")
+        h = anim.findtext("FrameHeight")
+        durations = anim.findall("./Durations/Duration")
+        if w is None or h is None or not durations:
+            raise SystemExit(f"Grounded action lacks geometry/durations: {name} in {anim_xml}")
+        out[name] = (int(w), int(h), len(durations))
+    missing = [a for a in ACTIONS if a not in out]
+    if missing:
+        raise SystemExit(f"Missing grounded actions {missing}: {anim_xml}")
+    return shadow_size, out
+
+
+def audit_shadow_source(species_dir: Path, direction: str) -> dict[str, object]:
+    shadow_size, geometry = parse_action_geometry(species_dir / "AnimData.xml")
+    row = DIRECTIONS.index(direction)
+    audit: dict[str, object] = {"shadow_size": shadow_size, "actions": {}}
+
+    for action in ACTIONS:
+        w, h, frames = geometry[action]
+        sheet = Image.open(species_dir / f"{action}-Shadow.png").convert("RGBA")
+        records = []
+        for i in range(frames):
+            crop = sheet.crop((i * w, row * h, (i + 1) * w, (row + 1) * h))
+            white = []
+            active = 0
+            px = crop.load()
+            for y in range(h):
+                for x in range(w):
+                    r, g, b, a = px[x, y]
+                    if a != 255:
+                        continue
+                    if r == 255 and g == 255 and b == 255:
+                        white.append((x, y))
+                    elif g == 255 or (r == 255 and shadow_size > 0) or (b == 255 and shadow_size > 1):
+                        active += 1
+            if len(white) != 1:
+                raise SystemExit(
+                    f"Expected exactly one PMD white shadow origin: {species_dir.name}/{action}/{direction}/frame{i}; got {white}"
+                )
+            if active <= 0:
+                raise SystemExit(
+                    f"No active PMD shadow pixels: {species_dir.name}/{action}/{direction}/frame{i}"
+                )
+            records.append({"frame": i, "shadow_origin": list(white[0]), "active_shadow_pixels": active})
+        audit["actions"][action] = records
+    return audit
+
+
 def copy_variant_assets(variant_dir: Path, target: Path) -> None:
     if target.exists():
         shutil.rmtree(target)
     target.mkdir(parents=True, exist_ok=True)
     for action in ACTIONS:
-        src = variant_dir / action.lower()
-        if not src.is_dir():
-            raise SystemExit(f"Missing converted G3 action directory: {src}")
-        shutil.copytree(src, target / action.lower())
+        shutil.copytree(variant_dir / action.lower(), target / action.lower())
     shutil.copy2(variant_dir / "manifest.ir.json", target / "manifest.ir.json")
-
-
-def shadow_alpha_delta(shadowed: Path, body_only: Path) -> int:
-    """Count pixels made opaque specifically by the PMD shadow compositor."""
-    a = Image.open(shadowed).convert("RGBA")
-    b = Image.open(body_only).convert("RGBA")
-    if a.size != b.size:
-        raise SystemExit(f"Shadow audit size mismatch: {shadowed}={a.size}, {body_only}={b.size}")
-    ap = a.load()
-    bp = b.load()
-    count = 0
-    for y in range(a.height):
-        for x in range(a.width):
-            if ap[x, y][3] > 0 and bp[x, y][3] == 0:
-                count += 1
-    return count
 
 
 def main() -> int:
@@ -91,125 +153,91 @@ def main() -> int:
     require_revision(spritecollab, SPRITECOLLAB_REV, "SpriteCollab")
     require_revision(soulgold, SOULGOLD_REV, "SoulGold")
 
-    species_dir = spritecollab / "sprite" / "0155"
-    host_palette = soulgold / "graphics" / "pokemon" / "cyndaquil" / "normal.pal"
-    if not (species_dir / "AnimData.xml").is_file():
-        raise SystemExit(f"Missing Cyndaquil AnimData.xml: {species_dir}")
-    if not host_palette.is_file():
-        raise SystemExit(f"Missing SoulGold Cyndaquil palette: {host_palette}")
-
     if out.exists():
         shutil.rmtree(out)
     work = out / "work"
     staging = out / "staging"
     work.mkdir(parents=True)
-    (staging / "graphics" / "pmd" / "cyndaquil").mkdir(parents=True)
     (staging / "src").mkdir(parents=True)
 
     converter = framework / "tools" / "convert_soulgold_g3.py"
-    body_only_converter = framework / "tools" / "pmd_gba_converter.py"
     remapper = framework / "tools" / "pmd_gba_remap_host_palette.py"
     emitter = framework / "tools" / "emit_soulgold_g3_c.py"
     action_arg = ",".join(ACTIONS)
 
-    variants = (("player", "UpRight"), ("opponent", "DownLeft"))
-
     summary: dict[str, object] = {
-        "phase": "G3R1_BATTLE_FACING_SENDOUT_SHADOW",
+        "phase": "G3R3_TWO_SIDED_GROUNDED",
         "soulgold_revision": SOULGOLD_REV,
         "spritecollab_revision": SPRITECOLLAB_REV,
-        "species": "Cyndaquil",
         "actions": list(ACTIONS),
-        "banned_from_ambient": list(BANNED_AMBIENT_ACTIONS),
-        "direction_policy": "real_directional_sheet; 45-degree HOME start/end; transitional turning allowed when naturally returning",
-        "shadow_policy": "authentic PMD per-frame Shadow.png mask, SpriteBot-compatible ShadowSize rules, composited below body",
-        "shadow_pixel_gate": "every emitted frame must add >0 opaque pixels versus an otherwise-identical body-only conversion",
-        "home_source": "Idle frame 0",
-        "palette_policy": "remap_combined_body_shadow_to_existing_soulgold_cyndaquil_palette",
-        "renderer_contract": "G1 two-slot rolling cache SEALED/REUSED",
-        "variants": {},
+        "ground_anchor": "PMD Shadow.png white origin",
+        "runtime_offset_policy": "grounded ambient presentationX=0 presentationY=0",
+        "renderer_contract": "two-slot rolling cache",
+        "targets": {},
     }
 
-    for variant, direction in variants:
-        variant_dir = work / variant
-        body_only_dir = work / f"{variant}_body_only"
-        common_args = [
+    for target in TARGETS:
+        species = target["species"]
+        slug = target["slug"]
+        variant = target["variant"]
+        direction = target["direction"]
+        species_dir = spritecollab / "sprite" / target["spritecollab_id"]
+        host_palette = soulgold / "graphics" / "pokemon" / slug / "normal.pal"
+        if not (species_dir / "AnimData.xml").is_file():
+            raise SystemExit(f"Missing {species} AnimData.xml: {species_dir}")
+        if not host_palette.is_file():
+            raise SystemExit(f"Missing SoulGold {species} palette: {host_palette}")
+
+        shadow_audit = audit_shadow_source(species_dir, direction)
+        variant_dir = work / f"{slug}_{variant}"
+        run([
+            sys.executable, str(converter),
             "--source", str(species_dir),
-            "--species", "Cyndaquil",
-            "--national-dex", "155",
+            "--species", species,
+            "--national-dex", target["dex"],
             "--actions", action_arg,
             "--direction", direction,
             "--source-revision", SPRITECOLLAB_REV,
-            "--source-repo-path", "sprite/0155",
-        ]
-
-        run([
-            sys.executable, str(converter),
-            *common_args,
+            "--source-repo-path", f"sprite/{target['spritecollab_id']}",
             "--output", str(variant_dir),
-            "--host-asset-root", f"graphics/pmd/cyndaquil/{variant}",
-        ])
-        run([
-            sys.executable, str(body_only_converter),
-            *common_args,
-            "--output", str(body_only_dir),
-            "--host-asset-root", f"graphics/pmd/cyndaquil/{variant}_body_only",
+            "--host-asset-root", f"graphics/pmd/{slug}/{variant}",
         ])
 
-        manifest = json.loads((variant_dir / "manifest.ir.json").read_text(encoding="utf-8"))
-        if manifest.get("shadow", {}).get("shadow_size") != 1:
-            raise SystemExit(f"Unexpected Cyndaquil PMD ShadowSize metadata: {manifest.get('shadow')}")
-
-        shadow_counts: dict[str, list[int]] = {}
-        for action in ACTIONS:
-            counts = []
-            frames = manifest["actions"][action]["frames"]
-            for frame in frames:
-                idx = int(frame["index"])
-                shadowed = variant_dir / action.lower() / f"frame_{idx:02d}.png"
-                body_only = body_only_dir / action.lower() / f"frame_{idx:02d}.png"
-                extra = shadow_alpha_delta(shadowed, body_only)
-                if extra <= 0:
-                    raise SystemExit(
-                        f"PMD shadow pixel gate FAIL: {variant}/{action}/frame_{idx:02d} adds {extra} opaque shadow pixels"
-                    )
-                counts.append(extra)
-            shadow_counts[action] = counts
-
-        # Palette remap is deliberately after the alpha-delta gate. Remapping
-        # changes RGB indices but preserves alpha, so a proven non-empty shadow
-        # remains a visible opaque part of the final GBA frame.
         run([
             sys.executable, str(remapper),
             "--frames-root", str(variant_dir),
             "--host-palette", str(host_palette),
         ])
 
-        generated_c = staging / "src" / f"pmd_cyndaquil_{variant}_ambient.c"
+        generated_c = staging / "src" / f"pmd_{slug}_{variant}_ambient.c"
         run([
             sys.executable, str(emitter),
             "--ir", str(variant_dir / "manifest.ir.json"),
             "--output", str(generated_c),
             "--variant", variant,
-            "--asset-root", f"graphics/pmd/cyndaquil/{variant}",
+            "--asset-root", f"graphics/pmd/{slug}/{variant}",
         ])
 
         copy_variant_assets(
             variant_dir,
-            staging / "graphics" / "pmd" / "cyndaquil" / variant,
+            staging / "graphics" / "pmd" / slug / variant,
         )
 
-        summary["variants"][variant] = {
+        manifest = json.loads((variant_dir / "manifest.ir.json").read_text(encoding="utf-8"))
+        summary["targets"][f"{species}_{variant}"] = {
+            "species": species,
+            "variant": variant,
             "direction": direction,
-            "shadow": manifest["shadow"],
-            "shadow_extra_opaque_pixels": shadow_counts,
+            "host_palette": f"graphics/pokemon/{slug}/normal.pal",
+            "shadow_source_audit": shadow_audit,
+            "manifest_shadow": manifest.get("shadow"),
             "actions": {
                 action: {
                     "frame_count": len(manifest["actions"][action]["frames"]),
                     "durations": [f["duration"] for f in manifest["actions"][action]["frames"]],
-                    "source_size": [
-                        manifest["actions"][action]["source_frame_width"],
-                        manifest["actions"][action]["source_frame_height"],
+                    "source_origins": [
+                        [f["source_center_x"], f["source_center_y"]]
+                        for f in manifest["actions"][action]["frames"]
                     ],
                 }
                 for action in ACTIONS
@@ -217,7 +245,7 @@ def main() -> int:
         }
 
     (out / "G3_ASSET_SUMMARY.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    print(f"Prepared SoulGold G3R1 directional+shadow staging bundle: {staging}")
+    print(f"Prepared SoulGold G3R3 two-sided PMD staging bundle: {staging}")
     return 0
 
 
