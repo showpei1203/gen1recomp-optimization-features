@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare SoulGold G3R5B body-ground + centered authentic PMD shadow assets."""
+"""Prepare SoulGold G3R5B runtime-corrected body + centered authentic PMD shadow assets."""
 
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ def main() -> int:
         shutil.rmtree(out)
     out.mkdir(parents=True)
 
-    # Reuse G3R5 only for the already-audited authentic PMD shadow extraction.
+    # Reuse sealed G3R5 only for authentic PMDCollab shadow extraction.
     run([
         sys.executable, str(framework / "tools" / "prepare_soulgold_g3r5_assets.py"),
         "--framework-root", str(framework),
@@ -84,11 +84,11 @@ def main() -> int:
     base_summary = json.loads((base_out / "G3R5_ASSET_SUMMARY.json").read_text(encoding="utf-8"))
 
     summary = {
-        "phase": "G3R5B_BODY_SUPPORT_CENTERED_PMD_SHADOW",
-        "parent": "G3R5_AUTHENTIC_SHADOW_RUNTIME_REJECTED",
+        "phase": "G3R5B_RUNTIME_OVERRIDE_CENTERED_PMD_SHADOW",
+        "parent": "G3R5_AUTHENTIC_SHADOW_RUNTIME_PARTIAL_FAIL",
         "soulgold_revision": SOULGOLD_REV,
         "spritecollab_revision": SPRITECOLLAB_REV,
-        "body_grounding_policy": "ROBUST_BODY_SUPPORT_BASELINE_TO_IDLE0",
+        "body_grounding_policy": "G3R4B_ZERO_PLUS_RUNTIME_ACCEPTANCE_OVERRIDE",
         "shadow_art_policy": "AUTHENTIC_PMDCOLLAB_IDLE0_MASK",
         "shadow_x_policy": "CENTER_ON_SOULGOLD_BATTLER_BASE_X",
         "shadow_y_policy": "PMD_AUTHORED_IDLE0_VERTICAL_OFFSET",
@@ -145,6 +145,7 @@ def main() -> int:
             "body_ground_correction_range": manifest["g3r5b_body_ground_correction_range"],
             "body_ground_corrections": corrections,
             "idle_corrections": corrections["Idle"],
+            "runtime_acceptance_overrides": manifest["grounding"]["runtime_acceptance_overrides"],
             "pmd_authored_idle0_shadow_x_offset": authored_x,
             "battle_shadow_x_offset": 0,
             "battle_shadow_y_offset": base_rec["shadow_asset"]["body_sprite_base_offset"][1],
@@ -152,12 +153,13 @@ def main() -> int:
         }
 
     cy = summary["targets"]["Cyndaquil_player"]
-    if cy["idle_corrections"][0] != 0:
-        raise SystemExit("Cyndaquil Idle0 must be body-ground authority")
-    if cy["idle_corrections"][1] >= 0:
-        raise SystemExit(
-            f"Runtime-proven Cyndaquil Idle1 downward step must receive upward correction, got {cy['idle_corrections']}"
-        )
+    if cy["idle_corrections"] != [0, -1]:
+        raise SystemExit(f"G3R5B requires exact Cyndaquil Idle correction [0,-1], got {cy['idle_corrections']}")
+    for key, rec in summary["targets"].items():
+        if key != "Cyndaquil_player":
+            all_values = [v for vals in rec["body_ground_corrections"].values() for v in vals]
+            if any(v != 0 for v in all_values):
+                raise SystemExit(f"Non-target body offset changed in G3R5B: {key} {rec['body_ground_corrections']}")
     if cy["battle_shadow_x_offset"] != 0:
         raise SystemExit("Player shadow must be centered on battler base X")
 
