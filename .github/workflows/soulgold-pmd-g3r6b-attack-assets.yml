@@ -1,0 +1,79 @@
+name: SoulGold PMD G3R6B Attack Asset Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "tools/convert_soulgold_g3r6b_attack.py"
+      - "tools/emit_soulgold_g3r6b_attack_c.py"
+      - "tools/prepare_soulgold_g3r6b_assets.py"
+      - ".github/workflows/soulgold-pmd-g3r6b-attack-assets.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+
+jobs:
+  prepare-attack-assets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {path: framework}
+      - uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+      - name: Install Pillow
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-pil
+      - name: Prepare G3R6B assets
+        run: |
+          python3 framework/tools/prepare_soulgold_g3r6b_assets.py \
+            --framework-root framework --spritecollab spritecollab \
+            --soulgold soulgold --output g3r6b_assets
+      - name: Gate visible pixel conservation and Attack metadata
+        run: |
+          python3 - <<'PY'
+          import json
+          s=json.load(open('g3r6b_assets/G3R6B_ASSET_SUMMARY.json',encoding='utf-8'))
+          assert s['phase']=='G3R6B_ATTACK_BODY_ASSETS'
+          assert s['known_ambient_1px_defect']=='DEFERRED_ROOT_CAUSE_UNRESOLVED'
+          expected={
+            'Cyndaquil_player':([64,72],[2,4,1,1,1,2,2,2,2,2],10),
+            'Marill_opponent':([64,80],[2,4,1,1,1,2,2,2,2,2,2],11),
+          }
+          for key,(size,durations,count) in expected.items():
+              r=s['targets'][key]
+              assert r['attack_source_frame_size']==size
+              assert r['attack_durations']==durations
+              assert r['attack_frame_count']==count
+              assert r['attack_markers']=={'rush':1,'hit':3,'return':6}
+              assert r['visible_pixel_conservation'] is True
+              assert len(r['attack_shadow_frames'])==count
+              assert all(0 <= b[0] <= b[2] < 64 and 0 <= b[1] <= b[3] < 64 for b in r['opaque_destination_bboxes'])
+              assert any(x>0 for x in r['transparent_overflow_pixels'])
+              print(key,'size=',size,'bbox=',r['opaque_destination_bboxes'],'transparent-overflow=',r['transparent_overflow_pixels'])
+          print('G3R6B lossless Attack assets PASS')
+          PY
+          grep -q "gPmdCyndaquilPlayerAttackAction" g3r6b_assets/staging/src/pmd_cyndaquil_player_attack.c
+          grep -q "gPmdMarillOpponentAttackAction" g3r6b_assets/staging/src/pmd_marill_opponent_attack.c
+          grep -q "gPmdCyndaquilPlayerAttackShadowAction" g3r6b_assets/staging/src/pmd_cyndaquil_player_shadow.c
+          grep -q "gPmdMarillOpponentAttackShadowAction" g3r6b_assets/staging/src/pmd_marill_opponent_shadow.c
+      - name: Upload asset evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g3r6b-attack-assets
+          path: |
+            g3r6b_assets/G3R6B_ASSET_SUMMARY.json
+            g3r6b_assets/staging/src/pmd_cyndaquil_player_attack.c
+            g3r6b_assets/staging/src/pmd_marill_opponent_attack.c
