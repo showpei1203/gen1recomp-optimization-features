@@ -1,0 +1,99 @@
+{
+  "profile_version": 1,
+  "status": "PROTOTYPE / VISUAL TUNING PENDING",
+  "species": {
+    "name": "Cyndaquil",
+    "national_dex": 155,
+    "soulgold_species": "SPECIES_CYNDAQUIL"
+  },
+  "source": {
+    "repository": "PMDCollab/SpriteCollab",
+    "revision": "4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7",
+    "path": "sprite/0155"
+  },
+  "body_profile": {
+    "body_class": "small_quadruped",
+    "ambient_style": "active_prowl",
+    "logical_position_locked": true,
+    "canvas": [64, 64],
+    "anchor_target": [32, 44],
+    "anchor_status": "TECHNICAL PROVISIONAL / MUST BE VISUALLY ACCEPTED",
+    "scale_policy": "1x pixel exact; no scaling in G1-G3"
+  },
+  "directions": {
+    "player": {
+      "pmd_direction": "UpRight",
+      "source_row": 3,
+      "status": "DEFAULT HYPOTHESIS / VISUAL ACCEPTANCE REQUIRED"
+    },
+    "opponent": {
+      "pmd_direction": "DownLeft",
+      "source_row": 7,
+      "status": "DEFAULT HYPOTHESIS / VISUAL ACCEPTANCE REQUIRED"
+    },
+    "source_order": [
+      "Down",
+      "DownRight",
+      "Right",
+      "UpRight",
+      "Up",
+      "UpLeft",
+      "Left",
+      "DownLeft"
+    ]
+  },
+  "g1_frame_swap_benchmark": {
+    "actions": ["Idle", "Walk"],
+    "presentation_offset": [0, 0],
+    "purpose": "prove arbitrary multi-frame playback through the existing two-slot battler image cache without competing with native battle animation owners"
+  },
+  "g2_rich_ambient_benchmark": {
+    "home_action": "Idle",
+    "pattern": [
+      "Idle",
+      "Walk",
+      "HOME",
+      "LookUp",
+      "HOME",
+      "DeepBreath",
+      "HOME",
+      "Rotate",
+      "HOME"
+    ],
+    "source_actions": {
+      "Idle": {"size": [24, 32], "durations": [40, 16]},
+      "Walk": {"size": [24, 32], "durations": [6, 8, 6, 8]},
+      "LookUp": {"size": [24, 32], "durations": [6, 6, 6]},
+      "DeepBreath": {"size": [24, 32], "durations": [12, 6, 6, 6, 6, 6, 6, 10, 4]},
+      "Rotate": {"size": [24, 32], "durations": [2, 2, 2, 2, 2, 2, 2, 2, 2]}
+    },
+    "rules": {
+      "restart_from_home_after_combat": true,
+      "ambient_clock_runs_only_while_presented": true,
+      "fixed_delay_sync_forbidden": true,
+      "native_move_fx_remain_separate": true
+    }
+  },
+  "deferred_large_actions": {
+    "Hop": {"size": [24, 72], "reason": "exceeds single 64x64 OBJ height"},
+    "Attack": {"size": [64, 72], "reason": "exceeds single 64x64 OBJ height"},
+    "Swing": {"size": [72, 80], "reason": "exceeds single 64x64 OBJ bounds"}
+  },
+  "formal_gate": {
+    "G1": [
+      "player-side Cyndaquil PMD body visible",
+      "frame 0/1 backing slots can alternate repeatedly",
+      "no MAX_MON_PIC_FRAMES increase",
+      "no battle UI corruption",
+      "no palette corruption",
+      "native battle animation owner pauses PMD clock"
+    ],
+    "G2": [
+      "at least Idle + Walk + LookUp/DeepBreath/Rotate participate",
+      "stable HOME anchor",
+      "no cumulative drift/jitter",
+      "metadata durations respected",
+      "logical battle position unchanged"
+    ]
+  }
+}
