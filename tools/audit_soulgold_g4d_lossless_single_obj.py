@@ -223,6 +223,7 @@ def main() -> int:
         "multi_obj_definition": "VALID_PMD_CORE_SOURCE_WITH_GEOMETRIC_SINGLE_OBJ_FAILURE_ONLY",
         "counts": counts,
         "source_usable_core_count": source_usable,
+        "source_complete_core_count": source_usable,
         "records": records,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
