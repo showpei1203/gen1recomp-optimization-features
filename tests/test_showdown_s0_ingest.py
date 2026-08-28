@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Deterministic self-test for tools/showdown_sprites_ingest.py.
 
-No network access and no copyrighted sprite assets are required. The test creates a
-small synthetic animated GIF, runs front/back ingestion, and checks GBA output sizes.
-It also exercises the S1 host-palette remap path.
+No network access and no copyrighted sprite assets are required. The test creates
+synthetic animated GIFs, including an ani/gen5ani filename collision, then checks
+that exact lane matching and host-palette conversion remain GBA-safe.
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 from PIL import Image
@@ -45,6 +46,16 @@ def make_palette(path: Path) -> None:
     )
 
 
+def make_zip(src: Path, dst: Path) -> None:
+    # Exact ani/ and ani-back/ files are authoritative. gen5ani entries are
+    # deliberately present to guard against suffix-based false matches.
+    for lane in ("gen5ani", "gen5ani-back"):
+        make_gif(src / lane / "cyndaquil.gif")
+    with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for path in sorted(src.glob("**/*.gif")):
+            zf.write(path, f"sprites/{path.relative_to(src).as_posix()}")
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--tool", type=Path, default=Path("tools/showdown_sprites_ingest.py"))
@@ -55,15 +66,17 @@ def main() -> int:
         src = root / "src"
         out = root / "out"
         palette = root / "host.pal"
+        archive = root / "sprites.zip"
         make_palette(palette)
         for lane in ("ani", "ani-back"):
             make_gif(src / lane / "cyndaquil.gif")
+        make_zip(src, archive)
 
         subprocess.run(
             [
                 sys.executable,
                 str(args.tool),
-                "--source-dir", str(src),
+                "--zip", str(archive),
                 "--output", str(out),
                 "--species", "cyndaquil",
                 "--lanes", "front", "back",
@@ -74,6 +87,8 @@ def main() -> int:
 
         summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
         assert len(summary["animations"]) == 2
+        assert summary["animations"][0]["source"].endswith("sprites/ani/cyndaquil.gif")
+        assert summary["animations"][1]["source"].endswith("sprites/ani-back/cyndaquil.gif")
         for lane in ("front", "back"):
             d = out / "cyndaquil" / lane
             manifest = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
