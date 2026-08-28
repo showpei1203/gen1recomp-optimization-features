@@ -2,7 +2,7 @@
 """Inventory exact SoulGold battle-runtime paths that can clear sleep.
 
 G3R11 deliberately hooks only ordinary timer wake and Uproar wake in
-CancelerAsleepOrFrozen.  G3R12 is a source-authority gate before adding any more
+CancelerAsleepOrFrozen. G3R12 is a source-authority gate before adding any more
 presentation notifications: it inventories mutations around STATUS1_SLEEP and
 records whether a path already carries the G3R11 PMD Wake notification.
 
@@ -31,7 +31,7 @@ MUTATION_PATTERNS = (
 )
 
 
-def context(lines: list[str], idx: int, radius: int = 5) -> dict:
+def context(lines: list[str], idx: int, radius: int = 6) -> dict:
     lo = max(0, idx - radius)
     hi = min(len(lines), idx + radius + 1)
     return {
@@ -42,9 +42,9 @@ def context(lines: list[str], idx: int, radius: int = 5) -> dict:
     }
 
 
-def classify(text: str) -> str:
+def classify(text: str, has_notify: bool) -> str:
     t = text.lower()
-    if "pmdsoulgoldprototype_notifywake" in t:
+    if has_notify:
         if "uproar" in t:
             return "G3R11_COVERED_UPROAR_WAKE"
         return "G3R11_COVERED_NATIVE_WAKE"
@@ -77,22 +77,27 @@ def main() -> int:
             if "STATUS1_SLEEP" not in line:
                 continue
             all_status_refs += 1
-            c = context(lines, i)
+            c = context(lines, i, 6)
+            near = context(lines, i, 32)
             is_mutation = any(p.search(line) for p in MUTATION_PATTERNS)
-            # A number of mutations are split over adjacent source lines, so a
-            # local context containing an explicit clear is also a candidate.
+            # Some expressions span adjacent lines. Keep the candidate window
+            # tight, but use a wider function-local window solely to associate
+            # the clear with the G3R11 notification. In the ordinary timer path
+            # SoulGold clears sleep, branches on the resulting status, and only
+            # then reaches the native wake message/PMD notification.
             local_clear = "~STATUS1_SLEEP" in c["text"]
             if not (is_mutation or local_clear):
                 continue
+            has_notify = "PmdSoulGoldPrototype_NotifyWake" in near["text"]
             c.update({
                 "file": rel,
                 "source_line": line.rstrip("\n"),
-                "classification": classify(c["text"]),
-                "has_pmd_wake_notify": "PmdSoulGoldPrototype_NotifyWake" in c["text"],
+                "classification": classify(near["text"], has_notify),
+                "has_pmd_wake_notify": has_notify,
+                "notification_search_start_line": near["start_line"],
+                "notification_search_end_line": near["end_line"],
             })
-            # Deduplicate multiple STATUS1_SLEEP references that point at the
-            # same clear operation/context.
-            key = (rel, c["start_line"], c["end_line"], c["classification"])
+            key = (rel, c["line"], c["source_line"])
             if not any(r["_key"] == key for r in records):
                 c["_key"] = key
                 records.append(c)
