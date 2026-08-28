@@ -10,7 +10,7 @@
 // This adapter intentionally proves the existing two-slot battler buffer path
 // before combat ownership / Rich Ambient sequencing are added.
 
-static bool32 SoulGold_CanPresentBattler(enum BattlerId battler)
+static bool32 SoulGold_CanPresentBattler(u8 battler)
 {
     u8 spriteId;
 
@@ -36,7 +36,7 @@ static bool32 SoulGold_CanPresentBattler(enum BattlerId battler)
     return TRUE;
 }
 
-static bool32 SoulGold_StageFrame(enum BattlerId battler, u8 cacheSlot, const struct PmdGbaFrame *frame)
+static bool32 SoulGold_StageFrame(u8 battler, u8 cacheSlot, const struct PmdGbaFrame *frame)
 {
     enum BattlerPosition position;
     u8 *dest;
@@ -51,13 +51,13 @@ static bool32 SoulGold_StageFrame(enum BattlerId battler, u8 cacheSlot, const st
 
     // Converter contract for G1:
     // every source blob expands to exactly one normalized 64x64 4bpp frame
-    // (MON_PIC_SIZE bytes).  DecompressDataWithHeaderWram keeps this compatible
+    // (MON_PIC_SIZE bytes). DecompressDataWithHeaderWram keeps this compatible
     // with SoulGold's existing compressed graphics loaders.
     DecompressDataWithHeaderWram(frame->gfx, dest);
     return TRUE;
 }
 
-static void SoulGold_PresentSlot(enum BattlerId battler, u8 cacheSlot)
+static void SoulGold_PresentSlot(u8 battler, u8 cacheSlot)
 {
     u8 spriteId = gBattlerSpriteIds[battler];
     struct Sprite *sprite;
@@ -67,14 +67,14 @@ static void SoulGold_PresentSlot(enum BattlerId battler, u8 cacheSlot)
 
     sprite = &gSprites[spriteId];
 
-    // Opponent species frontAnimFrames may expose only animation 0.  PMD
+    // Opponent species frontAnimFrames may expose only animation 0. PMD
     // rolling-cache presentation always uses the generic 0/1 frame table after
     // the stock entry animation has released ownership.
     sprite->anims = gAnims_MonPic;
     StartSpriteAnim(sprite, cacheSlot);
 }
 
-static void SoulGold_SetPresentationOffset(enum BattlerId battler, s16 x, s16 y)
+static void SoulGold_SetPresentationOffset(u8 battler, s16 x, s16 y)
 {
     u8 spriteId = gBattlerSpriteIds[battler];
 
