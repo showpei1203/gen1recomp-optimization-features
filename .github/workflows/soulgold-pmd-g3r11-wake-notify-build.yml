@@ -1,0 +1,179 @@
+name: SoulGold PMD G3R11 Native Wake Notify Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "tools/install_soulgold_g3r11_wake_notify.py"
+      - ".github/workflows/soulgold-pmd-g3r11-wake-notify-build.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  UNIQUE_ROM_PATH: soulgold/SoulGold-PMD-G3R11.gba
+
+jobs:
+  compile-g3r11:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3 python3-pil
+      - name: Prepare G3R10 special-state source authority
+        run: |
+          python3 framework/tools/prepare_soulgold_g3r10_special_state_assets.py \
+            --framework-root framework --spritecollab spritecollab \
+            --soulgold soulgold --output g3r11_assets
+      - name: Install G3R11 Wake bridge
+        run: |
+          python3 framework/tools/install_soulgold_g3r11_wake_notify.py \
+            --framework-root framework --soulgold soulgold \
+            --assets-staging g3r11_assets/staging
+      - name: Audit native Wake bridge invariants
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('soulgold/src/pmd_soulgold_prototype.c').read_text()
+          h=Path('soulgold/include/pmd_soulgold_prototype.h').read_text()
+          n=Path('soulgold/src/battle_move_resolution.c').read_text()
+          s=Path('soulgold/PMD_G3R11_INSTALL_STATUS.txt').read_text()
+          assert 'void PmdSoulGoldPrototype_NotifyWake(enum BattlerId battler);' in h
+          assert 'PMD_PHASE_WAKE' in p
+          assert 'static bool32 BindWake' in p
+          assert 'return state->profile->shadowWake;' in p
+          assert 'PmdSoulGold_SetPersistentPresentation(battler, TRUE);' in p
+          assert 'if (PmdGbaRuntime_IsComplete(battler))' in p
+          assert n.count('PmdSoulGoldPrototype_NotifyWake(ctx->battlerAtk);') == 2
+          fn=n[n.index('static enum CancelerResult CancelerAsleepOrFrozen'):]
+          fn=fn[:fn.index('\nstatic enum CancelerResult CancelerObedience')]
+          assert fn.count('PmdSoulGoldPrototype_NotifyWake(ctx->battlerAtk);') == 2
+          assert 'BattleScriptCall(BattleScript_MoveUsedWokeUp);' in fn
+          assert 'gBattleMons[ctx->battlerAtk].status1 &= ~STATUS1_SLEEP;' in fn
+          assert 'wake_notification_paths=NORMAL_TIMER_WAKE,UPROAR_WAKE' in s
+          assert 'wake_presentation=NONBLOCKING_CONCURRENT_WITH_NATIVE_WAKE_MESSAGE' in s
+          assert 'other_status_cures=DEFERRED_UNTIL_EXACT_NATIVE_NOTIFICATION_AUDIT' in s
+          print('G3R11 native Wake notification bridge PASS')
+          PY
+          test -z "$(git -C soulgold diff -- src/save.c src/save_failed_screen.c include/save.h)"
+      - name: Audit choreography nonblocking contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          n=Path('soulgold/src/battle_move_resolution.c').read_text()
+          p=Path('soulgold/src/pmd_soulgold_prototype.c').read_text()
+          # Wake notification is void and battle script never waits on PMD.
+          assert 'PmdSoulGoldPrototype_NotifyWake(ctx->battlerAtk);' in n
+          assert 'PmdSoulGoldPrototype_IsWake' not in n
+          assert 'PmdSoulGoldPrototype_WaitWake' not in n
+          # Existing move Begin remains the higher-priority preemption path.
+          c=Path('soulgold/src/battle_controllers.c').read_text()
+          assert 'PmdSoulGoldPrototype_BeginMoveAction(battler, move);' in c
+          assert 'PmdSoulGold_SetPersistentPresentation(battler, FALSE);' in p
+          print('G3R11 Wake does not block native wake message or move start PASS')
+          PY
+      - name: Build SoulGold G3R11
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee PMD_G3R11_BUILD.log
+      - name: Audit PMD warnings or errors
+        run: |
+          if grep -E "src/pmd_.*(warning:|error:)" soulgold/PMD_G3R11_BUILD.log; then exit 1; fi
+      - name: Verify symbols and ROM
+        run: |
+          mkdir -p evidence
+          arm-none-eabi-nm -C soulgold/Soulgold_Beta_1.elf | sort > evidence/PMD_G3R11_SYMBOLS.txt
+          for required in \
+            PmdSoulGoldPrototype_Tick \
+            PmdSoulGoldPrototype_NotifyWake \
+            gPmdCyndaquilPlayerWakeAction \
+            gPmdCyndaquilPlayerWakeShadowAction \
+            gPmdMarillOpponentWakeAction \
+            gPmdMarillOpponentWakeShadowAction; do
+            grep -q "${required}$" evidence/PMD_G3R11_SYMBOLS.txt || exit 1
+          done
+          cp "${ROM_PATH}" "${UNIQUE_ROM_PATH}"
+          test "$(stat -c %s "${UNIQUE_ROM_PATH}")" -eq 33554432
+      - name: Record G3R11 evidence
+        if: always()
+        run: |
+          mkdir -p evidence/installed_source
+          cp soulgold/PMD_G3R11_INSTALL_STATUS.txt evidence/ || true
+          cp soulgold/PMD_G3R10_INSTALL_STATUS.txt evidence/ || true
+          cp g3r11_assets/G3R10_SPECIAL_STATE_ASSET_SUMMARY.json evidence/ || true
+          cp soulgold/src/pmd_soulgold_prototype.c evidence/installed_source/ || true
+          cp soulgold/include/pmd_soulgold_prototype.h evidence/installed_source/ || true
+          cp soulgold/src/battle_move_resolution.c evidence/installed_source/ || true
+          {
+            echo "SoulGold PMD G3R11 native Wake notification evidence"
+            echo "framework_commit=${GITHUB_SHA}"
+            echo "soulgold_revision=${SOULGOLD_REV}"
+            echo "spritecollab_revision=${SPRITECOLLAB_REV}"
+            echo "wake_source_view=PMDCOLLAB_DIRECTIONAL_SOURCE_ROW"
+            echo "wake_native_notify=NORMAL_TIMER_AND_UPROAR"
+            echo "wake_battle_script=SOULGOLD_NATIVE_UNCHANGED"
+            echo "wake_wait_for_pmd=FALSE"
+            echo "move_preempts_wake=TRUE"
+            echo "other_status_cure_wake_hooks=DEFERRED"
+            echo "combat_logic=SOULGOLD_NATIVE_UNCHANGED"
+            echo "known_ambient_1px_defect=DEFERRED_ROOT_CAUSE_UNRESOLVED"
+            echo "runtime_visual_status=PENDING_USER_DEFERRED_TESTING"
+            if [ -f "${UNIQUE_ROM_PATH}" ]; then
+              echo "build_status=PASS"
+              stat -c "rom_bytes=%s" "${UNIQUE_ROM_PATH}"
+              sha256sum "${UNIQUE_ROM_PATH}"
+              python3 - <<'PY'
+          import os,zlib
+          p=os.environ['UNIQUE_ROM_PATH']; crc=0
+          with open(p,'rb') as f:
+              for c in iter(lambda:f.read(1024*1024),b''): crc=zlib.crc32(c,crc)
+          print(f"rom_crc32={crc & 0xffffffff:08X}")
+          PY
+            else
+              echo "build_status=FAIL_OR_NO_ROM"
+            fi
+          } | tee evidence/PMD_G3R11_CI_EVIDENCE.txt
+      - name: Upload G3R11 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g3r11-build-evidence
+          path: |
+            evidence/
+            soulgold/PMD_G3R11_BUILD.log
+      - name: Upload G3R11 ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-PMD-G3R11-ROM
+          path: soulgold/SoulGold-PMD-G3R11.gba
