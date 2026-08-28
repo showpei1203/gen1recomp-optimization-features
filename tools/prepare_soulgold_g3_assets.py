@@ -4,11 +4,14 @@
 Human visual acceptance established the following rule:
 - battle ambient actions must have a real directional PMD sheet;
 - player uses the UpRight row and opponent uses DownLeft;
-- an action may turn naturally during its sequence, but must be suitable for
-  returning to the same 45-degree HOME afterward;
-- shared single-row/non-directional actions such as Cyndaquil LookUp are banned
-  from battle ambient presentation.
+- an action may turn naturally during its sequence, but must return cleanly to
+  the same 45-degree HOME afterward;
+- shared single-row/non-directional actions are banned from battle ambient;
+- authentic PMD per-frame shadows are composited under the body before GBA
+  normalization, using SpriteBot-compatible ShadowSize marker rules.
 
+Audited directional set for Cyndaquil G3:
+Idle / Walk / Nod / Pose / Rotate.
 Rotate is intentionally retained because it naturally turns back to HOME.
 """
 
@@ -23,8 +26,8 @@ from pathlib import Path
 
 SPRITECOLLAB_REV = "4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7"
 SOULGOLD_REV = "b5122bdf188943862c13abe4938e88b7bb3c5c4a"
-ACTIONS = ("Idle", "Walk", "DeepBreath", "Nod", "Sit", "Rotate")
-BANNED_AMBIENT_ACTIONS = ("LookUp",)
+ACTIONS = ("Idle", "Walk", "Nod", "Pose", "Rotate")
+BANNED_AMBIENT_ACTIONS = ("LookUp", "DeepBreath", "Sit")
 
 
 def run(cmd: list[str], cwd: Path | None = None) -> None:
@@ -85,10 +88,10 @@ def main() -> int:
     (staging / "graphics" / "pmd" / "cyndaquil").mkdir(parents=True)
     (staging / "src").mkdir(parents=True)
 
-    # Important: G3 deliberately uses the strict base converter, NOT the G2
-    # single-row compatibility wrapper. If a selected action lacks eight real
-    # directional rows, conversion fails here before it can enter a ROM.
-    converter = framework / "tools" / "pmd_gba_converter.py"
+    # G3 uses a strict wrapper: it preserves the base 8-direction requirement
+    # and additionally composites authentic PMD shadow sheets under each body
+    # frame before anchor normalization. Single-row compatibility is forbidden.
+    converter = framework / "tools" / "convert_soulgold_g3.py"
     remapper = framework / "tools" / "pmd_gba_remap_host_palette.py"
     emitter = framework / "tools" / "emit_soulgold_g3_c.py"
     action_arg = ",".join(ACTIONS)
@@ -96,15 +99,16 @@ def main() -> int:
     variants = (("player", "UpRight"), ("opponent", "DownLeft"))
 
     summary: dict[str, object] = {
-        "phase": "G3_BATTLE_FACING_AND_SENDOUT",
+        "phase": "G3_BATTLE_FACING_SENDOUT_SHADOW",
         "soulgold_revision": SOULGOLD_REV,
         "spritecollab_revision": SPRITECOLLAB_REV,
         "species": "Cyndaquil",
         "actions": list(ACTIONS),
         "banned_from_ambient": list(BANNED_AMBIENT_ACTIONS),
         "direction_policy": "real_directional_sheet; 45-degree HOME start/end; transitional turning allowed when naturally returning",
+        "shadow_policy": "authentic PMD per-frame Shadow.png mask, SpriteBot-compatible ShadowSize rules, composited below body",
         "home_source": "Idle frame 0",
-        "palette_policy": "remap_to_existing_soulgold_cyndaquil_palette",
+        "palette_policy": "remap_combined_body_shadow_to_existing_soulgold_cyndaquil_palette",
         "renderer_contract": "G1 two-slot rolling cache SEALED/REUSED",
         "variants": {},
     }
@@ -144,8 +148,12 @@ def main() -> int:
         )
 
         manifest = json.loads((variant_dir / "manifest.ir.json").read_text(encoding="utf-8"))
+        if manifest.get("shadow", {}).get("shadow_size") != 1:
+            raise SystemExit(f"Unexpected Cyndaquil PMD ShadowSize metadata: {manifest.get('shadow')}")
+
         summary["variants"][variant] = {
             "direction": direction,
+            "shadow": manifest["shadow"],
             "actions": {
                 action: {
                     "frame_count": len(manifest["actions"][action]["frames"]),
@@ -160,7 +168,7 @@ def main() -> int:
         }
 
     (out / "G3_ASSET_SUMMARY.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    print(f"Prepared SoulGold G3 directional staging bundle: {staging}")
+    print(f"Prepared SoulGold G3 directional+shadow staging bundle: {staging}")
     return 0
 
 
