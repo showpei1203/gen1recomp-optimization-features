@@ -1,0 +1,102 @@
+name: PMD SoulGold G1 Compile
+
+on:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-g1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+          path: soulgold
+
+      - name: Checkout pinned SpriteCollab Cyndaquil
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+          path: spritecollab
+          sparse-checkout: |
+            sprite/0155
+          sparse-checkout-cone-mode: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi \
+            gcc-arm-none-eabi \
+            libnewlib-arm-none-eabi \
+            libpng-dev \
+            python3 \
+            python3-pil
+
+      - name: Install PMD G1 prototype
+        run: |
+          python3 framework/tools/install_soulgold_g1.py \
+            --framework framework \
+            --soulgold soulgold \
+            --spritecollab spritecollab \
+            --work-dir work
+
+      - name: Audit generated patch
+        run: |
+          git -C soulgold diff --check
+          git -C soulgold status --short | tee work/soulgold_status.txt
+          git -C soulgold diff -- src/battle_main.c src/battle_controllers.c src/pokemon.c \
+            > work/host_hooks.diff
+
+      - name: Compile SoulGold G1 candidate
+        working-directory: soulgold
+        env:
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee ../work/build.log
+
+      - name: Record build evidence
+        if: always()
+        run: |
+          {
+            echo "framework_commit=${GITHUB_SHA}"
+            echo "soulgold_commit=$(git -C soulgold rev-parse HEAD)"
+            echo "spritecollab_commit=$(git -C spritecollab rev-parse HEAD)"
+            if [ -f soulgold/Soulgold_Beta_1.gba ]; then
+              echo "rom_build=PASS"
+              sha256sum soulgold/Soulgold_Beta_1.gba
+              stat -c "rom_bytes=%s" soulgold/Soulgold_Beta_1.gba
+            else
+              echo "rom_build=FAIL_OR_NOT_REACHED"
+            fi
+          } | tee work/PMD_G1_BUILD_EVIDENCE.txt
+
+      - name: Upload compile evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pmd-soulgold-g1-compile-evidence
+          path: |
+            work/PMD_G1_BUILD_EVIDENCE.txt
+            work/build.log
+            work/soulgold_status.txt
+            work/host_hooks.diff
+            soulgold/PMD_G1_INSTALL_EVIDENCE.txt
+          if-no-files-found: warn
