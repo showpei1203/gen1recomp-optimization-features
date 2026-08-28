@@ -60,6 +60,16 @@ def patch_adapter(soulgold: Path) -> None:
     elif new not in text:
         raise SystemExit("G3R6A move-choice ownership gate not found")
 
+    # Native hit animation raises gDoingBattleAnim while its visual is active.
+    # G3R6A preserves that global busy semantic, but allows only this battler's
+    # explicitly reactive PMD body to keep presenting during the Hurt command.
+    old = "    if (gDoingBattleAnim)\n        return FALSE;\n"
+    new = "    if (gDoingBattleAnim && !sPmdReactivePresentation[battler])\n        return FALSE;\n"
+    if old in text:
+        text = text.replace(old, new, 1)
+    elif new not in text:
+        raise SystemExit("G3R6A gDoingBattleAnim ownership gate not found")
+
     # Initialize and reset the reactive gate alongside existing per-battler state.
     old_pair = "        sNativeShadowSuppressed[battler] = FALSE;\n        sActiveShadowProfiles[battler] = NULL;\n"
     new_pair = "        sNativeShadowSuppressed[battler] = FALSE;\n        sPmdReactivePresentation[battler] = FALSE;\n        sActiveShadowProfiles[battler] = NULL;\n"
@@ -130,6 +140,8 @@ def main() -> int:
         (ma_shadow, "gPmdMarillOpponentHurtShadowAction"),
         (proto, "PmdSoulGoldPrototype_HandleHitAnimation"),
         (proto, "WaitForPmdHurt"),
+        (proto, "DoHitAnimHealthboxEffect"),
+        (proto, "gDoingBattleAnim = TRUE"),
         (adapter, "sPmdReactivePresentation"),
     )
     for text, needle in required:
@@ -147,6 +159,8 @@ def main() -> int:
         "hurt_body=ACTION_SPECIFIC_CLIP_SAFE_CANVAS_PLUS_EXACT_BATTLE_ANCHOR_COMPENSATION\n"
         "hurt_crop_or_scale=FALSE\n"
         "hurt_shadow=FRAME_SYNCHRONOUS_AUTHENTIC_PMDCOLLAB_PLUS_BODY_X2Y2_COMPENSATION\n"
+        "native_hit_busy_flag=PRESERVED_GDOINGBATTLEANIM\n"
+        "native_hit_healthbox_effect=PRESERVED\n"
         "native_hit_visual=REPLACED_ONLY_FOR_PMD_PROFILED_PLAYER_OPPONENT\n"
         "non_pmd_hit_visual=UNCHANGED\n"
         "return_policy=HURT_TO_HOME_BEFORE_CONTROLLER_RELEASE\n"
