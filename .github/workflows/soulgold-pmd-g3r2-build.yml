@@ -1,0 +1,203 @@
+name: SoulGold PMD G3R2 Grounded Build Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "prototype/soulgold_g3/**"
+      - "tools/convert_soulgold_g3r2.py"
+      - "tools/prepare_soulgold_g3r2_assets.py"
+      - "tools/install_soulgold_g3r2.py"
+      - "tools/emit_soulgold_g3_c.py"
+      - ".github/workflows/soulgold-pmd-g3r2-build.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  UNIQUE_ROM_PATH: soulgold/SoulGold-PMD-G3R2.gba
+
+jobs:
+  compile-g3r2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3 python3-pil
+
+      - name: Prepare G3R2 grounded directional assets
+        run: |
+          python3 framework/tools/prepare_soulgold_g3r2_assets.py \
+            --framework-root framework \
+            --spritecollab spritecollab \
+            --soulgold soulgold \
+            --output g3r2_assets
+
+      - name: Install G3R2 candidate
+        run: |
+          python3 framework/tools/install_soulgold_g3r2.py \
+            --framework-root framework \
+            --soulgold soulgold \
+            --assets-staging g3r2_assets/staging
+
+      - name: Verify G3R2 ownership and grounding invariants
+        run: |
+          grep -q "PmdSoulGoldPrototype_Init" soulgold/src/battle_main.c
+          grep -q "PmdSoulGoldPrototype_Tick" soulgold/src/battle_main.c
+          grep -q "post_BattleLoadMonSpriteGfx_prime_hooks=" soulgold/PMD_G3R2_INSTALL_STATUS.txt
+          grep -q "PMD_TILE_SPACE_ACTION_CONSTANT_SHADOW_GROUND_ANCHOR" \
+            soulgold/graphics/pmd/cyndaquil/player/manifest.ir.json
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+
+          ctl = Path("soulgold/src/battle_controllers.c").read_text()
+          loads = list(re.finditer(r"^(?P<i>[ \t]*)BattleLoadMonSpriteGfx\([^\n]*, (?P<b>battler|battlerPartner)\);$", ctl, re.M))
+          assert len(loads) >= 4, len(loads)
+          for m in loads:
+              tail = ctl[m.end():].splitlines()
+              assert tail, m.group(0)
+              expected = f"{m.group('i')}PmdSoulGoldPrototype_PrimeBattlerBody({m.group('b')});"
+              assert tail[0] == expected, (m.group(0), tail[0], expected)
+
+          summary = json.load(open("g3r2_assets/G3R2_ASSET_SUMMARY.json", encoding="utf-8"))
+          for side in ("player", "opponent"):
+              manifest = json.load(open(f"soulgold/graphics/pmd/cyndaquil/{side}/manifest.ir.json", encoding="utf-8"))
+              grounding = manifest["grounding"]
+              assert grounding["policy"] == "PMD_TILE_SPACE_ACTION_CONSTANT_SHADOW_GROUND_ANCHOR"
+              assert grounding["body_center_controls_translation"] is False
+              assert manifest["shadow"]["shadow_size"] == 1
+              for action in ("Idle", "Walk", "Nod", "Pose", "Rotate"):
+                  frames = manifest["actions"][action]["frames"]
+                  placements = {(f["paste_x"], f["paste_y"]) for f in frames}
+                  assert len(placements) == 1, (side, action, placements)
+                  counts = summary["variants"][side]["actions"][action]["shadow_extra_opaque_pixels"]
+                  assert counts and all(n > 0 for n in counts), (side, action, counts)
+          print(f"post-native-load hooks={len(loads)}; action-constant PMD ground alignment PASS")
+          PY
+          for banned in LookUp DeepBreath Sit; do
+            ! grep -q "${banned}Action" soulgold/src/pmd_soulgold_prototype.c || exit 1
+          done
+          test -z "$(git -C soulgold diff -- src/data.c)" || exit 1
+          ! grep -R "sprite->anims = gAnims_MonPic" -n soulgold/src/pmd_* || exit 1
+          test -z "$(git -C soulgold diff -- src/save.c src/save_failed_screen.c include/save.h)" || exit 1
+
+      - name: Build SoulGold G3R2
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee PMD_G3R2_BUILD.log
+
+      - name: Audit PMD sources for warnings or errors
+        run: |
+          if grep -E "src/pmd_.*(warning:|error:)" soulgold/PMD_G3R2_BUILD.log; then
+            echo "PMD G3R2 source warning/error detected" >&2
+            exit 1
+          fi
+
+      - name: Verify final ELF and create uniquely named ROM
+        run: |
+          mkdir -p evidence
+          arm-none-eabi-nm -C soulgold/Soulgold_Beta_1.elf | sort > evidence/PMD_G3R2_SYMBOLS.txt
+          for required in \
+            gPmdCyndaquilPlayerNodAction gPmdCyndaquilPlayerPoseAction gPmdCyndaquilPlayerRotateAction \
+            gPmdCyndaquilOpponentNodAction gPmdCyndaquilOpponentPoseAction gPmdCyndaquilOpponentRotateAction \
+            PmdSoulGoldPrototype_PrimeBattlerBody PmdSoulGold_PrimeBodyFrame; do
+            grep -q "${required}$" evidence/PMD_G3R2_SYMBOLS.txt || exit 1
+          done
+          for banned in LookUp DeepBreath Sit; do
+            ! grep -q "gPmdCyndaquil.*${banned}Action$" evidence/PMD_G3R2_SYMBOLS.txt || exit 1
+          done
+          cp "${ROM_PATH}" "${UNIQUE_ROM_PATH}"
+
+      - name: Record build evidence
+        if: always()
+        run: |
+          mkdir -p evidence/installed_source
+          cp soulgold/src/pmd_gba_runtime.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_soulgold_adapter.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_soulgold_prototype.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_cyndaquil_player_ambient.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_cyndaquil_opponent_ambient.c evidence/installed_source/ || true
+          git -C soulgold diff -- src/battle_main.c src/battle_controllers.c > evidence/SOULGOLD_G3R2_HOST_PATCH.diff
+          {
+            echo "SoulGold PMD G3R2 CI evidence"
+            echo "soulgold_revision=${SOULGOLD_REV}"
+            echo "spritecollab_revision=${SPRITECOLLAB_REV}"
+            echo "framework_commit=${GITHUB_SHA}"
+            echo "gate=post-native-mon-gfx PMD re-prime + action-constant PMD shadow-ground alignment"
+            echo "ambient=HOME+Idle+Walk+Nod+Pose+Rotate"
+            echo "banned_ambient=LookUp,DeepBreath,Sit"
+            echo "per_frame_body_center_translation=FORBIDDEN"
+            echo "save_structure=UNCHANGED"
+            echo "runtime_visual_status=PENDING_USER_ACCEPTANCE"
+            if [ -f "${UNIQUE_ROM_PATH}" ]; then
+              echo "build_status=PASS"
+              stat -c "rom_bytes=%s" "${UNIQUE_ROM_PATH}"
+              sha256sum "${UNIQUE_ROM_PATH}"
+              python3 - <<'PY'
+          import os, zlib
+          p = os.environ["UNIQUE_ROM_PATH"]
+          crc = 0
+          with open(p, "rb") as f:
+              for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                  crc = zlib.crc32(chunk, crc)
+          print(f"rom_crc32={crc & 0xffffffff:08X}")
+          PY
+            else
+              echo "build_status=FAIL_OR_NO_ROM"
+            fi
+          } | tee evidence/PMD_G3R2_CI_EVIDENCE.txt
+
+      - name: Upload G3R2 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g3r2-build-evidence
+          if-no-files-found: warn
+          path: |
+            evidence/
+            g3r2_assets/G3R2_ASSET_SUMMARY.json
+            soulgold/PMD_G3R2_INSTALL_STATUS.txt
+            soulgold/PMD_G3R2_BUILD.log
+            soulgold/Soulgold_Beta_1.map
+
+      - name: Upload G3R2 test ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-PMD-G3R2-Grounded-PostLoad-Test-ROM
+          if-no-files-found: error
+          path: soulgold/SoulGold-PMD-G3R2.gba
