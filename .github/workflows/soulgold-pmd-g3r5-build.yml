@@ -1,4 +1,4 @@
-name: SoulGold PMD G3R5 Grounding Shadow Gate
+name: SoulGold PMD G3R5 Authentic Shadow Grounding Gate
 
 on:
   workflow_dispatch:
@@ -8,6 +8,7 @@ on:
     paths:
       - "prototype/soulgold_g3r5/**"
       - "tools/convert_soulgold_g3r5.py"
+      - "tools/emit_soulgold_g3r5_c.py"
       - "tools/prepare_soulgold_g3r5_assets.py"
       - "tools/install_soulgold_g3r5.py"
       - ".github/workflows/soulgold-pmd-g3r5-build.yml"
@@ -49,7 +50,7 @@ jobs:
             binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
             libpng-dev python3 python3-pil
 
-      - name: Prepare G3R5 grounded assets
+      - name: Prepare G3R5 PMD shadow-ground assets
         run: |
           python3 framework/tools/prepare_soulgold_g3r5_assets.py \
             --framework-root framework \
@@ -57,23 +58,31 @@ jobs:
             --soulgold soulgold \
             --output g3r5_assets
 
-      - name: Audit G3R5 support corrections
+      - name: Audit PMD shadow authority and residual correction
         run: |
           python3 - <<'PY'
           import json
           s = json.load(open("g3r5_assets/G3R5_ASSET_SUMMARY.json", encoding="utf-8"))
-          assert s["phase"] == "G3R5_GROUND_CONTACT_SHADOW_OWNERSHIP"
-          assert s["battle_grounding_policy"] == "ROBUST_OPAQUE_SUPPORT_BASELINE_TO_IDLE0"
-          assert s["shadow_policy"] == "SEPARATE_PMD_OWNED_32X8_GROUND_OBJ"
+          assert s["phase"] == "G3R5_PMD_SHADOW_GROUND_AUTHORITY"
+          assert s["battle_grounding_policy"] == "PMD_SHADOW_CENTER_BASELINE_TO_IDLE0"
+          assert s["shadow_policy"] == "SEPARATE_AUTHENTIC_PMD_SHADOW_MASK"
           for key, rec in s["targets"].items():
-              lo, hi = rec["support_correction_range"]
+              lo, hi = rec["shadow_ground_correction_range"]
               assert -8 <= lo <= 8 and -8 <= hi <= 8, (key, lo, hi)
-              assert rec["support_target_y"] >= 0
-              print(key, "support_target_y=", rec["support_target_y"], "correction_range=", rec["support_correction_range"])
-              print(json.dumps(rec["support_corrections"], sort_keys=True))
+              asset = rec["shadow_asset"]
+              assert asset["gfx_bytes"] == 0x80, (key, asset["gfx_bytes"])
+              assert asset["obj_size"] == [32, 8], (key, asset["obj_size"])
+              assert asset["source_action"] == "Idle" and asset["source_frame"] == 0
+              assert asset["source_mask_pixel_count"] > 0
+              assert asset["shadow_size"] == 1, (key, asset["shadow_size"])
+              print(key, "shadow_center_target=", rec["shadow_center_target"],
+                    "correction_range=", rec["shadow_ground_correction_range"],
+                    "obj_offset=", asset["body_sprite_base_offset"],
+                    "mask_bbox=", asset["source_mask_bbox"])
+              print(json.dumps(rec["shadow_ground_corrections"], sort_keys=True))
           cy = s["targets"]["Cyndaquil_player"]
-          assert any(v != 0 for values in cy["support_corrections"].values() for v in values), \
-              "Cyndaquil video-proven bobbing produced no stabilization correction"
+          assert any(v != 0 for values in cy["shadow_ground_corrections"].values() for v in values), \
+              "Cyndaquil PMD Shadow.png metadata produced no grounding correction"
           PY
 
       - name: Install G3R5 candidate
@@ -83,21 +92,44 @@ jobs:
             --soulgold soulgold \
             --assets-staging g3r5_assets/staging
 
+      - name: Verify G3R4B timing is preserved in G3R5
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('soulgold/src/battle_main.c').read_text()
+          start = text.index('static void RunBattleSoftwareTick(void)\n{')
+          end = text.index('\n}', start)
+          fn = text[start:end]
+          a = fn.index('AnimateSprites();')
+          p = fn.index('PmdSoulGoldPrototype_Tick();')
+          b = fn.index('BuildOamBuffer();')
+          r = fn.index('RunTasks();')
+          assert a < p < b < r, (a, p, b, r)
+          assert fn.count('PmdSoulGoldPrototype_Tick();') == 1
+          print('G3R5 OAM timing invariant PASS')
+          PY
+
       - name: Verify G3R5 structural invariants
         run: |
-          grep -q "PmdSoulGoldPrototype_Init" soulgold/src/battle_main.c
-          grep -q "PmdSoulGoldPrototype_Tick" soulgold/src/battle_main.c
+          grep -q "parent=G3R4B_OAM_TIMING_PASS" soulgold/PMD_G3R5_INSTALL_STATUS.txt
+          grep -q "battle_grounding=PMDCollab Shadow.png center baseline to Idle0" soulgold/PMD_G3R5_INSTALL_STATUS.txt
+          grep -q "shadow=separate authentic PMDCollab Idle0 component-mask OBJ for both sides" soulgold/PMD_G3R5_INSTALL_STATUS.txt
           grep -q "PmdSoulGoldPrototype_PrimeLoadedBattlerBody" soulgold/src/battle_gfx_sfx_util.c
           test "$(grep -c 'PmdSoulGoldPrototype_PrimeTemplateBody(battler, species);' soulgold/src/battle_controllers.c)" -eq 2
           test "$(grep -c 'PmdSoulGoldPrototype_PrimeCreatedSpriteBody(battler, species);' soulgold/src/battle_controllers.c)" -eq 2
-          grep -q "battle_grounding=robust opaque support baseline to Idle0" soulgold/PMD_G3R5_INSTALL_STATUS.txt
-          grep -q "shadow=separate PMD-owned compact 32x8 OBJ for both sides" soulgold/PMD_G3R5_INSTALL_STATUS.txt
           grep -q "PmdSoulGold_UpdateGroundShadow(battler, TRUE);" soulgold/src/pmd_soulgold_prototype.c
+          grep -q "PmdSoulGold_UpdateGroundShadow(battler, FALSE);" soulgold/src/pmd_soulgold_prototype.c
+          grep -q "gPmdCyndaquilPlayerGroundShadowGfx" soulgold/src/pmd_soulgold_adapter.c
+          grep -q "gPmdMarillOpponentGroundShadowGfx" soulgold/src/pmd_soulgold_adapter.c
           grep -q "SPRITE_SHAPE(32x8)" soulgold/src/pmd_soulgold_adapter.c
-          grep -q "gEnemyMonShadow_Gfx" soulgold/src/pmd_soulgold_adapter.c
-          grep -q "shadow->x = body->x;" soulgold/src/pmd_soulgold_adapter.c
-          grep -q "shadow->y = body->y + PMD_GROUND_SHADOW_Y_OFFSET;" soulgold/src/pmd_soulgold_adapter.c
-          grep -q "gSprites\[spriteId\].callback = SpriteCallbackDummy;" soulgold/src/pmd_soulgold_adapter.c
+          grep -q "LoadSpriteSheet" soulgold/src/pmd_soulgold_adapter.c
+          grep -q "shadow->x = body->x + \*profile->xOffset;" soulgold/src/pmd_soulgold_adapter.c
+          grep -q "shadow->y = body->y + \*profile->yOffset;" soulgold/src/pmd_soulgold_adapter.c
+          grep -q "SetBattlerShadowSpriteCallback" soulgold/src/pmd_soulgold_adapter.c
+          ! grep -q "gEnemyMonShadow_Gfx" soulgold/src/pmd_soulgold_adapter.c
+          ! grep -q "PMD_GROUND_SHADOW_Y_OFFSET" soulgold/src/pmd_soulgold_adapter.c
+          grep -q "SpriteCollab sprite/0155/Idle-Shadow.png" soulgold/src/pmd_cyndaquil_player_shadow.c
+          grep -q "SpriteCollab sprite/0183/Idle-Shadow.png" soulgold/src/pmd_marill_opponent_shadow.c
           test -z "$(git -C soulgold diff -- src/data.c)" || exit 1
           ! grep -R "sprite->anims = gAnims_MonPic" -n soulgold/src/pmd_* || exit 1
           test -z "$(git -C soulgold diff -- src/save.c src/save_failed_screen.c include/save.h)" || exit 1
@@ -131,6 +163,8 @@ jobs:
             gPmdCyndaquilPlayerNodAction gPmdCyndaquilPlayerRotateAction \
             gPmdMarillOpponentHomeAction gPmdMarillOpponentIdleAction gPmdMarillOpponentWalkAction \
             gPmdMarillOpponentNodAction gPmdMarillOpponentRotateAction \
+            gPmdCyndaquilPlayerGroundShadowGfx gPmdCyndaquilPlayerGroundShadowYOffset \
+            gPmdMarillOpponentGroundShadowGfx gPmdMarillOpponentGroundShadowYOffset \
             PmdSoulGoldPrototype_PrimeLoadedBattlerBody PmdSoulGoldPrototype_PrimeTemplateBody \
             PmdSoulGoldPrototype_PrimeCreatedSpriteBody PmdSoulGold_UpdateGroundShadow; do
             grep -q "${required}$" evidence/PMD_G3R5_SYMBOLS.txt || {
@@ -149,18 +183,22 @@ jobs:
           cp soulgold/src/pmd_soulgold_prototype.c evidence/installed_source/ || true
           cp soulgold/src/pmd_cyndaquil_player_ambient.c evidence/installed_source/ || true
           cp soulgold/src/pmd_marill_opponent_ambient.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_cyndaquil_player_shadow.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_marill_opponent_shadow.c evidence/installed_source/ || true
           git -C soulgold diff -- src/battle_main.c src/battle_gfx_sfx_util.c src/battle_controllers.c > evidence/SOULGOLD_G3R5_HOST_PATCH.diff
           {
-            echo "SoulGold PMD G3R5 ground-contact + shadow-ownership CI evidence"
+            echo "SoulGold PMD G3R5 authentic PMD shadow-ground CI evidence"
             echo "soulgold_revision=${SOULGOLD_REV}"
             echo "spritecollab_revision=${SPRITECOLLAB_REV}"
             echo "framework_commit=${GITHUB_SHA}"
-            echo "gate=support-baseline stabilization + PMD-owned 32x8 ground shadow"
+            echo "parent=G3R4B_OAM_TIMING_PASS"
+            echo "gate=PMD Shadow.png center grounding + separate authentic component-mask ground OBJ"
             echo "player=Cyndaquil UpRight"
             echo "opponent=Marill DownLeft"
             echo "ambient=HOME+Idle+Walk+Nod+Rotate"
-            echo "native_shadow_for_pmd=HIDDEN"
-            echo "shadow_tracks=BODY_BASE_XY_NOT_PRESENTATION_X2Y2"
+            echo "native_shadow_for_pmd=SELECTIVELY_SUPPRESSED_AND_RESTORED"
+            echo "shadow_tracks=BODY_BASE_XY_PLUS_PMD_AUTHORED_IDLE0_OFFSET"
+            echo "body_timing=ANIMATE_SPRITES_THEN_PMD_THEN_BUILD_OAM"
             echo "save_structure=UNCHANGED"
             echo "MAX_MON_PIC_FRAMES=UNCHANGED"
             echo "runtime_visual_status=PENDING_USER_ACCEPTANCE"
@@ -199,6 +237,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: SoulGold-PMD-G3R5-Grounding-Shadow-ROM
+          name: SoulGold-PMD-G3R5-Authentic-Shadow-ROM
           if-no-files-found: error
           path: soulgold/SoulGold-PMD-G3R5.gba
