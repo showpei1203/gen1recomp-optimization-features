@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 """SoulGold G3 strict directional converter with authentic PMD shadows.
 
-G3 keeps the sealed base converter unchanged. This wrapper adds two PMD-native
-semantics for grounded battle ambient frames:
+G3 keeps the sealed base converter unchanged. This wrapper adds PMD-native
+semantics needed by the battle prototype:
+- tolerate SpriteCollab CopyOf aliases that legally omit Index;
 - composite the matching *-Shadow.png underneath the body using SpriteBot's
   ShadowSize rules;
 - use the WHITE shadow-origin marker as the normalization anchor instead of the
   green body-center marker from *-Offsets.png.
 
-The second rule is essential for grounded actions. Locking body-center removes
-body motion but moves the feet/shadow around the battlefield. Locking PMD's
-shadow origin keeps the battler planted while preserving body motion inside the
-64x64 frame. Jump/float actions will use a different policy in a later gate.
+Grounded actions therefore keep PMD's ground authority while preserving body
+motion inside the 64x64 frame. Jump/float actions remain a later gate.
 """
 
 from __future__ import annotations
@@ -27,6 +26,52 @@ import pmd_gba_converter as base
 _original_open_rgba = base._open_rgba
 _original_convert = base.convert
 _shadow_size_cache: dict[Path, int] = {}
+
+
+def parse_anim_data_g3(path: Path):
+    """Parse SpriteCollab AnimData without weakening selected real actions.
+
+    SpriteCollab allows aliases such as <Name>Emit</Name><CopyOf>Withdraw</CopyOf>
+    with no Index. The sealed prototype parser incorrectly rejected the whole
+    species when any such alias existed. G3 accepts only this documented alias
+    shape; a non-alias action without Index is still rejected.
+    """
+    root = ET.parse(path).getroot()
+    actions = {}
+    for anim in root.findall("./Anims/Anim"):
+        name_node = anim.find("Name")
+        if name_node is None or name_node.text is None or not name_node.text.strip():
+            raise ValueError("AnimData.xml contains an Anim without Name")
+        name = name_node.text.strip()
+        copy_node = anim.find("CopyOf")
+        copy_of = copy_node.text.strip() if copy_node is not None and copy_node.text and copy_node.text.strip() else None
+        index_node = anim.find("Index")
+        if index_node is None or index_node.text is None or not index_node.text.strip():
+            if copy_of is None:
+                raise ValueError(f"AnimData.xml action {name} has neither Index nor CopyOf")
+            index = -1
+        else:
+            index = int(index_node.text.strip())
+
+        durations = tuple(
+            int(n.text.strip())
+            for n in anim.findall("./Durations/Duration")
+            if n.text and n.text.strip()
+        )
+        actions[name] = base.ActionMeta(
+            name=name,
+            index=index,
+            copy_of=copy_of,
+            frame_width=base._text_int(anim, "FrameWidth"),
+            frame_height=base._text_int(anim, "FrameHeight"),
+            durations=durations,
+            rush_frame=base._text_int(anim, "RushFrame"),
+            hit_frame=base._text_int(anim, "HitFrame"),
+            return_frame=base._text_int(anim, "ReturnFrame"),
+        )
+    if not actions:
+        raise ValueError(f"No animations found in {path}")
+    return actions
 
 
 def shadow_size_for_species(source_dir: Path) -> int:
@@ -72,14 +117,7 @@ def build_shadow_mask(shadow: Image.Image, shadow_size: int) -> Image.Image:
 
 
 def shadow_origin_sheet(shadow: Image.Image) -> Image.Image:
-    """Translate PMD white shadow-origin markers into base-converter anchors.
-
-    The sealed base converter asks body_center_from_offsets() for green pixels.
-    Rather than changing that shared code, G3 supplies a synthetic offsets sheet
-    containing only one green pixel at every PMD white shadow-origin marker.
-    This preserves the base converter while giving grounded G3 the correct
-    PMD coordinate authority.
-    """
+    """Translate PMD white shadow-origin markers into base-converter anchors."""
     src = shadow.convert("RGBA")
     out = Image.new("RGBA", src.size, (0, 0, 0, 0))
     spx = src.load()
@@ -152,6 +190,7 @@ def convert_with_shadow_metadata(args):
     return rc
 
 
+base.parse_anim_data = parse_anim_data_g3
 base._open_rgba = open_rgba_with_shadow
 base.convert = convert_with_shadow_metadata
 
