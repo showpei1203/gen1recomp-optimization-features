@@ -1,4 +1,4 @@
-name: SoulGold PMD G3 Build Gate
+name: SoulGold PMD G3R1 Build Gate
 
 on:
   workflow_dispatch:
@@ -17,9 +17,10 @@ env:
   SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
   SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
   ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  UNIQUE_ROM_PATH: soulgold/SoulGold-PMD-G3R1.gba
 
 jobs:
-  compile-g3:
+  compile-g3r1:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -53,7 +54,7 @@ jobs:
             python3 \
             python3-pil
 
-      - name: Prepare G3 directional and PMD-shadow Cyndaquil assets
+      - name: Prepare G3R1 directional and PMD-shadow Cyndaquil assets
         run: |
           python3 framework/tools/prepare_soulgold_g3_assets.py \
             --framework-root framework \
@@ -61,24 +62,26 @@ jobs:
             --soulgold soulgold \
             --output g3_assets
 
-      - name: Install G3 candidate
+      - name: Install G3R1 candidate
         run: |
           python3 framework/tools/install_soulgold_g3.py \
             --framework-root framework \
             --soulgold soulgold \
             --assets-staging g3_assets/staging
 
-      - name: Verify G3 scope invariants
+      - name: Verify G3R1 pre-link invariants
         run: |
           grep -q "PmdSoulGoldPrototype_Init" soulgold/src/battle_main.c
           grep -q "PmdSoulGoldPrototype_Tick" soulgold/src/battle_main.c
           grep -q "PmdSoulGoldPrototype_PrimeBattlerBody" soulgold/src/battle_controllers.c
+          grep -q "gMultiuseSpriteTemplate.images" soulgold/src/pmd_soulgold_adapter.c
           grep -q "PmdSoulGold_PrimeBodyFrame" soulgold/src/pmd_soulgold_adapter.c
           grep -q "RotateAction" soulgold/src/pmd_soulgold_prototype.c
           grep -q "PoseAction" soulgold/src/pmd_soulgold_prototype.c
+          grep -q "NodAction" soulgold/src/pmd_soulgold_prototype.c
           for banned in LookUp DeepBreath Sit; do
             ! grep -q "${banned}Action" soulgold/src/pmd_soulgold_prototype.c || {
-              echo "G3 must not schedule non-directional ${banned} in battle ambient" >&2
+              echo "G3R1 must not schedule non-directional ${banned} in battle ambient" >&2
               exit 1
             }
           done
@@ -94,28 +97,33 @@ jobs:
           done
           python3 - <<'PY'
           import json
+          summary = json.load(open("g3_assets/G3_ASSET_SUMMARY.json", encoding="utf-8"))
+          assert summary.get("shadow_pixel_gate", "").startswith("every emitted frame")
           for side in ("player", "opponent"):
               p = f"soulgold/graphics/pmd/cyndaquil/{side}/manifest.ir.json"
               d = json.load(open(p, encoding="utf-8"))
               s = d.get("shadow", {})
               assert s.get("shadow_size") == 1, (side, s)
               assert s.get("body_shadow_frame_sync") == "atomic_same_frame", (side, s)
-          print("PMD shadow metadata PASS")
+              counts = summary["variants"][side]["shadow_extra_opaque_pixels"]
+              for action, frames in counts.items():
+                  assert frames and all(n > 0 for n in frames), (side, action, frames)
+          print("PMD shadow metadata + pixel alpha-delta gate PASS")
           PY
           test -z "$(git -C soulgold diff -- src/data.c)" || {
-            echo "G3 must not modify src/data.c / MAX_MON_PIC_FRAMES plumbing" >&2
+            echo "G3R1 must not modify src/data.c / MAX_MON_PIC_FRAMES plumbing" >&2
             exit 1
           }
           ! grep -R "sprite->anims = gAnims_MonPic" -n soulgold/src/pmd_* || {
-            echo "G3 must not replace native battler anim tables" >&2
+            echo "G3R1 must not replace native battler anim tables" >&2
             exit 1
           }
           test -z "$(git -C soulgold diff -- src/save.c src/save_failed_screen.c include/save.h)" || {
-            echo "G3 must not change save format plumbing" >&2
+            echo "G3R1 must not change save format plumbing" >&2
             exit 1
           }
 
-      - name: Build SoulGold G3
+      - name: Build SoulGold G3R1
         working-directory: soulgold
         env:
           GAME_VERSION: EMERALD
@@ -126,39 +134,74 @@ jobs:
           DEPRECATED_ERROR: 0
         run: |
           set -o pipefail
-          make -j$(nproc) -O all 2>&1 | tee PMD_G3_BUILD.log
+          make -j$(nproc) -O all 2>&1 | tee PMD_G3R1_BUILD.log
 
       - name: Audit PMD sources for warnings or errors
         run: |
-          if grep -E "src/pmd_.*(warning:|error:)" soulgold/PMD_G3_BUILD.log; then
-            echo "PMD G3 source warning/error detected" >&2
+          if grep -E "src/pmd_.*(warning:|error:)" soulgold/PMD_G3R1_BUILD.log; then
+            echo "PMD G3R1 source warning/error detected" >&2
             exit 1
           fi
+
+      - name: Verify final ELF contains G3R1 and excludes G2 ambient symbols
+        run: |
+          mkdir -p evidence
+          arm-none-eabi-nm -C soulgold/Soulgold_Beta_1.elf | sort > evidence/PMD_G3R1_SYMBOLS.txt
+          for required in \
+            gPmdCyndaquilPlayerNodAction \
+            gPmdCyndaquilPlayerPoseAction \
+            gPmdCyndaquilPlayerRotateAction \
+            gPmdCyndaquilOpponentNodAction \
+            gPmdCyndaquilOpponentPoseAction \
+            gPmdCyndaquilOpponentRotateAction \
+            PmdSoulGoldPrototype_PrimeBattlerBody \
+            PmdSoulGold_PrimeBodyFrame; do
+            grep -q "${required}$" evidence/PMD_G3R1_SYMBOLS.txt || {
+              echo "Missing required linked G3R1 symbol: ${required}" >&2
+              exit 1
+            }
+          done
+          for banned in LookUp DeepBreath Sit; do
+            ! grep -q "gPmdCyndaquil.*${banned}Action$" evidence/PMD_G3R1_SYMBOLS.txt || {
+              echo "Banned G2/non-directional symbol linked into final ELF: ${banned}" >&2
+              exit 1
+            }
+          done
+          grep -q "PmdSoulGoldPrototype_PrimeBattlerBody" soulgold/Soulgold_Beta_1.map
+          cp "${ROM_PATH}" "${UNIQUE_ROM_PATH}"
 
       - name: Record build evidence
         if: always()
         run: |
-          mkdir -p evidence
+          mkdir -p evidence/installed_source
+          cp soulgold/src/pmd_gba_runtime.c evidence/installed_source/
+          cp soulgold/src/pmd_soulgold_adapter.c evidence/installed_source/
+          cp soulgold/src/pmd_soulgold_prototype.c evidence/installed_source/
+          cp soulgold/src/pmd_cyndaquil_player_ambient.c evidence/installed_source/
+          cp soulgold/src/pmd_cyndaquil_opponent_ambient.c evidence/installed_source/
+          git -C soulgold diff -- src/battle_main.c src/battle_controllers.c > evidence/SOULGOLD_G3R1_HOST_PATCH.diff
           {
-            echo "SoulGold PMD G3 CI evidence"
+            echo "SoulGold PMD G3R1 CI evidence"
             echo "soulgold_revision=${SOULGOLD_REV}"
             echo "spritecollab_revision=${SPRITECOLLAB_REV}"
             echo "framework_commit=${GITHUB_SHA}"
-            echo "gate=Cyndaquil 45-degree-HOME-compatible ambient + PMD sendout body prime + authentic per-frame PMD shadow"
+            echo "gate=Cyndaquil 45-degree-HOME ambient + active-template sendout prime + authentic per-frame PMD shadow"
             echo "ambient=HOME+Idle+Walk+Nod+Pose+Rotate"
             echo "banned_ambient=LookUp,DeepBreath,Sit"
-            echo "shadow=PMD Shadow.png / ShadowSize=1 / body-shadow atomic frame sync"
+            echo "shadow=PMD Shadow.png / ShadowSize=1 / body-shadow atomic frame sync / pixel-alpha-delta PASS required"
+            echo "sendout_prime_owner=gMultiuseSpriteTemplate.images selected immediately before CreateSprite"
             echo "sendout_motion_owner=SOULGOLD_NATIVE"
+            echo "post_link_symbol_gate=REQUIRED"
             echo "g1_renderer_contract=SEALED_REUSED"
             echo "save_structure=UNCHANGED"
-            echo "runtime_visual_status=PENDING"
-            if [ -f "${ROM_PATH}" ]; then
+            echo "runtime_visual_status=PENDING_USER_ACCEPTANCE"
+            if [ -f "${UNIQUE_ROM_PATH}" ]; then
               echo "build_status=PASS"
-              stat -c "rom_bytes=%s" "${ROM_PATH}"
-              sha256sum "${ROM_PATH}"
+              stat -c "rom_bytes=%s" "${UNIQUE_ROM_PATH}"
+              sha256sum "${UNIQUE_ROM_PATH}"
               python3 - <<'PY'
           import os, zlib
-          p = os.environ["ROM_PATH"]
+          p = os.environ["UNIQUE_ROM_PATH"]
           crc = 0
           with open(p, "rb") as f:
               for chunk in iter(lambda: f.read(1024 * 1024), b""):
@@ -168,24 +211,25 @@ jobs:
             else
               echo "build_status=FAIL_OR_NO_ROM"
             fi
-          } | tee evidence/PMD_G3_CI_EVIDENCE.txt
+          } | tee evidence/PMD_G3R1_CI_EVIDENCE.txt
 
-      - name: Upload logs and manifests
+      - name: Upload logs sources map and manifests
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: soulgold-pmd-g3-build-evidence
+          name: soulgold-pmd-g3r1-build-evidence
           if-no-files-found: warn
           path: |
-            evidence/PMD_G3_CI_EVIDENCE.txt
+            evidence/
             g3_assets/G3_ASSET_SUMMARY.json
             soulgold/PMD_G3_INSTALL_STATUS.txt
-            soulgold/PMD_G3_BUILD.log
+            soulgold/PMD_G3R1_BUILD.log
+            soulgold/Soulgold_Beta_1.map
 
-      - name: Upload test ROM
+      - name: Upload uniquely named G3R1 test ROM
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: SoulGold-PMD-G3-Facing-Sendout-Shadow-Test-ROM
+          name: SoulGold-PMD-G3R1-ActiveTemplate-Shadow-Test-ROM
           if-no-files-found: error
-          path: soulgold/Soulgold_Beta_1.gba
+          path: soulgold/SoulGold-PMD-G3R1.gba
