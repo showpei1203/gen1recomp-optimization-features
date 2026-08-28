@@ -1,0 +1,181 @@
+name: SoulGold PMD G3R8C Sleep Persistence Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "tools/install_soulgold_g3r8c_sleep_persistence.py"
+      - ".github/workflows/soulgold-pmd-g3r8c-sleep-persistence-build.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  UNIQUE_ROM_PATH: soulgold/SoulGold-PMD-G3R8C.gba
+
+jobs:
+  compile-g3r8c:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3 python3-pil
+      - name: Prepare G3R8 Sleep assets
+        run: |
+          python3 framework/tools/prepare_soulgold_g3r8_sleep_assets.py \
+            --framework-root framework --spritecollab spritecollab \
+            --soulgold soulgold --output g3r8c_assets
+      - name: Install G3R8C persistence refinement
+        run: |
+          python3 framework/tools/install_soulgold_g3r8c_sleep_persistence.py \
+            --framework-root framework --soulgold soulgold \
+            --assets-staging g3r8c_assets/staging
+      - name: Audit three-way presentation ownership
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          a=Path('soulgold/src/pmd_soulgold_adapter.c').read_text()
+          h=Path('soulgold/include/pmd_soulgold_adapter.h').read_text()
+          p=Path('soulgold/src/pmd_soulgold_prototype.c').read_text()
+          s=Path('soulgold/PMD_G3R8C_INSTALL_STATUS.txt').read_text()
+          assert 'PmdSoulGold_SetPersistentPresentation' in h
+          assert 'sPmdPersistentPresentation' in a
+          assert 'if (!InBattleChoosingMoves() && !sPmdReactivePresentation[battler] && !sPmdPersistentPresentation[battler])' in a
+          assert 'if (gDoingBattleAnim && !sPmdReactivePresentation[battler])' in a
+          assert 'gDoingBattleAnim && !sPmdReactivePresentation[battler] && !sPmdPersistentPresentation[battler]' not in a
+          assert a.count('sPmdPersistentPresentation[battler] = FALSE;') >= 2
+          assert 'PmdSoulGold_SetPersistentPresentation(battler, TRUE);' in p
+          assert p.count('PmdSoulGold_SetPersistentPresentation(battler, FALSE);') >= 4
+          assert '(gBattleMons[battler].status1 & STATUS1_SLEEP) != 0' in p
+          assert 'state->phase == PMD_PHASE_SLEEP' in p
+          assert 'profile->shadowSleep' in p
+          assert 'PMD_PHASE_MOVE_SHOOT' in p
+          assert 'RecordMoveMarker(battler, state);' in p
+          assert 'persistent_sleep_allowed_outside_move_choice=TRUE' in s
+          assert 'persistent_sleep_yields_to_gDoingBattleAnim=TRUE' in s
+
+          m=Path('soulgold/src/battle_main.c').read_text()
+          f=m[m.index('static void RunBattleSoftwareTick(void)\n{'):]
+          f=f[:f.index('\n}')+2]
+          assert f.index('AnimateSprites();') < f.index('PmdSoulGoldPrototype_Tick();') < f.index('BuildOamBuffer();')
+
+          c=Path('soulgold/src/battle_controllers.c').read_text()
+          q=c[c.index('static void Controller_DoMoveAnimation(enum BattlerId battler)\n{'):]
+          q=q[:q.index('\nvoid BtlController_HandleMoveAnimation(enum BattlerId battler)')]
+          assert q.count('PmdSoulGoldPrototype_BeginMoveAction(battler, move);')==1
+          assert q.count('PmdSoulGoldPrototype_EndMoveAction(battler);')==1
+          assert 'DoMoveAnim(move);' in q
+          assert 'BindSleep' not in q
+          print('G3R8C ambient/persistent/reactive ownership separation PASS')
+          PY
+          grep -q "sleep_view=PMDCOLLAB_DIRECTIONLESS_SOURCE_AUTHORITY" soulgold/PMD_G3R8C_INSTALL_STATUS.txt
+          grep -q "status_authority=SOULGOLD_STATUS1_SLEEP" soulgold/PMD_G3R8C_INSTALL_STATUS.txt
+          grep -q ".loop = TRUE" soulgold/src/pmd_cyndaquil_player_sleep.c
+          grep -q ".loop = TRUE" soulgold/src/pmd_marill_opponent_sleep.c
+          test -z "$(git -C soulgold diff -- src/save.c src/save_failed_screen.c include/save.h)"
+      - name: Build SoulGold G3R8C
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee PMD_G3R8C_BUILD.log
+      - name: Audit PMD warnings or errors
+        run: |
+          if grep -E "src/pmd_.*(warning:|error:)" soulgold/PMD_G3R8C_BUILD.log; then exit 1; fi
+      - name: Verify symbols and ROM
+        run: |
+          mkdir -p evidence
+          arm-none-eabi-nm -C soulgold/Soulgold_Beta_1.elf | sort > evidence/PMD_G3R8C_SYMBOLS.txt
+          for required in \
+            PmdSoulGoldPrototype_Tick \
+            PmdSoulGold_SetPersistentPresentation \
+            PmdSoulGoldPrototype_ConsumeMoveMarkers \
+            gPmdCyndaquilPlayerSleepAction \
+            gPmdCyndaquilPlayerSleepShadowAction \
+            gPmdMarillOpponentSleepAction \
+            gPmdMarillOpponentSleepShadowAction; do
+            grep -q "${required}$" evidence/PMD_G3R8C_SYMBOLS.txt || exit 1
+          done
+          cp "${ROM_PATH}" "${UNIQUE_ROM_PATH}"
+          test "$(stat -c %s "${UNIQUE_ROM_PATH}")" -eq 33554432
+      - name: Record G3R8C evidence
+        if: always()
+        run: |
+          mkdir -p evidence/installed_source
+          cp soulgold/PMD_G3R8C_INSTALL_STATUS.txt evidence/ || true
+          cp soulgold/PMD_G3R8B_INSTALL_STATUS.txt evidence/ || true
+          cp g3r8c_assets/G3R8_SLEEP_ASSET_SUMMARY.json evidence/ || true
+          cp soulgold/src/pmd_soulgold_adapter.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_soulgold_prototype.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_cyndaquil_player_sleep.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_marill_opponent_sleep.c evidence/installed_source/ || true
+          {
+            echo "SoulGold PMD G3R8C Sleep persistence evidence"
+            echo "framework_commit=${GITHUB_SHA}"
+            echo "soulgold_revision=${SOULGOLD_REV}"
+            echo "spritecollab_revision=${SPRITECOLLAB_REV}"
+            echo "source_view=DIRECTIONLESS_PMDCOLLAB_AUTHORITY"
+            echo "presentation_gates=AMBIENT_PERSISTENT_REACTIVE"
+            echo "persistent_sleep_outside_move_choice=TRUE"
+            echo "persistent_sleep_yields_native_busy=TRUE"
+            echo "status_authority=SOULGOLD_STATUS1_SLEEP"
+            echo "combat_logic=SOULGOLD_NATIVE_UNCHANGED"
+            echo "known_ambient_1px_defect=DEFERRED_ROOT_CAUSE_UNRESOLVED"
+            echo "runtime_visual_status=PENDING_USER_DEFERRED_TESTING"
+            if [ -f "${UNIQUE_ROM_PATH}" ]; then
+              echo "build_status=PASS"
+              stat -c "rom_bytes=%s" "${UNIQUE_ROM_PATH}"
+              sha256sum "${UNIQUE_ROM_PATH}"
+              python3 - <<'PY'
+          import os,zlib
+          p=os.environ['UNIQUE_ROM_PATH']; crc=0
+          with open(p,'rb') as f:
+              for c in iter(lambda:f.read(1024*1024),b''): crc=zlib.crc32(c,crc)
+          print(f"rom_crc32={crc & 0xffffffff:08X}")
+          PY
+            else
+              echo "build_status=FAIL_OR_NO_ROM"
+            fi
+          } | tee evidence/PMD_G3R8C_CI_EVIDENCE.txt
+      - name: Upload G3R8C evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g3r8c-build-evidence
+          path: |
+            evidence/
+            soulgold/PMD_G3R8C_BUILD.log
+      - name: Upload G3R8C ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-PMD-G3R8C-ROM
+          path: soulgold/SoulGold-PMD-G3R8C.gba
