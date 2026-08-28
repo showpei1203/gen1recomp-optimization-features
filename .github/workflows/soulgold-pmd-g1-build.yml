@@ -1,0 +1,131 @@
+name: SoulGold PMD G1 Build Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "prototype/soulgold_g1/**"
+      - "tools/pmd_gba_*.py"
+      - "tools/prepare_soulgold_g1_assets.py"
+      - "tools/install_soulgold_g1.py"
+      - ".github/workflows/soulgold-pmd-g1-build.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+
+jobs:
+  compile-g1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi \
+            gcc-arm-none-eabi \
+            libnewlib-arm-none-eabi \
+            libpng-dev \
+            python3 \
+            python3-pil
+
+      - name: Prepare G1 Cyndaquil assets
+        run: |
+          python3 framework/tools/prepare_soulgold_g1_assets.py \
+            --framework-root framework \
+            --spritecollab spritecollab \
+            --soulgold soulgold \
+            --output g1_assets
+
+      - name: Install G1 candidate
+        run: |
+          python3 framework/tools/install_soulgold_g1.py \
+            --framework-root framework \
+            --soulgold soulgold \
+            --assets-staging g1_assets/staging
+
+      - name: Verify G1 scope invariants
+        run: |
+          grep -q "PmdSoulGoldPrototype_Init" soulgold/src/battle_main.c
+          grep -q "PmdSoulGoldPrototype_Tick" soulgold/src/battle_main.c
+          test -f soulgold/src/pmd_gba_runtime.c
+          test -f soulgold/src/pmd_soulgold_adapter.c
+          test -f soulgold/src/pmd_soulgold_prototype.c
+          test "$(find soulgold/graphics/pmd/cyndaquil/player/walk -name 'frame_*.png' | wc -l)" -eq 4
+          test "$(find soulgold/graphics/pmd/cyndaquil/opponent/walk -name 'frame_*.png' | wc -l)" -eq 4
+          git -C soulgold diff -- src/data.c | grep -q '^$' || {
+            echo "G1 must not modify src/data.c / MAX_MON_PIC_FRAMES plumbing" >&2
+            exit 1
+          }
+          ! grep -R "sprite->anims = gAnims_MonPic" -n soulgold/src/pmd_* || {
+            echo "G1 must not replace native battler anim tables" >&2
+            exit 1
+          }
+
+      - name: Build SoulGold G1
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 1
+          DEPRECATED_ERROR: 1
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee PMD_G1_BUILD.log
+
+      - name: Record build evidence
+        if: always()
+        run: |
+          {
+            echo "SoulGold PMD G1 CI evidence"
+            echo "soulgold_revision=${SOULGOLD_REV}"
+            echo "spritecollab_revision=${SPRITECOLLAB_REV}"
+            echo "framework_commit=${GITHUB_SHA}"
+            echo "gate=Cyndaquil Walk 4F through 2-slot rolling cache"
+            echo "runtime_visual_status=PENDING"
+            if [ -f soulgold/pokeemerald.gba ]; then
+              echo "build_status=PASS"
+              sha256sum soulgold/pokeemerald.gba
+            elif [ -f soulgold/soulgold.gba ]; then
+              echo "build_status=PASS"
+              sha256sum soulgold/soulgold.gba
+            else
+              echo "build_status=FAIL_OR_NO_ROM"
+            fi
+          } | tee PMD_G1_CI_EVIDENCE.txt
+
+      - name: Upload logs and manifests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g1-build-evidence
+          if-no-files-found: warn
+          path: |
+            PMD_G1_CI_EVIDENCE.txt
+            g1_assets/G1_ASSET_SUMMARY.json
+            soulgold/PMD_G1_INSTALL_STATUS.txt
+            soulgold/PMD_G1_BUILD.log
