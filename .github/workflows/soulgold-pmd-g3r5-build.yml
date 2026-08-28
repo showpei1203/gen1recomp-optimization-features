@@ -1,0 +1,204 @@
+name: SoulGold PMD G3R5 Grounding Shadow Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "prototype/soulgold_g3r5/**"
+      - "tools/convert_soulgold_g3r5.py"
+      - "tools/prepare_soulgold_g3r5_assets.py"
+      - "tools/install_soulgold_g3r5.py"
+      - ".github/workflows/soulgold-pmd-g3r5-build.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  UNIQUE_ROM_PATH: soulgold/SoulGold-PMD-G3R5.gba
+
+jobs:
+  compile-g3r5:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3 python3-pil
+
+      - name: Prepare G3R5 grounded assets
+        run: |
+          python3 framework/tools/prepare_soulgold_g3r5_assets.py \
+            --framework-root framework \
+            --spritecollab spritecollab \
+            --soulgold soulgold \
+            --output g3r5_assets
+
+      - name: Audit G3R5 support corrections
+        run: |
+          python3 - <<'PY'
+          import json
+          s = json.load(open("g3r5_assets/G3R5_ASSET_SUMMARY.json", encoding="utf-8"))
+          assert s["phase"] == "G3R5_GROUND_CONTACT_SHADOW_OWNERSHIP"
+          assert s["battle_grounding_policy"] == "ROBUST_OPAQUE_SUPPORT_BASELINE_TO_IDLE0"
+          assert s["shadow_policy"] == "SEPARATE_PMD_OWNED_32X8_GROUND_OBJ"
+          for key, rec in s["targets"].items():
+              lo, hi = rec["support_correction_range"]
+              assert -8 <= lo <= 8 and -8 <= hi <= 8, (key, lo, hi)
+              assert rec["support_target_y"] >= 0
+              print(key, "support_target_y=", rec["support_target_y"], "correction_range=", rec["support_correction_range"])
+              print(json.dumps(rec["support_corrections"], sort_keys=True))
+          cy = s["targets"]["Cyndaquil_player"]
+          assert any(v != 0 for values in cy["support_corrections"].values() for v in values), \
+              "Cyndaquil video-proven bobbing produced no stabilization correction"
+          PY
+
+      - name: Install G3R5 candidate
+        run: |
+          python3 framework/tools/install_soulgold_g3r5.py \
+            --framework-root framework \
+            --soulgold soulgold \
+            --assets-staging g3r5_assets/staging
+
+      - name: Verify G3R5 structural invariants
+        run: |
+          grep -q "PmdSoulGoldPrototype_Init" soulgold/src/battle_main.c
+          grep -q "PmdSoulGoldPrototype_Tick" soulgold/src/battle_main.c
+          grep -q "PmdSoulGoldPrototype_PrimeLoadedBattlerBody" soulgold/src/battle_gfx_sfx_util.c
+          test "$(grep -c 'PmdSoulGoldPrototype_PrimeTemplateBody(battler, species);' soulgold/src/battle_controllers.c)" -eq 2
+          test "$(grep -c 'PmdSoulGoldPrototype_PrimeCreatedSpriteBody(battler, species);' soulgold/src/battle_controllers.c)" -eq 2
+          grep -q "battle_grounding=robust opaque support baseline to Idle0" soulgold/PMD_G3R5_INSTALL_STATUS.txt
+          grep -q "shadow=separate PMD-owned compact 32x8 OBJ for both sides" soulgold/PMD_G3R5_INSTALL_STATUS.txt
+          grep -q "PmdSoulGold_UpdateGroundShadow(battler, TRUE);" soulgold/src/pmd_soulgold_prototype.c
+          grep -q "SPRITE_SHAPE(32x8)" soulgold/src/pmd_soulgold_adapter.c
+          grep -q "gEnemyMonShadow_Gfx" soulgold/src/pmd_soulgold_adapter.c
+          grep -q "shadow->x = body->x;" soulgold/src/pmd_soulgold_adapter.c
+          grep -q "shadow->y = body->y + PMD_GROUND_SHADOW_Y_OFFSET;" soulgold/src/pmd_soulgold_adapter.c
+          grep -q "gSprites\[spriteId\].callback = SpriteCallbackDummy;" soulgold/src/pmd_soulgold_adapter.c
+          test -z "$(git -C soulgold diff -- src/data.c)" || exit 1
+          ! grep -R "sprite->anims = gAnims_MonPic" -n soulgold/src/pmd_* || exit 1
+          test -z "$(git -C soulgold diff -- src/save.c src/save_failed_screen.c include/save.h)" || exit 1
+
+      - name: Build SoulGold G3R5
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee PMD_G3R5_BUILD.log
+
+      - name: Audit PMD sources for warnings or errors
+        run: |
+          if grep -E "src/pmd_.*(warning:|error:)" soulgold/PMD_G3R5_BUILD.log; then
+            echo "PMD G3R5 source warning/error detected" >&2
+            exit 1
+          fi
+
+      - name: Verify final ELF contains G3R5 symbols
+        run: |
+          mkdir -p evidence
+          arm-none-eabi-nm -C soulgold/Soulgold_Beta_1.elf | sort > evidence/PMD_G3R5_SYMBOLS.txt
+          for required in \
+            gPmdCyndaquilPlayerHomeAction gPmdCyndaquilPlayerIdleAction gPmdCyndaquilPlayerWalkAction \
+            gPmdCyndaquilPlayerNodAction gPmdCyndaquilPlayerRotateAction \
+            gPmdMarillOpponentHomeAction gPmdMarillOpponentIdleAction gPmdMarillOpponentWalkAction \
+            gPmdMarillOpponentNodAction gPmdMarillOpponentRotateAction \
+            PmdSoulGoldPrototype_PrimeLoadedBattlerBody PmdSoulGoldPrototype_PrimeTemplateBody \
+            PmdSoulGoldPrototype_PrimeCreatedSpriteBody PmdSoulGold_UpdateGroundShadow; do
+            grep -q "${required}$" evidence/PMD_G3R5_SYMBOLS.txt || {
+              echo "Missing required G3R5 symbol: ${required}" >&2
+              exit 1
+            }
+          done
+          cp "${ROM_PATH}" "${UNIQUE_ROM_PATH}"
+
+      - name: Record build evidence
+        if: always()
+        run: |
+          mkdir -p evidence/installed_source
+          cp soulgold/src/pmd_gba_runtime.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_soulgold_adapter.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_soulgold_prototype.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_cyndaquil_player_ambient.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_marill_opponent_ambient.c evidence/installed_source/ || true
+          git -C soulgold diff -- src/battle_main.c src/battle_gfx_sfx_util.c src/battle_controllers.c > evidence/SOULGOLD_G3R5_HOST_PATCH.diff
+          {
+            echo "SoulGold PMD G3R5 ground-contact + shadow-ownership CI evidence"
+            echo "soulgold_revision=${SOULGOLD_REV}"
+            echo "spritecollab_revision=${SPRITECOLLAB_REV}"
+            echo "framework_commit=${GITHUB_SHA}"
+            echo "gate=support-baseline stabilization + PMD-owned 32x8 ground shadow"
+            echo "player=Cyndaquil UpRight"
+            echo "opponent=Marill DownLeft"
+            echo "ambient=HOME+Idle+Walk+Nod+Rotate"
+            echo "native_shadow_for_pmd=HIDDEN"
+            echo "shadow_tracks=BODY_BASE_XY_NOT_PRESENTATION_X2Y2"
+            echo "save_structure=UNCHANGED"
+            echo "MAX_MON_PIC_FRAMES=UNCHANGED"
+            echo "runtime_visual_status=PENDING_USER_ACCEPTANCE"
+            if [ -f "${UNIQUE_ROM_PATH}" ]; then
+              echo "build_status=PASS"
+              stat -c "rom_bytes=%s" "${UNIQUE_ROM_PATH}"
+              sha256sum "${UNIQUE_ROM_PATH}"
+              python3 - <<'PY'
+          import os, zlib
+          p = os.environ["UNIQUE_ROM_PATH"]
+          crc = 0
+          with open(p, "rb") as f:
+              for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                  crc = zlib.crc32(chunk, crc)
+          print(f"rom_crc32={crc & 0xffffffff:08X}")
+          PY
+            else
+              echo "build_status=FAIL_OR_NO_ROM"
+            fi
+          } | tee evidence/PMD_G3R5_CI_EVIDENCE.txt
+
+      - name: Upload G3R5 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g3r5-build-evidence
+          if-no-files-found: warn
+          path: |
+            evidence/
+            g3r5_assets/G3R5_ASSET_SUMMARY.json
+            soulgold/PMD_G3R5_INSTALL_STATUS.txt
+            soulgold/PMD_G3R5_BUILD.log
+            soulgold/Soulgold_Beta_1.map
+
+      - name: Upload G3R5 test ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-PMD-G3R5-Grounding-Shadow-ROM
+          if-no-files-found: error
+          path: soulgold/SoulGold-PMD-G3R5.gba
