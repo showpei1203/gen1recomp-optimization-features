@@ -1,0 +1,91 @@
+name: SoulGold PMD G3R8 Sleep Source Asset Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "tools/convert_soulgold_g3r8_sleep.py"
+      - "tools/emit_soulgold_g3r8_sleep_c.py"
+      - "tools/prepare_soulgold_g3r8_sleep_assets.py"
+      - ".github/workflows/soulgold-pmd-g3r8-sleep-assets.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+
+jobs:
+  audit-g3r8-sleep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+      - name: Install asset dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3 python3-pil libpng-dev
+      - name: Prepare G3R8 Sleep assets
+        run: |
+          python3 framework/tools/prepare_soulgold_g3r8_sleep_assets.py \
+            --framework-root framework \
+            --spritecollab spritecollab \
+            --soulgold soulgold \
+            --output g3r8_sleep_assets
+      - name: Audit pinned Sleep contract
+        run: |
+          python3 - <<'PY'
+          import json
+          s=json.load(open('g3r8_sleep_assets/G3R8_SLEEP_ASSET_SUMMARY.json',encoding='utf-8'))
+          assert s['phase']=='G3R8_SLEEP_SOURCE_ASSETS'
+          assert s['sleep_runtime_policy']=='NOT_HOOKED_ASSET_GATE_ONLY'
+          assert s['known_ambient_1px_defect']=='DEFERRED_ROOT_CAUSE_UNRESOLVED'
+          expected={
+              'Cyndaquil_player':([24,24],42),
+              'Marill_opponent':([40,24],44),
+          }
+          for key,(size,atlas) in expected.items():
+              r=s['targets'][key]
+              assert r['sleep_source_frame_size']==size,(key,r['sleep_source_frame_size'])
+              assert r['sleep_frame_count']==2
+              assert r['sleep_durations']==[30,35]
+              assert r['visible_pixel_conservation'] is True
+              assert len(r['sleep_shadow_frames'])==2
+              assert r['expanded_shadow_atlas_frame_count']==atlas,(key,r['expanded_shadow_atlas_frame_count'])
+              print(key,'Sleep PASS',r['sleep_source_frame_size'],r['sleep_durations'])
+          print('G3R8 Sleep source asset contract PASS')
+          PY
+      - name: Verify generated Sleep C contracts
+        run: |
+          grep -q "gPmdCyndaquilPlayerSleepAction" g3r8_sleep_assets/staging/src/pmd_cyndaquil_player_sleep.c
+          grep -q "gPmdMarillOpponentSleepAction" g3r8_sleep_assets/staging/src/pmd_marill_opponent_sleep.c
+          grep -q "gPmdCyndaquilPlayerSleepShadowAction" g3r8_sleep_assets/staging/src/pmd_cyndaquil_player_shadow.c
+          grep -q "gPmdMarillOpponentSleepShadowAction" g3r8_sleep_assets/staging/src/pmd_marill_opponent_shadow.c
+          grep -q ".loop = TRUE" g3r8_sleep_assets/staging/src/pmd_cyndaquil_player_sleep.c
+          grep -q ".loop = TRUE" g3r8_sleep_assets/staging/src/pmd_marill_opponent_sleep.c
+      - name: Upload G3R8 Sleep evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g3r8-sleep-source-evidence
+          path: |
+            g3r8_sleep_assets/G3R8_SLEEP_ASSET_SUMMARY.json
+            g3r8_sleep_assets/staging/src/pmd_cyndaquil_player_sleep.c
+            g3r8_sleep_assets/staging/src/pmd_marill_opponent_sleep.c
+            g3r8_sleep_assets/staging/src/pmd_cyndaquil_player_shadow.c
+            g3r8_sleep_assets/staging/src/pmd_marill_opponent_shadow.c
