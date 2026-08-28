@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pmd_gba_animation_ir.schema.json",
+  "title": "Portable PMD Battle Animation IR",
+  "type": "object",
+  "required": ["schema_version", "species", "source", "body_profile", "actions"],
+  "properties": {
+    "schema_version": {"type": "integer", "minimum": 1},
+    "species": {
+      "type": "object",
+      "required": ["name", "national_dex"],
+      "properties": {
+        "name": {"type": "string"},
+        "national_dex": {"type": "integer", "minimum": 1},
+        "form": {"type": ["string", "null"]}
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["repository", "revision", "path"],
+      "properties": {
+        "repository": {"type": "string"},
+        "revision": {"type": "string"},
+        "path": {"type": "string"},
+        "license_reference": {"type": ["string", "null"]}
+      }
+    },
+    "body_profile": {
+      "type": "object",
+      "required": ["body_class", "ambient_style", "logical_position_locked"],
+      "properties": {
+        "body_class": {"type": "string"},
+        "ambient_style": {"type": "string"},
+        "logical_position_locked": {"const": true},
+        "home_scale_q8": {"type": "integer", "minimum": 1},
+        "max_ambient_dx": {"type": "integer", "minimum": 0},
+        "max_ambient_dy": {"type": "integer", "minimum": 0}
+      }
+    },
+    "ambient": {
+      "type": "object",
+      "properties": {
+        "home_action": {"type": "string"},
+        "pattern": {"type": "array", "items": {"type": "string"}},
+        "restart_from_home_after_combat": {"const": true}
+      }
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["source_action", "directions", "frames"],
+        "properties": {
+          "source_action": {"type": "string"},
+          "semantic_role": {
+            "enum": [
+              "ambient", "physical_attack", "special_attack", "hurt",
+              "entry", "status", "faint", "victory", "other"
+            ]
+          },
+          "rush_frame": {"type": ["integer", "null"], "minimum": 0},
+          "hit_frame": {"type": ["integer", "null"], "minimum": 0},
+          "return_frame": {"type": ["integer", "null"], "minimum": 0},
+          "directions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["source_row"],
+              "properties": {
+                "source_row": {"type": "integer", "minimum": 0, "maximum": 7},
+                "battle_role": {"enum": ["player", "opponent", "neutral"]}
+              }
+            }
+          },
+          "frames": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["index", "duration", "canvas_w", "canvas_h", "anchor_x", "anchor_y"],
+              "properties": {
+                "index": {"type": "integer", "minimum": 0},
+                "duration": {"type": "integer", "minimum": 1},
+                "canvas_w": {"type": "integer", "minimum": 1},
+                "canvas_h": {"type": "integer", "minimum": 1},
+                "anchor_x": {"type": "integer"},
+                "anchor_y": {"type": "integer"},
+                "source_offset_x": {"type": "integer"},
+                "source_offset_y": {"type": "integer"},
+                "presentation_dx": {"type": "integer"},
+                "presentation_dy": {"type": "integer"},
+                "gba_safe_single_obj": {"type": "boolean"},
+                "asset": {"type": ["string", "null"]}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
