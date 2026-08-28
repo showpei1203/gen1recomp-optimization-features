@@ -1,0 +1,232 @@
+name: SoulGold PMD G3R7 Attack Shoot Selector Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "tools/convert_soulgold_g3r7_shoot.py"
+      - "tools/emit_soulgold_g3r7_shoot_c.py"
+      - "tools/prepare_soulgold_g3r7_shoot_assets.py"
+      - "tools/install_soulgold_g3r7.py"
+      - ".github/workflows/soulgold-pmd-g3r7-build.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  UNIQUE_ROM_PATH: soulgold/SoulGold-PMD-G3R7.gba
+
+jobs:
+  compile-g3r7:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3 python3-pil
+
+      - name: Prepare G3R7 Shoot assets
+        run: |
+          python3 framework/tools/prepare_soulgold_g3r7_shoot_assets.py \
+            --framework-root framework \
+            --spritecollab spritecollab \
+            --soulgold soulgold \
+            --output g3r7_assets
+
+      - name: Audit G3R7 source assets
+        run: |
+          python3 - <<'PY'
+          import json
+          s=json.load(open('g3r7_assets/G3R7_SHOOT_ASSET_SUMMARY.json',encoding='utf-8'))
+          expected={
+              'Cyndaquil_player': ([32,48],10,[3,6,2,2,2,2,2,2,2,2],{'rush':None,'hit':3,'return':3},40),
+              'Marill_opponent': ([40,48],11,[2,6,1,1,2,2,2,2,2,2,2],{'rush':None,'hit':1,'return':4},42),
+          }
+          for key,(size,count,durations,markers,atlas) in expected.items():
+              r=s['targets'][key]
+              assert r['shoot_source_frame_size']==size
+              assert r['shoot_frame_count']==count
+              assert r['shoot_durations']==durations
+              assert r['shoot_markers']==markers
+              assert r['expanded_shadow_atlas_frame_count']==atlas
+              assert r['visible_pixel_conservation'] is True
+          print('G3R7 source assets PASS')
+          PY
+
+      - name: Install G3R7 selector candidate
+        run: |
+          python3 framework/tools/install_soulgold_g3r7.py \
+            --framework-root framework \
+            --soulgold soulgold \
+            --assets-staging g3r7_assets/staging
+
+      - name: Verify semantic selector and ownership invariants
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('soulgold/src/pmd_soulgold_prototype.c').read_text()
+          assert '#include "move.h"' in p
+          assert 'GetMoveCategory(move) == DAMAGE_CATEGORY_STATUS' in p
+          assert 'MoveMakesContact(move)' in p
+          assert 'BindMoveAttack(battler, profile);' in p
+          assert 'BindMoveShoot(battler, profile);' in p
+          assert 'PMD_PHASE_MOVE_SHOOT' in p
+          assert 'return state->profile->shadowShoot;' in p
+          assert 'PmdSoulGold_SetNativeSpatialOwnership(battler, TRUE);' in p
+
+          c=Path('soulgold/src/battle_controllers.c').read_text()
+          s=c.index('static void Controller_DoMoveAnimation(enum BattlerId battler)\n{')
+          e=c.index('\nvoid BtlController_HandleMoveAnimation(enum BattlerId battler)',s)
+          fn=c[s:e]
+          assert fn.count('PmdSoulGoldPrototype_BeginMoveAction(battler, move);')==1
+          assert fn.index('PmdSoulGoldPrototype_BeginMoveAction(battler, move);') < fn.index('DoMoveAnim(move);')
+          assert fn.count('PmdSoulGoldPrototype_EndMoveAction(battler);')==1
+          assert fn.count('PmdSoulGoldPrototype_IsMoveReturnReady(battler)')==1
+          assert 'InitAndLaunchSpecialAnimation(battler, battler, battler, B_ANIM_MON_TO_SUBSTITUTE);' in fn
+          assert 'TrySetBehindSubstituteSpriteBit' in fn
+
+          main=Path('soulgold/src/battle_main.c').read_text()
+          s=main.index('static void RunBattleSoftwareTick(void)\n{')
+          e=main.index('\nstatic void AdvanceBattleFrameRng(void)',s)
+          tick=main[s:e]
+          assert tick.index('AnimateSprites();') < tick.index('PmdSoulGoldPrototype_Tick();') < tick.index('BuildOamBuffer();') < tick.index('RunTasks();')
+
+          a=Path('soulgold/src/pmd_soulgold_adapter.c').read_text()
+          assert 'sPmdNativeSpatialOwnership' in a
+          assert 'if (battler >= PMD_GBA_MAX_BATTLERS || sPmdNativeSpatialOwnership[battler])' in a
+          print('G3R7 selector and ownership invariants PASS')
+          PY
+          grep -q "selector_status=NO_PMD_MOVE_BODY_NATIVE_ONLY" soulgold/PMD_G3R7_INSTALL_STATUS.txt
+          grep -q "selector_damaging_contact=PMD_ATTACK" soulgold/PMD_G3R7_INSTALL_STATUS.txt
+          grep -q "selector_damaging_non_contact=PMD_SHOOT" soulgold/PMD_G3R7_INSTALL_STATUS.txt
+          grep -q "gPmdCyndaquilPlayerShootAction" soulgold/src/pmd_cyndaquil_player_shoot.c
+          grep -q "gPmdMarillOpponentShootAction" soulgold/src/pmd_marill_opponent_shoot.c
+          grep -q "gPmdCyndaquilPlayerShootShadowAction" soulgold/src/pmd_cyndaquil_player_shadow.c
+          grep -q "gPmdMarillOpponentShootShadowAction" soulgold/src/pmd_marill_opponent_shadow.c
+          test -z "$(git -C soulgold diff -- src/save.c src/save_failed_screen.c include/save.h)"
+
+      - name: Build SoulGold G3R7
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee PMD_G3R7_BUILD.log
+
+      - name: Audit PMD warnings or errors
+        run: |
+          if grep -E "src/pmd_.*(warning:|error:)" soulgold/PMD_G3R7_BUILD.log; then exit 1; fi
+
+      - name: Verify ELF symbols and ROM
+        run: |
+          mkdir -p evidence
+          arm-none-eabi-nm -C soulgold/Soulgold_Beta_1.elf | sort > evidence/PMD_G3R7_SYMBOLS.txt
+          for required in \
+            PmdSoulGoldPrototype_Tick \
+            PmdSoulGoldPrototype_HandleHitAnimation \
+            PmdSoulGoldPrototype_BeginMoveAction \
+            PmdSoulGoldPrototype_EndMoveAction \
+            PmdSoulGoldPrototype_IsMoveReturnReady \
+            PmdSoulGold_SetNativeSpatialOwnership \
+            gPmdCyndaquilPlayerAttackAction \
+            gPmdCyndaquilPlayerShootAction \
+            gPmdCyndaquilPlayerShootShadowAction \
+            gPmdMarillOpponentAttackAction \
+            gPmdMarillOpponentShootAction \
+            gPmdMarillOpponentShootShadowAction; do
+            grep -q "${required}$" evidence/PMD_G3R7_SYMBOLS.txt || exit 1
+          done
+          cp "${ROM_PATH}" "${UNIQUE_ROM_PATH}"
+          test "$(stat -c %s "${UNIQUE_ROM_PATH}")" -eq 33554432
+
+      - name: Record G3R7 evidence
+        if: always()
+        run: |
+          mkdir -p evidence/installed_source
+          cp g3r7_assets/G3R7_SHOOT_ASSET_SUMMARY.json evidence/ || true
+          cp soulgold/PMD_G3R7_INSTALL_STATUS.txt evidence/ || true
+          cp soulgold/src/pmd_cyndaquil_player_attack.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_cyndaquil_player_shoot.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_marill_opponent_attack.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_marill_opponent_shoot.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_cyndaquil_player_shadow.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_marill_opponent_shadow.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_soulgold_prototype.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_soulgold_adapter.c evidence/installed_source/ || true
+          git -C soulgold diff -- src/battle_main.c src/battle_controllers.c src/battle_controller_player.c src/battle_controller_opponent.c include/pmd_soulgold_prototype.h include/pmd_soulgold_adapter.h > evidence/SOULGOLD_G3R7_HOST_PATCH.diff || true
+          {
+            echo "SoulGold PMD G3R7 Attack/Shoot selector evidence"
+            echo "framework_commit=${GITHUB_SHA}"
+            echo "soulgold_revision=${SOULGOLD_REV}"
+            echo "spritecollab_revision=${SPRITECOLLAB_REV}"
+            echo "parent=G3R6B_BUILD_PASS_RUNTIME_PENDING"
+            echo "status_move=NO_PMD_MOVE_BODY"
+            echo "damaging_contact=PMD_ATTACK"
+            echo "damaging_non_contact=PMD_SHOOT"
+            echo "selector_authority=SOULGOLD_GETMOVECATEGORY_PLUS_MOVEMAKESCONTACT"
+            echo "combat_timing=SOULGOLD_NATIVE"
+            echo "move_fx=SOULGOLD_NATIVE"
+            echo "move_spatial=SOULGOLD_NATIVE_X2Y2"
+            echo "shadow=FRAME_SYNCHRONOUS_AUTHENTIC_PMDCOLLAB"
+            echo "known_ambient_1px_defect=DEFERRED_ROOT_CAUSE_UNRESOLVED"
+            echo "runtime_visual_status=PENDING_USER_ACCEPTANCE"
+            if [ -f "${UNIQUE_ROM_PATH}" ]; then
+              echo "build_status=PASS"
+              stat -c "rom_bytes=%s" "${UNIQUE_ROM_PATH}"
+              sha256sum "${UNIQUE_ROM_PATH}"
+              python3 - <<'PY'
+          import os,zlib
+          p=os.environ['UNIQUE_ROM_PATH']; crc=0
+          with open(p,'rb') as f:
+              for c in iter(lambda:f.read(1024*1024),b''): crc=zlib.crc32(c,crc)
+          print(f"rom_crc32={crc & 0xffffffff:08X}")
+          PY
+            else
+              echo "build_status=FAIL_OR_NO_ROM"
+            fi
+          } | tee evidence/PMD_G3R7_CI_EVIDENCE.txt
+
+      - name: Upload G3R7 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g3r7-build-evidence
+          path: |
+            evidence/
+            soulgold/PMD_G3R7_BUILD.log
+
+      - name: Upload G3R7 test ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-PMD-G3R7-ROM
+          path: soulgold/SoulGold-PMD-G3R7.gba
