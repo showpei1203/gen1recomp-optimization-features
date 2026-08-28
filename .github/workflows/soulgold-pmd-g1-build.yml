@@ -15,6 +15,7 @@ on:
 env:
   SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
   SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
 
 jobs:
   compile-g1:
@@ -100,6 +101,7 @@ jobs:
       - name: Record build evidence
         if: always()
         run: |
+          mkdir -p evidence
           {
             echo "SoulGold PMD G1 CI evidence"
             echo "soulgold_revision=${SOULGOLD_REV}"
@@ -107,16 +109,23 @@ jobs:
             echo "framework_commit=${GITHUB_SHA}"
             echo "gate=Cyndaquil Walk 4F through 2-slot rolling cache"
             echo "runtime_visual_status=PENDING"
-            if [ -f soulgold/pokeemerald.gba ]; then
+            if [ -f "${ROM_PATH}" ]; then
               echo "build_status=PASS"
-              sha256sum soulgold/pokeemerald.gba
-            elif [ -f soulgold/soulgold.gba ]; then
-              echo "build_status=PASS"
-              sha256sum soulgold/soulgold.gba
+              stat -c "rom_bytes=%s" "${ROM_PATH}"
+              sha256sum "${ROM_PATH}"
+              python3 - <<'PY'
+          import os, zlib
+          p = os.environ["ROM_PATH"]
+          crc = 0
+          with open(p, "rb") as f:
+              for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                  crc = zlib.crc32(chunk, crc)
+          print(f"rom_crc32={crc & 0xffffffff:08X}")
+          PY
             else
               echo "build_status=FAIL_OR_NO_ROM"
             fi
-          } | tee PMD_G1_CI_EVIDENCE.txt
+          } | tee evidence/PMD_G1_CI_EVIDENCE.txt
 
       - name: Upload logs and manifests
         if: always()
@@ -125,7 +134,15 @@ jobs:
           name: soulgold-pmd-g1-build-evidence
           if-no-files-found: warn
           path: |
-            PMD_G1_CI_EVIDENCE.txt
+            evidence/PMD_G1_CI_EVIDENCE.txt
             g1_assets/G1_ASSET_SUMMARY.json
             soulgold/PMD_G1_INSTALL_STATUS.txt
             soulgold/PMD_G1_BUILD.log
+
+      - name: Upload test ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-PMD-G1-Cyndaquil-Walk-Test-ROM
+          if-no-files-found: error
+          path: soulgold/Soulgold_Beta_1.gba
