@@ -1,7 +1,7 @@
 # Pokémon SoulGold PMD Animated Prototype — CURRENT DEVELOPMENT
 
 Date: 2026-08-28
-Status: ACTIVE / GBA-FIRST / G1 SEALED / G2 BEHAVIOR PASS / G3 ACTIVE
+Status: ACTIVE / GBA-FIRST / G1 SEALED / G2 BEHAVIOR PASS / G3-G3R1 RUNTIME FAIL / G3R2 COMPILE PASS — HUMAN RUNTIME PENDING
 
 ## Current baseline authority
 
@@ -43,7 +43,9 @@ The user will continue one SoulGold save while prototype ROMs are updated.
 - Keep ROM/save compatibility unless a phase explicitly requires a save-breaking change.
 - Delivered live ROM basename should remain stable when practical.
 - Any future save-breaking change must be declared before delivery.
-- G1/G2/G3 do not change the save structure.
+- G1/G2/G3/G3R1/G3R2 do not change the save structure.
+- Normal in-game `.sav` files do not contain PMD action tables, renderer code, battle sprite assets or PMD shadow assets and cannot revert a new ROM to old PMD behavior.
+- Save-state / quick-state validation is forbidden across prototype ROM revisions because emulator states may preserve old RAM, sprite state and execution position.
 
 ## G2 authority — RICH AMBIENT BEHAVIOR PASS / VISUAL-FACING PARTIAL
 
@@ -60,7 +62,7 @@ Human runtime observations received 2026-08-28:
 2. During native move execution, the PMD body freezes/yields ownership; after the move it returns correctly to the idle/ecology loop — **PASS**.
 3. The five tested ambient behaviors are clearly distinguishable — **PASS**.
 4. Some actions do not visually preserve the desired 45-degree battle facing and therefore read as stiff/odd — **PARTIAL / RULE CREATED**.
-5. On initial battle entry, SoulGold still displays the legacy battle sprite before PMD takes over — **FAIL / G3 TARGET**.
+5. On initial battle entry, SoulGold still displays the legacy battle sprite before PMD takes over — **FAIL / LATER ROOT CAUSE FOUND**.
 
 G2 proves the HOME/interruption/ecology state machine but is not the final visual-facing authority.
 
@@ -86,7 +88,7 @@ Cyndaquil source audit at the pinned SpriteCollab revision:
 - `LookUp`: shared single-row/non-directional — banned from battle ambient.
 - `DeepBreath`: shared single-row/non-directional — banned from battle ambient.
 - `Sit`: shared single-row/non-directional — banned from battle ambient.
-- `Charge`: genuine directional but reserved for later combat/ecology work, not general G3 ambient.
+- `Charge`: genuine directional but reserved for later combat/ecology work, not general grounded ambient.
 
 This policy supersedes the overly strict interpretation that every intermediate frame must itself remain at 45 degrees.
 
@@ -98,49 +100,122 @@ PMD shadow is part of the battle presentation contract, not optional decoration.
 - Shadow rendering follows PMDCollab SpriteBot marker semantics and the species `AnimData.xml` `ShadowSize` value.
 - Cyndaquil has `ShadowSize=1`: green and red shadow marker pixels are active; blue marker pixels are not.
 - Active shadow markers are rendered as opaque black underneath the PMD body.
-- For G3 grounded/small-OBJ ambient actions, shadow and body are composited into the same normalized 64x64 presentation frame before palette remap.
-- This gives body/shadow atomic frame synchronization and avoids an extra OBJ/tile-cache/palette ownership layer.
-- The G1 two-slot rolling renderer remains unchanged because it simply swaps the already-combined frame.
-- Future large jump/float/composite actions may require a separate ground-shadow OBJ when body vertical motion must be independent of shadow position. That is a later renderer gate and must not regress the current grounded path.
+- For current grounded/small-OBJ ambient actions, shadow and body remain in one atomic 64x64 presentation frame before palette remap.
+- The G1 two-slot rolling renderer remains unchanged because it swaps the already-combined frame.
+- Future jump/float/composite actions may require a separate ground-shadow OBJ when body vertical motion must be independent of shadow position. That is a later renderer gate and must not regress the current grounded path.
 
 Import tooling must perform both a directional-sheet audit and shadow-sheet audit before an action is admitted to the battle asset pool.
 
-## G3 — BATTLE-FACING CLEANUP + PMD FROM FIRST BATTLE FRAME + SHADOW
+## G3 / G3R1 — COMPILE PASS, HUMAN RUNTIME FAIL
 
-Status: `IMPLEMENTATION / CI ACTIVE`
+G3 and G3R1 are retained as failure evidence. They must not be promoted or used as a visual baseline.
 
-### G3 ambient set
+Human runtime rejection received 2026-08-28:
 
-Cyndaquil benchmark:
+1. Initial player battle entry still visibly used the legacy SoulGold battle sprite before PMD takeover.
+2. PMD shadow was visibly displaced relative to the apparent ground point in the approved 45-degree view.
+3. Compared with G2, the PMD body unnaturally bobbed / floated vertically and no longer felt planted on the battlefield.
+
+These were not caused by the user's normal `.sav` file.
+
+### Proven root cause A — battle-entry last writer
+
+G3/G3R1 primed PMD HOME too early.
+
+SoulGold has later native controller paths that call `BattleLoadMonSpriteGfx(...)` after the early PMD prime. Those native loads rewrite the Pokémon image buffers with the legacy front/back battle graphics before send-out continues.
+
+Therefore the correct ownership rule is:
+
+**PMD must be the last body-pixel writer after every relevant native mon-gfx load, not merely an early writer before `CreateSprite(...)`.**
+
+A pre-create PMD prime may remain as an early safety measure, but it is insufficient by itself.
+
+### Proven root cause B — per-frame body-center normalization is wrong for grounded PMD animation
+
+The old converter read the green body-center marker from each frame's PMD `Offsets.png` and translated every frame so that this body-center landed on one fixed GBA anchor.
+
+That interpretation is rejected for grounded battle presentation.
+
+Measured pinned Cyndaquil PMD data proves why:
+
+- `Idle / UpRight` body centers change from `(7,15)` to `(8,16)`, while the raw PMD shadow stays at the same ground position.
+- `Walk / UpRight` body centers alternate `(7,15) -> (6,16) -> (7,15) -> (6,16)`, while the raw PMD shadow bbox remains constant across all four frames: approximately `x=5..18, y=17..22`.
+
+The PMD author is intentionally moving the body inside a fixed local ground/shadow coordinate system. Re-centering every frame moves the entire body+shadow frame in the opposite direction and manufactures artificial 1-pixel vertical/horizontal drift.
+
+**Per-frame body-center translation is therefore formally forbidden for grounded PMD ambient actions.**
+
+The green body-center marker remains useful metadata for analysis, hit/contact semantics and future action logic, but it must not drive per-frame grounded placement.
+
+## G3R2 — POST-NATIVE-LOAD OWNERSHIP + PMD GROUND ANCHOR
+
+Status: `COMPILE / LINK / CI PASS — HUMAN RUNTIME VISUAL ACCEPTANCE PENDING`
+
+Authoritative build:
+
+- framework commit: `dda24c468f1cec54bc3fb4914917927d4abe49d1`
+- GitHub Actions run: `33157188171`
+- bytes: `33554432`
+- SHA-256: `5afbdf6aae1efcc153b9da067a932d52fbb57aa8feb90fe55040950c59cc289a`
+- CRC32: `0978A865`
+- full SoulGold build: **PASS**
+- PMD warning/error audit: **PASS**
+- final ELF symbol gate: **PASS**
+- ROM artifact upload: **PASS**
+- save structure: **UNCHANGED**
+
+### G3R2 body ownership rule
+
+Installer evidence reports:
+
+- pre-create PMD prime paths: `2`
+- post-native-`BattleLoadMonSpriteGfx` PMD re-prime paths: `5`
+
+Every relevant controller path that performs a native `BattleLoadMonSpriteGfx(..., battler/battlerPartner)` is followed by `PmdSoulGoldPrototype_PrimeBattlerBody(...)` before native send-out choreography continues.
+
+The intent is to preserve SoulGold's native Poké Ball, timing, movement, affine effects and callbacks while ensuring PMD HOME is the final Pokémon body pixel authority.
+
+### G3R2 grounded placement rule — FORMAL
+
+Policy identifier:
+
+`PMD_TILE_SPACE_ACTION_CONSTANT_SHADOW_GROUND_ANCHOR`
+
+Rules:
+
+- Preserve the PMD action's raw tile-space relationship between body and shadow.
+- HOME/Idle frame 0 establishes the species/side battlefield ground reference.
+- Each grounded action receives exactly one fixed translation for its entire sequence.
+- Different actions may receive different fixed translations when their source tile dimensions/ground anchors differ.
+- Every frame within one action must have exactly the same `paste_x` and `paste_y`.
+- PMD body-center metadata is recorded but `body_center_controls_translation = false`.
+- Per-frame body-center re-centering is forbidden.
+- Every emitted battle frame must contain a non-empty authentic PMD shadow contribution.
+
+CI rejects any grounded action whose frames contain more than one placement tuple.
+
+### G3R2 ambient set
+
+Cyndaquil benchmark remains:
 
 `HOME -> Idle -> HOME -> Walk -> HOME -> Nod -> HOME -> Pose -> HOME -> Rotate -> HOME`
 
-All selected actions are genuine directional sheets at the pinned source revision. `LookUp`, `DeepBreath`, and `Sit` are excluded. Every generated frame includes the authentic PMD per-frame shadow underneath the body.
+`LookUp`, `DeepBreath`, and `Sit` remain banned from battle ambient.
 
-### G3 battle-entry rule
+### G3R2 human acceptance target
 
-Goal: the Pokémon body must already be PMD when the native send-out Pokémon sprite is created.
-
-Implementation strategy:
-
-- Keep SoulGold's native Poké Ball/send-out motion, callback timing, affine effects and battle sequencing.
-- Immediately before native `CreateSprite(...)` for the Pokémon body, prime both resident battler image slots with the combined PMD HOME body+shadow frame.
-- Both cache slots receive the same HOME image so native frame index 0/1 changes during send-out cannot reveal the legacy battle sprite.
-- After native send-out ownership settles, the existing G2 HOME/Rich Ambient state machine resumes normal rolling-cache presentation.
-
-This deliberately changes the body pixels, not the native send-out choreography.
-
-### G3 acceptance target
-
-1. Battle entry never visibly exposes the legacy Cyndaquil battle sprite.
-2. Native send-out timing/motion remains normal.
+1. Cold-boot battle entry never visibly exposes the legacy Cyndaquil battle body.
+2. Native SoulGold send-out timing/motion remains normal.
 3. Cyndaquil appears as PMD HOME from the first visible Pokémon-body frame.
-4. PMD shadow is visible, grounded correctly, and remains synchronized with the body.
-5. `LookUp`, `DeepBreath`, and `Sit` never appear in ambient behavior.
-6. `Rotate` remains and naturally returns to the 45-degree HOME.
-7. Idle/Walk/Nod/Pose/Rotate remain visually distinct and smooth.
-8. Move interruption and post-move HOME recovery do not regress.
-9. Save continuity remains intact.
+4. PMD shadow reads as grounded underneath the character in the approved 45-degree view.
+5. No artificial whole-body 1-pixel vertical/horizontal bob caused by converter re-centering is visible.
+6. Intentional internal PMD body/foot motion remains intact.
+7. `LookUp`, `DeepBreath`, and `Sit` never appear.
+8. `Rotate` remains and naturally returns to 45-degree HOME.
+9. Native move ownership still returns cleanly to HOME and then Rich Ambient.
+10. Normal `.sav` continuity remains intact.
+
+Until this list is visually accepted by the user, G3R2 is not formally promoted beyond compile/link/structural PASS.
 
 ## User reference ROM
 
@@ -152,6 +227,7 @@ The user's `Pokemon-SoulGold-v1.gba` remains intended as `USER_REFERENCE_ROM`, n
 - PMD `Attack` (`64x72`)
 - `Swing` (`72x80`)
 - large/composite OBJ policy
+- independent ground-shadow OBJ for airborne actions
 - physical attack state
 - special attack state
 - hurt state
