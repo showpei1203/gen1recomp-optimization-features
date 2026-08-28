@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit SoulGold G3 Cyndaquil battle-facing-compatible Rich Ambient descriptors."""
+"""Emit SoulGold G3 grounded Rich Ambient descriptors for one PMD species/side."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-ACTIONS = ("Idle", "Walk", "Nod", "Pose", "Rotate")
+ACTIONS = ("Idle", "Walk", "Nod", "Rotate")
 
 
 def sym(text: str) -> str:
@@ -29,11 +29,11 @@ def main() -> int:
 
     missing = [name for name in ACTIONS if name not in ir["actions"]]
     if missing:
-        raise SystemExit(f"IR missing required G3 actions: {missing}")
+        raise SystemExit(f"IR missing required G3R3 grounded actions: {missing}")
 
     lines = [
-        "/* Auto-generated SoulGold G3 battle-facing Rich Ambient descriptors. */",
-        "/* PMD shadows are already composited into each generated body frame. */",
+        "/* Auto-generated SoulGold G3R3 grounded Rich Ambient descriptors. */",
+        "/* PMD body+shadow are atomic; grounded frames use PMD shadow-origin normalization. */",
         "#include \"global.h\"",
         "#include \"pmd_gba_runtime.h\"",
         "",
@@ -58,9 +58,13 @@ def main() -> int:
             duration = int(frame["duration"])
             dx = int(frame.get("presentation_dx", 0))
             dy = int(frame.get("presentation_dy", 0))
+            if dx != 0 or dy != 0:
+                raise SystemExit(
+                    f"Grounded G3R3 frame must not use runtime sprite offsets: {species}/{args.variant}/{action_name}/{idx} = ({dx},{dy})"
+                )
             lines.append(
                 f"    {{ .gfx = {frame_symbols[(action_name, idx)]}, .duration = {duration}, "
-                f".presentationX = {dx}, .presentationY = {dy} }},"
+                f".presentationX = 0, .presentationY = 0 }},"
             )
         lines.append("};")
         lines.append("")
@@ -91,7 +95,7 @@ def main() -> int:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("\n".join(lines), encoding="utf-8")
-    print(f"Wrote {args.output} (G3 directional+shadow, variant={args.variant})")
+    print(f"Wrote {args.output} (G3R3 grounded, species={species}, variant={args.variant})")
     return 0
 
 
