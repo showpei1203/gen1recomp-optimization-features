@@ -4,6 +4,7 @@
 #include "global.h"
 
 #define PMD_GBA_CACHE_SLOTS 2
+#define PMD_GBA_MAX_BATTLERS 4
 
 struct PmdGbaFrame
 {
@@ -22,16 +23,16 @@ struct PmdGbaAction
 
 struct PmdGbaHostOps
 {
-    bool32 (*CanPresentBattler)(enum BattlerId battler);
-    bool32 (*StageFrame)(enum BattlerId battler, u8 cacheSlot, const struct PmdGbaFrame *frame);
-    void (*PresentSlot)(enum BattlerId battler, u8 cacheSlot);
-    void (*SetPresentationOffset)(enum BattlerId battler, s16 x, s16 y);
+    bool32 (*CanPresentBattler)(u8 battler);
+    bool32 (*StageFrame)(u8 battler, u8 cacheSlot, const struct PmdGbaFrame *frame);
+    void (*PresentSlot)(u8 battler, u8 cacheSlot);
+    void (*SetPresentationOffset)(u8 battler, s16 x, s16 y);
 };
 
 void PmdGbaRuntime_Init(const struct PmdGbaHostOps *host);
 void PmdGbaRuntime_Reset(void);
-bool32 PmdGbaRuntime_Bind(enum BattlerId battler, const struct PmdGbaAction *action);
-void PmdGbaRuntime_Unbind(enum BattlerId battler);
+bool32 PmdGbaRuntime_Bind(u8 battler, const struct PmdGbaAction *action);
+void PmdGbaRuntime_Unbind(u8 battler);
 void PmdGbaRuntime_Tick(void);
 
 #endif // GUARD_PMD_GBA_RUNTIME_H
