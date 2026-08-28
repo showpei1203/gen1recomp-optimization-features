@@ -41,7 +41,6 @@ extern const struct PmdSoulGoldShadowAction gPmdMarillOpponentRotateShadowAction
 
 #define TAG_PMD_CYNDAQUIL_DYNAMIC_SHADOW_TILE 0xF3D7
 #define TAG_PMD_MARILL_DYNAMIC_SHADOW_TILE    0xF3D8
-#define SPRITE_NONE 0xFF
 
 static u8 sShadowSpriteIds[4];
 static bool8 sNativeShadowSuppressed[4];
