@@ -107,6 +107,11 @@ void PmdGbaRuntime_Unbind(u8 battler)
     if (battler >= PMD_GBA_MAX_BATTLERS)
         return;
 
+    // Ownership rule: unbinding only forgets PMD state. It must never write to
+    // the host sprite because the battler slot may already contain a newly
+    // created native send-out/switch sprite whose x2/y2 are owned by SoulGold.
+    // G2 will add an explicit SuspendToHome path for cases where PMD itself owns
+    // a non-zero presentation offset and must deliberately settle before combat.
     sBattlers[battler].action = NULL;
     sBattlers[battler].ticksLeft = 0;
     sBattlers[battler].frameIndex = 0;
@@ -114,9 +119,6 @@ void PmdGbaRuntime_Unbind(u8 battler)
     sBattlers[battler].active = FALSE;
     sBattlers[battler].started = FALSE;
     sBattlers[battler].needsRefresh = FALSE;
-
-    if (sHost != NULL)
-        sHost->SetPresentationOffset(battler, 0, 0);
 }
 
 void PmdGbaRuntime_Tick(void)
