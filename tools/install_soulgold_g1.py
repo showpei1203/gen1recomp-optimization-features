@@ -103,11 +103,22 @@ def convert_variant(
 
     host_asset_root = soulgold / "graphics" / "pmd" / "cyndaquil" / variant
     walk_dst = host_asset_root / "walk"
+    # Generated directories are authoritative output, not an append-only cache.
+    # Remove them before copying so a shorter/future action cannot silently keep
+    # stale frame_XX files from a previous candidate.
+    if walk_dst.exists():
+        shutil.rmtree(walk_dst)
     walk_dst.mkdir(parents=True, exist_ok=True)
-    for png in sorted((out / "walk").glob("frame_*.png")):
+
+    source_frames = sorted((out / "walk").glob("frame_*.png"))
+    if len(source_frames) != 4:
+        raise RuntimeError(f"{variant}: converter produced {len(source_frames)} Walk frames, expected 4")
+    for png in source_frames:
         shutil.copy2(png, walk_dst / png.name)
-    if len(list(walk_dst.glob("frame_*.png"))) != 4:
-        raise RuntimeError(f"{variant}: expected 4 Walk frames after conversion")
+
+    installed_frames = sorted(walk_dst.glob("frame_*.png"))
+    if len(installed_frames) != 4:
+        raise RuntimeError(f"{variant}: installed {len(installed_frames)} Walk frames, expected 4")
 
     descriptor = soulgold / "src" / f"pmd_cyndaquil_{variant}_g1_assets.c"
     run([
