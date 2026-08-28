@@ -1,0 +1,153 @@
+name: SoulGold PMD G3R4B OAM Timing Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "tools/install_soulgold_g3r4b.py"
+      - ".github/workflows/soulgold-pmd-g3r4b-build.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  UNIQUE_ROM_PATH: soulgold/SoulGold-PMD-G3R4B-OAM-Timing.gba
+
+jobs:
+  compile-g3r4b:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3 python3-pil
+
+      - name: Prepare sealed G3R4 assets
+        run: |
+          python3 framework/tools/prepare_soulgold_g3r4_assets.py \
+            --framework-root framework \
+            --spritecollab spritecollab \
+            --soulgold soulgold \
+            --output g3r4b_assets
+
+      - name: Install G3R4B timing candidate
+        run: |
+          python3 framework/tools/install_soulgold_g3r4b.py \
+            --framework-root framework \
+            --soulgold soulgold \
+            --assets-staging g3r4b_assets/staging
+
+      - name: Verify OAM timing invariant
+        run: |
+          grep -q "expected_player_bobbing=NONE_WHILE_PMD_OWNS_PRESENTATION" soulgold/PMD_G3R4B_INSTALL_STATUS.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('soulgold/src/battle_main.c').read_text()
+          start = text.index('static void RunBattleSoftwareTick(void)\n{')
+          end = text.index('\n}', start)
+          fn = text[start:end]
+          a = fn.index('AnimateSprites();')
+          p = fn.index('PmdSoulGoldPrototype_Tick();')
+          b = fn.index('BuildOamBuffer();')
+          r = fn.index('RunTasks();')
+          assert a < p < b < r, (a, p, b, r)
+          assert fn.count('PmdSoulGoldPrototype_Tick();') == 1
+          print('G3R4B OAM timing invariant PASS')
+          PY
+          test -z "$(git -C soulgold diff -- src/save.c src/save_failed_screen.c include/save.h)" || exit 1
+
+      - name: Build SoulGold G3R4B
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee PMD_G3R4B_BUILD.log
+
+      - name: Audit PMD warnings or errors
+        run: |
+          if grep -E "src/pmd_.*(warning:|error:)" soulgold/PMD_G3R4B_BUILD.log; then
+            echo "PMD G3R4B source warning/error detected" >&2
+            exit 1
+          fi
+
+      - name: Verify final ELF symbols and ROM
+        run: |
+          mkdir -p evidence
+          arm-none-eabi-nm -C soulgold/Soulgold_Beta_1.elf | sort > evidence/PMD_G3R4B_SYMBOLS.txt
+          for required in \
+            PmdSoulGoldPrototype_Tick PmdSoulGoldPrototype_PrimeCreatedSpriteBody \
+            gPmdCyndaquilPlayerIdleAction gPmdMarillOpponentIdleAction; do
+            grep -q "${required}$" evidence/PMD_G3R4B_SYMBOLS.txt || exit 1
+          done
+          cp "${ROM_PATH}" "${UNIQUE_ROM_PATH}"
+
+      - name: Record evidence
+        if: always()
+        run: |
+          mkdir -p evidence/installed_source
+          cp soulgold/src/battle_main.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_soulgold_adapter.c evidence/installed_source/ || true
+          cp soulgold/src/pmd_soulgold_prototype.c evidence/installed_source/ || true
+          cp soulgold/PMD_G3R4B_INSTALL_STATUS.txt evidence/ || true
+          git -C soulgold diff -- src/battle_main.c > evidence/SOULGOLD_G3R4B_HOST_PATCH.diff
+          {
+            echo "SoulGold PMD G3R4B OAM timing evidence"
+            echo "framework_commit=${GITHUB_SHA}"
+            echo "parent=G3R4"
+            echo "change=AnimateSprites -> PMD Tick -> BuildOamBuffer"
+            echo "shadow_policy=unchanged_from_G3R4"
+            echo "runtime_visual_status=PENDING_USER_ACCEPTANCE"
+            if [ -f "${UNIQUE_ROM_PATH}" ]; then
+              echo "build_status=PASS"
+              stat -c "rom_bytes=%s" "${UNIQUE_ROM_PATH}"
+              sha256sum "${UNIQUE_ROM_PATH}"
+            else
+              echo "build_status=FAIL_OR_NO_ROM"
+            fi
+          } | tee evidence/PMD_G3R4B_CI_EVIDENCE.txt
+
+      - name: Upload G3R4B evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g3r4b-build-evidence
+          path: |
+            evidence/
+            soulgold/PMD_G3R4B_BUILD.log
+
+      - name: Upload G3R4B test ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-PMD-G3R4B-OAM-Timing-ROM
+          path: soulgold/SoulGold-PMD-G3R4B-OAM-Timing.gba
