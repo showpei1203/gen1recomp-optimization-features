@@ -10,17 +10,15 @@
 extern const struct PmdGbaAction gPmdCyndaquilPlayerHomeAction;
 extern const struct PmdGbaAction gPmdCyndaquilPlayerIdleAction;
 extern const struct PmdGbaAction gPmdCyndaquilPlayerWalkAction;
-extern const struct PmdGbaAction gPmdCyndaquilPlayerDeepBreathAction;
 extern const struct PmdGbaAction gPmdCyndaquilPlayerNodAction;
-extern const struct PmdGbaAction gPmdCyndaquilPlayerSitAction;
+extern const struct PmdGbaAction gPmdCyndaquilPlayerPoseAction;
 extern const struct PmdGbaAction gPmdCyndaquilPlayerRotateAction;
 
 extern const struct PmdGbaAction gPmdCyndaquilOpponentHomeAction;
 extern const struct PmdGbaAction gPmdCyndaquilOpponentIdleAction;
 extern const struct PmdGbaAction gPmdCyndaquilOpponentWalkAction;
-extern const struct PmdGbaAction gPmdCyndaquilOpponentDeepBreathAction;
 extern const struct PmdGbaAction gPmdCyndaquilOpponentNodAction;
-extern const struct PmdGbaAction gPmdCyndaquilOpponentSitAction;
+extern const struct PmdGbaAction gPmdCyndaquilOpponentPoseAction;
 extern const struct PmdGbaAction gPmdCyndaquilOpponentRotateAction;
 
 enum PmdAmbientPhase
@@ -38,21 +36,19 @@ struct PmdCyndaquilAmbientState
     u16 homeTicksLeft;
 };
 
-#define CYND_AMBIENT_ACTION_COUNT 6
+#define CYND_AMBIENT_ACTION_COUNT 5
 
 static struct PmdCyndaquilAmbientState sAmbient[PMD_GBA_MAX_BATTLERS];
 
-// G3 battle-facing policy:
-// every ambient action starts from the selected 45-degree source row and must
-// settle back to the same 45-degree HOME. Transitional turning is permitted
-// when the source action naturally returns, which is why Rotate remains valid.
+// Every selected G3 action has a genuine directional PMD sheet. HOME uses the
+// approved 45-degree row. Transitional turning is allowed when the action
+// naturally settles back to HOME, therefore Rotate remains valid.
 static const u16 sCyndaquilHomeHolds[CYND_AMBIENT_ACTION_COUNT] =
 {
     28, // Idle
     18, // Walk
-    30, // DeepBreath
     24, // Nod
-    34, // Sit
+    30, // Pose
     24, // Rotate
 };
 
@@ -74,11 +70,9 @@ static const struct PmdGbaAction *GetAmbientAction(u8 battler, u8 sequenceIndex)
     case 1:
         return player ? &gPmdCyndaquilPlayerWalkAction : &gPmdCyndaquilOpponentWalkAction;
     case 2:
-        return player ? &gPmdCyndaquilPlayerDeepBreathAction : &gPmdCyndaquilOpponentDeepBreathAction;
-    case 3:
         return player ? &gPmdCyndaquilPlayerNodAction : &gPmdCyndaquilOpponentNodAction;
-    case 4:
-        return player ? &gPmdCyndaquilPlayerSitAction : &gPmdCyndaquilOpponentSitAction;
+    case 3:
+        return player ? &gPmdCyndaquilPlayerPoseAction : &gPmdCyndaquilOpponentPoseAction;
     default:
         return player ? &gPmdCyndaquilPlayerRotateAction : &gPmdCyndaquilOpponentRotateAction;
     }
@@ -142,6 +136,8 @@ void PmdSoulGoldPrototype_PrimeBattlerBody(u8 battler)
     if (home == NULL || home->frames == NULL || home->frameCount == 0)
         return;
 
+    // The HOME frame already contains the authentic PMD shadow underneath the
+    // body, so send-out priming starts with the same visual contract as ambient.
     PmdSoulGold_PrimeBodyFrame(battler, &home->frames[0]);
 }
 
