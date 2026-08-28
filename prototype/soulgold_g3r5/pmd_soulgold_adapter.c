@@ -1,30 +1,51 @@
 #include "global.h"
 #include "battle.h"
+#include "battle_gfx_sfx_util.h"
 #include "battle_interface.h"
 #include "battle_main.h"
 #include "data.h"
 #include "decompress.h"
 #include "pokemon.h"
 #include "sprite.h"
+#include "constants/species.h"
 #include "pmd_gba_runtime.h"
 #include "pmd_soulgold_adapter.h"
 
-// SoulGold's normal single enemy shadow is already a compact 32x8 asset. G3R5
-// loads that artwork under a private tile tag and owns one shadow OBJ per PMD
-// battler. This avoids the Gen4-style two-half (up to 64 px) enemy shadow and,
-// unlike the native shadow callback, works for the player side as well.
-extern const u32 gEnemyMonShadow_Gfx[];
+/*
+ * G3R5 ground shadows are generated directly from PMDCollab Idle-Shadow.png
+ * metadata at the pinned SpriteCollab revision. The selected component mask is
+ * packed to a compact 32x8 4bpp OBJ. Palette index 1 intentionally reuses
+ * SoulGold's TAG_SHADOW_PAL so the visual remains compatible with the battle
+ * palette while the geometry/placement comes from PMD authority.
+ */
+extern const u8 gPmdCyndaquilPlayerGroundShadowGfx[0x80];
+extern const s8 gPmdCyndaquilPlayerGroundShadowXOffset;
+extern const s8 gPmdCyndaquilPlayerGroundShadowYOffset;
+extern const u8 gPmdCyndaquilPlayerGroundShadowShadowSize;
 
-#define TAG_PMD_GROUND_SHADOW_TILE 0xF3D5
-#define PMD_GROUND_SHADOW_Y_OFFSET 29
+extern const u8 gPmdMarillOpponentGroundShadowGfx[0x80];
+extern const s8 gPmdMarillOpponentGroundShadowXOffset;
+extern const s8 gPmdMarillOpponentGroundShadowYOffset;
+extern const u8 gPmdMarillOpponentGroundShadowShadowSize;
+
+#define TAG_PMD_CYNDAQUIL_GROUND_SHADOW_TILE 0xF3D5
+#define TAG_PMD_MARILL_GROUND_SHADOW_TILE    0xF3D6
 
 static u8 sPmdGroundShadowSpriteIds[PMD_GBA_MAX_BATTLERS];
+static bool8 sNativeShadowSuppressed[PMD_GBA_MAX_BATTLERS];
 
-static const struct CompressedSpriteSheet sPmdGroundShadowSheet =
+static const struct SpriteSheet sPmdGroundShadowSheets[] =
 {
-    .data = gEnemyMonShadow_Gfx,
-    .size = 0x80,
-    .tag = TAG_PMD_GROUND_SHADOW_TILE,
+    {
+        .data = gPmdCyndaquilPlayerGroundShadowGfx,
+        .size = 0x80,
+        .tag = TAG_PMD_CYNDAQUIL_GROUND_SHADOW_TILE,
+    },
+    {
+        .data = gPmdMarillOpponentGroundShadowGfx,
+        .size = 0x80,
+        .tag = TAG_PMD_MARILL_GROUND_SHADOW_TILE,
+    },
 };
 
 static const struct OamData sPmdGroundShadowOam =
@@ -55,9 +76,9 @@ static const union AnimCmd *const sPmdGroundShadowAnims[] =
     sPmdGroundShadowAnim,
 };
 
-static const struct SpriteTemplate sPmdGroundShadowTemplate =
+static const struct SpriteTemplate sPmdCyndaquilGroundShadowTemplate =
 {
-    .tileTag = TAG_PMD_GROUND_SHADOW_TILE,
+    .tileTag = TAG_PMD_CYNDAQUIL_GROUND_SHADOW_TILE,
     .paletteTag = TAG_SHADOW_PAL,
     .oam = &sPmdGroundShadowOam,
     .anims = sPmdGroundShadowAnims,
@@ -65,6 +86,69 @@ static const struct SpriteTemplate sPmdGroundShadowTemplate =
     .affineAnims = gDummySpriteAffineAnimTable,
     .callback = SpriteCallbackDummy,
 };
+
+static const struct SpriteTemplate sPmdMarillGroundShadowTemplate =
+{
+    .tileTag = TAG_PMD_MARILL_GROUND_SHADOW_TILE,
+    .paletteTag = TAG_SHADOW_PAL,
+    .oam = &sPmdGroundShadowOam,
+    .anims = sPmdGroundShadowAnims,
+    .images = NULL,
+    .affineAnims = gDummySpriteAffineAnimTable,
+    .callback = SpriteCallbackDummy,
+};
+
+struct PmdGroundShadowProfile
+{
+    u16 species;
+    u8 side;
+    const struct SpriteTemplate *template;
+    const s8 *xOffset;
+    const s8 *yOffset;
+    const u8 *shadowSize;
+};
+
+static const struct PmdGroundShadowProfile sPmdGroundShadowProfiles[] =
+{
+    {
+        .species = SPECIES_CYNDAQUIL,
+        .side = B_SIDE_PLAYER,
+        .template = &sPmdCyndaquilGroundShadowTemplate,
+        .xOffset = &gPmdCyndaquilPlayerGroundShadowXOffset,
+        .yOffset = &gPmdCyndaquilPlayerGroundShadowYOffset,
+        .shadowSize = &gPmdCyndaquilPlayerGroundShadowShadowSize,
+    },
+    {
+        .species = SPECIES_MARILL,
+        .side = B_SIDE_OPPONENT,
+        .template = &sPmdMarillGroundShadowTemplate,
+        .xOffset = &gPmdMarillOpponentGroundShadowXOffset,
+        .yOffset = &gPmdMarillOpponentGroundShadowYOffset,
+        .shadowSize = &gPmdMarillOpponentGroundShadowShadowSize,
+    },
+};
+
+static const struct PmdGroundShadowProfile *sActiveShadowProfiles[PMD_GBA_MAX_BATTLERS];
+
+static const struct PmdGroundShadowProfile *FindGroundShadowProfile(u8 battler)
+{
+    u16 species;
+    u8 side;
+    u8 i;
+
+    if (battler >= gBattlersCount)
+        return NULL;
+
+    species = GetBattlerVisualSpecies(battler);
+    side = GetBattlerSide(battler);
+    for (i = 0; i < ARRAY_COUNT(sPmdGroundShadowProfiles); i++)
+    {
+        if (sPmdGroundShadowProfiles[i].species == species
+         && sPmdGroundShadowProfiles[i].side == side)
+            return &sPmdGroundShadowProfiles[i];
+    }
+    return NULL;
+}
 
 static bool32 SoulGold_CanPresentBattler(u8 battler)
 {
@@ -168,30 +252,64 @@ static bool32 PrimeImageArray(const struct SpriteFrameImage *images, const struc
     return TRUE;
 }
 
-static void HideNativeShadow(u8 battler)
+static bool32 SuppressNativeShadow(u8 battler)
 {
+    bool32 suppressed = FALSE;
     u8 spriteId;
 
     if (gBattleSpritesDataPtr == NULL || battler >= gBattlersCount)
-        return;
+        return FALSE;
 
     spriteId = gBattleSpritesDataPtr->healthBoxesData[battler].shadowSpriteIdPrimary;
     if (spriteId < MAX_SPRITES && gSprites[spriteId].inUse)
     {
         gSprites[spriteId].callback = SpriteCallbackDummy;
         gSprites[spriteId].invisible = TRUE;
+        suppressed = TRUE;
     }
 
-    spriteId = gBattleSpritesDataPtr->healthBoxesData[battler].shadowSpriteIdSecondary;
-    if (spriteId < MAX_SPRITES && gSprites[spriteId].inUse)
+    /* Match SoulGold's native two-shadow condition before touching Secondary.
+     * In the single-shadow path this field is not initialized as an active id. */
+    if (B_ENEMY_MON_SHADOW_STYLE >= GEN_4 && P_GBA_STYLE_SPECIES_GFX == FALSE)
     {
-        gSprites[spriteId].callback = SpriteCallbackDummy;
-        gSprites[spriteId].invisible = TRUE;
+        spriteId = gBattleSpritesDataPtr->healthBoxesData[battler].shadowSpriteIdSecondary;
+        if (spriteId < MAX_SPRITES && gSprites[spriteId].inUse)
+        {
+            gSprites[spriteId].callback = SpriteCallbackDummy;
+            gSprites[spriteId].invisible = TRUE;
+            suppressed = TRUE;
+        }
     }
+
+    if (suppressed)
+        sNativeShadowSuppressed[battler] = TRUE;
+    return suppressed;
+}
+
+static void RestoreNativeShadow(u8 battler)
+{
+    if (battler >= PMD_GBA_MAX_BATTLERS || !sNativeShadowSuppressed[battler])
+        return;
+
+    if (gBattleSpritesDataPtr != NULL && battler < gBattlersCount)
+        SetBattlerShadowSpriteCallback(battler, GetBattlerVisualSpecies(battler));
+    sNativeShadowSuppressed[battler] = FALSE;
+}
+
+static void HideOwnedShadow(u8 battler)
+{
+    u8 shadowSpriteId;
+
+    if (battler >= PMD_GBA_MAX_BATTLERS)
+        return;
+    shadowSpriteId = sPmdGroundShadowSpriteIds[battler];
+    if (shadowSpriteId < MAX_SPRITES && gSprites[shadowSpriteId].inUse)
+        gSprites[shadowSpriteId].invisible = TRUE;
 }
 
 void PmdSoulGold_UpdateGroundShadow(u8 battler, bool32 active)
 {
+    const struct PmdGroundShadowProfile *profile;
     u8 bodySpriteId;
     u8 shadowSpriteId;
     struct Sprite *body;
@@ -200,28 +318,42 @@ void PmdSoulGold_UpdateGroundShadow(u8 battler, bool32 active)
     if (battler >= PMD_GBA_MAX_BATTLERS)
         return;
 
-    HideNativeShadow(battler);
-
-    shadowSpriteId = sPmdGroundShadowSpriteIds[battler];
-    if (!active || battler >= gBattlersCount)
+    profile = active ? FindGroundShadowProfile(battler) : NULL;
+    if (!active || profile == NULL || battler >= gBattlersCount)
     {
-        if (shadowSpriteId < MAX_SPRITES && gSprites[shadowSpriteId].inUse)
-            gSprites[shadowSpriteId].invisible = TRUE;
+        HideOwnedShadow(battler);
+        sActiveShadowProfiles[battler] = NULL;
+        RestoreNativeShadow(battler);
         return;
     }
+
+    SuppressNativeShadow(battler);
 
     bodySpriteId = gBattlerSpriteIds[battler];
     if (bodySpriteId >= MAX_SPRITES || !gSprites[bodySpriteId].inUse)
     {
-        if (shadowSpriteId < MAX_SPRITES && gSprites[shadowSpriteId].inUse)
-            gSprites[shadowSpriteId].invisible = TRUE;
+        HideOwnedShadow(battler);
         return;
     }
     body = &gSprites[bodySpriteId];
 
+    shadowSpriteId = sPmdGroundShadowSpriteIds[battler];
+    if (sActiveShadowProfiles[battler] != profile)
+    {
+        if (shadowSpriteId < MAX_SPRITES && gSprites[shadowSpriteId].inUse)
+            DestroySprite(&gSprites[shadowSpriteId]);
+        shadowSpriteId = SPRITE_NONE;
+        sPmdGroundShadowSpriteIds[battler] = SPRITE_NONE;
+        sActiveShadowProfiles[battler] = profile;
+    }
+
     if (shadowSpriteId >= MAX_SPRITES || !gSprites[shadowSpriteId].inUse)
     {
-        shadowSpriteId = CreateSprite(&sPmdGroundShadowTemplate, body->x, body->y + PMD_GROUND_SHADOW_Y_OFFSET, 0xC8);
+        shadowSpriteId = CreateSprite(
+            profile->template,
+            body->x + *profile->xOffset,
+            body->y + *profile->yOffset,
+            0xC8);
         if (shadowSpriteId >= MAX_SPRITES)
         {
             sPmdGroundShadowSpriteIds[battler] = SPRITE_NONE;
@@ -232,10 +364,10 @@ void PmdSoulGold_UpdateGroundShadow(u8 battler, bool32 active)
 
     shadow = &gSprites[shadowSpriteId];
     shadow->callback = SpriteCallbackDummy;
-    // The ground layer follows the battler's base battlefield coordinate only.
-    // PMD frame-specific x2/y2 stabilization must never drag the shadow around.
-    shadow->x = body->x;
-    shadow->y = body->y + PMD_GROUND_SHADOW_Y_OFFSET;
+    /* Ground ownership uses base x/y only. PMD presentation x2/y2 may correct
+     * body frames but must never drag the shadow off the battlefield ground. */
+    shadow->x = body->x + *profile->xOffset;
+    shadow->y = body->y + *profile->yOffset;
     shadow->x2 = 0;
     shadow->y2 = 0;
     shadow->invisible = body->invisible;
@@ -309,11 +441,18 @@ bool32 PmdSoulGold_PrimeCreatedSpriteBody(u8 battler, const struct PmdGbaFrame *
 void PmdSoulGold_Init(void)
 {
     u8 battler;
+    u8 sheet;
 
     PmdGbaRuntime_Init(&sSoulGoldPmdHostOps);
-    LoadCompressedSpriteSheet(&sPmdGroundShadowSheet);
+    for (sheet = 0; sheet < ARRAY_COUNT(sPmdGroundShadowSheets); sheet++)
+        LoadSpriteSheet(&sPmdGroundShadowSheets[sheet]);
+
     for (battler = 0; battler < PMD_GBA_MAX_BATTLERS; battler++)
+    {
         sPmdGroundShadowSpriteIds[battler] = SPRITE_NONE;
+        sNativeShadowSuppressed[battler] = FALSE;
+        sActiveShadowProfiles[battler] = NULL;
+    }
 }
 
 void PmdSoulGold_Reset(void)
@@ -326,7 +465,10 @@ void PmdSoulGold_Reset(void)
         if (spriteId < MAX_SPRITES && gSprites[spriteId].inUse)
             DestroySprite(&gSprites[spriteId]);
         sPmdGroundShadowSpriteIds[battler] = SPRITE_NONE;
+        sNativeShadowSuppressed[battler] = FALSE;
+        sActiveShadowProfiles[battler] = NULL;
     }
-    FreeSpriteTilesByTag(TAG_PMD_GROUND_SHADOW_TILE);
+    FreeSpriteTilesByTag(TAG_PMD_CYNDAQUIL_GROUND_SHADOW_TILE);
+    FreeSpriteTilesByTag(TAG_PMD_MARILL_GROUND_SHADOW_TILE);
     PmdGbaRuntime_Reset();
 }
