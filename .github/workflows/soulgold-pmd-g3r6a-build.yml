@@ -63,16 +63,24 @@ jobs:
           import json
           s=json.load(open('g3r6a_assets/G3R6A_ASSET_SUMMARY.json',encoding='utf-8'))
           assert s['phase']=='G3R6A_HURT_REACTION'
-          assert s['hurt_body_policy']=='PMDCOLLAB_GREEN_BODY_CENTER_ZERO_PRESENTATION_CORRECTION'
-          assert s['hurt_trigger']=='SOULGOLD_CONTROLLER_HITANIMATION_PMDOwnership_OVERRIDE'
+          assert s['hurt_body_policy']=='ACTION_SPECIFIC_CLIP_SAFE_CANVAS_PLUS_EXACT_BATTLE_ANCHOR_COMPENSATION'
+          assert s['hurt_trigger']=='SOULGOLD_CONTROLLER_HITANIMATION_PMD_OWNERSHIP_OVERRIDE'
+          cy=s['targets']['Cyndaquil_player']
+          assert cy['hurt_clip_compensation'] != [0,0], cy['hurt_clip_compensation']
           for key,rec in s['targets'].items():
               assert rec['hurt_frame_count']==2, (key,rec['hurt_frame_count'])
               assert rec['hurt_durations']==[2,8], (key,rec['hurt_durations'])
-              assert rec['body_presentation_corrections']['Hurt']==[0,0]
+              assert rec['hurt_frame_size'][0] <= 64 and rec['hurt_frame_size'][1] <= 64
+              safe=rec['hurt_clip_safe_anchor']; comp=rec['hurt_clip_compensation']; battle=rec['hurt_battle_anchor']
+              assert [safe[0]+comp[0], safe[1]+comp[1]] == battle, (key,safe,comp,battle)
+              assert rec['body_presentation_corrections_y']['Hurt']==[comp[1],comp[1]]
               assert len(rec['dynamic_shadow']['actions']['Hurt'])==2
-              print(key,'Hurt size=',rec['hurt_frame_size'],'durations=',rec['hurt_durations'],
+              audit=rec['hurt_clip_safe_audit']
+              assert audit['frame_count']==2
+              assert audit['runtime_compensation']==comp
+              print(key,'Hurt size=',rec['hurt_frame_size'],'safe=',safe,'battle=',battle,'comp=',comp,
                     'shadow=',rec['dynamic_shadow']['actions']['Hurt'])
-          print('G3R6A Hurt source contract PASS')
+          print('G3R6A Hurt clip-safe source contract PASS')
           PY
 
       - name: Install G3R6A candidate
@@ -99,6 +107,7 @@ jobs:
           print('G3R4B timing and PMD hit-dispatch ownership preserved')
           PY
           grep -q "new_action=HURT" soulgold/PMD_G3R6A_INSTALL_STATUS.txt
+          grep -q "hurt_crop_or_scale=FALSE" soulgold/PMD_G3R6A_INSTALL_STATUS.txt
           grep -q "PmdSoulGold_SetReactivePresentation" soulgold/include/pmd_soulgold_adapter.h
           grep -q "!InBattleChoosingMoves() && !sPmdReactivePresentation\[battler\]" soulgold/src/pmd_soulgold_adapter.c
           grep -q "gPmdCyndaquilPlayerHurtAction" soulgold/src/pmd_cyndaquil_player_ambient.c
@@ -160,11 +169,13 @@ jobs:
             echo "parent=G3R5C_SHADOW_RUNTIME_ACCEPTED_AMBIENT_1PX_DEFERRED"
             echo "new_action=HURT"
             echo "hurt_trigger=CONTROLLER_HITANIMATION"
-            echo "hurt_body=PMDCOLLAB_OFFSETS_GREEN_CENTER_ZERO_RUNTIME_GROUNDING"
-            echo "hurt_shadow=FRAME_SYNCHRONOUS_PMDCOLLAB_HURT_SHADOW_PNG"
+            echo "hurt_body=ACTION_SPECIFIC_CLIP_SAFE_CANVAS_PLUS_EXACT_BATTLE_ANCHOR_COMPENSATION"
+            echo "hurt_crop_or_scale=FALSE"
+            echo "hurt_shadow=FRAME_SYNCHRONOUS_PMDCOLLAB_HURT_SHADOW_PNG_PLUS_BODY_X2Y2"
             echo "return_policy=HURT_TO_HOME_BEFORE_CONTROLLER_RELEASE"
             echo "non_pmd_controller_hit_visual=UNCHANGED"
             echo "known_ambient_1px_defect=DEFERRED_NOT_CLAIMED_FIXED"
+            echo "g3r4b_oam_timing=PRESERVED"
             echo "runtime_visual_status=PENDING_USER_ACCEPTANCE"
             if [ -f "${UNIQUE_ROM_PATH}" ]; then
               echo "build_status=PASS"
