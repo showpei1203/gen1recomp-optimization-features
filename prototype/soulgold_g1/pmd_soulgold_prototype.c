@@ -36,11 +36,12 @@ void PmdSoulGoldPrototype_Init(void)
     }
 }
 
-void PmdSoulGoldPrototype_OnBattlerSpriteReady(u8 battler)
+void PmdSoulGoldPrototype_InvalidateBattlerSpriteGeneration(u8 battler)
 {
-    // A battler slot may reuse the exact same Sprite ID after switch/reshow.
-    // Treat sprite creation as an explicit generation boundary instead of
-    // trying to infer replacement from IDs or pointer values.
+    // SetMultiuseSpriteTemplateToPokemon() is the central boundary immediately
+    // before a battle mon Sprite is created/recreated. A battler slot may reuse
+    // the exact same Sprite ID after switch/reshow, so invalidate by generation
+    // event rather than trying to infer replacement from IDs or pointer values.
     ClearBinding(battler);
 }
 
@@ -69,8 +70,8 @@ void PmdSoulGoldPrototype_Tick(void)
             continue;
         }
 
-        // Keep a secondary polling guard in addition to the explicit
-        // OnBattlerSpriteReady hook. This catches any host path we have not yet
+        // Keep a secondary polling guard in addition to the explicit central
+        // generation hook. This catches any host path we have not yet
         // instrumented without making Sprite ID equality the primary authority.
         if (sBound[battler] && sBoundSpriteId[battler] != spriteId)
             ClearBinding(battler);
