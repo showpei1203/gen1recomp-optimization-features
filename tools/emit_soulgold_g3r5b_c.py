@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit SoulGold G3R5B body-ground-stabilized ambient descriptors."""
+"""Emit SoulGold G3R5B runtime-corrected ambient descriptors."""
 
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ import json
 from pathlib import Path
 
 ACTIONS = ("Idle", "Walk", "Nod", "Rotate")
-MAX_CORRECTION = 4
+MAX_CORRECTION = 1
+AUTHORITY = "G3R4B_ZERO_PLUS_RUNTIME_ACCEPTANCE_OVERRIDE"
 
 
 def sym(text: str) -> str:
@@ -24,8 +25,8 @@ def main() -> int:
     args = ap.parse_args()
 
     ir = json.loads(args.ir.read_text(encoding="utf-8"))
-    if ir.get("grounding", {}).get("battle_vertical_authority") != "ROBUST_BODY_SUPPORT_BASELINE":
-        raise SystemExit("G3R5B emitter refuses IR without ROBUST_BODY_SUPPORT_BASELINE authority")
+    if ir.get("grounding", {}).get("battle_vertical_authority") != AUTHORITY:
+        raise SystemExit(f"G3R5B emitter refuses IR without {AUTHORITY}")
     if ir.get("shadow", {}).get("policy") != "SEPARATE_AUTHENTIC_PMD_SHADOW_MASK_CENTERED_ON_BATTLE_X":
         raise SystemExit("G3R5B emitter refuses IR without centered authentic PMD shadow contract")
 
@@ -37,8 +38,8 @@ def main() -> int:
         raise SystemExit(f"IR missing required G3R5B ambient actions: {missing}")
 
     lines = [
-        "/* Auto-generated SoulGold G3R5B body-ground-stabilized ambient descriptors. */",
-        "/* presentationY comes from body support, never PMDCollab Shadow.png positions. */",
+        "/* Auto-generated SoulGold G3R5B runtime-corrected ambient descriptors. */",
+        "/* Shadow.png never moves the body; only evidence-backed runtime offsets are emitted. */",
         '#include "global.h"',
         '#include "pmd_gba_runtime.h"',
         "",
@@ -56,9 +57,10 @@ def main() -> int:
         lines += ["", f"static const struct PmdGbaFrame s{prefix}Frames[] =", "{"]
         for frame in rec["frames"]:
             idx = int(frame["index"])
+            dx = int(frame.get("presentation_dx", 0))
             dy = int(frame.get("presentation_dy", 0))
-            if int(frame.get("presentation_dx", 0)) != 0 or abs(dy) > MAX_CORRECTION:
-                raise SystemExit(f"Invalid G3R5B correction: {species}/{action_name}/{idx} dy={dy}")
+            if dx != 0 or abs(dy) > MAX_CORRECTION:
+                raise SystemExit(f"Invalid G3R5B correction: {species}/{action_name}/{idx}=({dx},{dy})")
             lines.append(
                 f"    {{ .gfx = {frame_symbols[(action_name, idx)]}, .duration = {int(frame['duration'])}, "
                 f".presentationX = 0, .presentationY = {dy} }},"
@@ -81,7 +83,7 @@ def main() -> int:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("\n".join(lines), encoding="utf-8")
-    print(f"Wrote {args.output} (G3R5B body-ground, species={species}, variant={args.variant})")
+    print(f"Wrote {args.output} (G3R5B runtime override, species={species}, variant={args.variant})")
     return 0
 
 
