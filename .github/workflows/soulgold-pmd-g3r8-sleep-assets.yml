@@ -47,7 +47,7 @@ jobs:
             --spritecollab spritecollab \
             --soulgold soulgold \
             --output g3r8_sleep_assets
-      - name: Audit pinned Sleep contract
+      - name: Audit pinned Sleep contract and special-state view
         run: |
           python3 - <<'PY'
           import json
@@ -55,6 +55,7 @@ jobs:
           assert s['phase']=='G3R8_SLEEP_SOURCE_ASSETS'
           assert s['sleep_runtime_policy']=='NOT_HOOKED_ASSET_GATE_ONLY'
           assert s['known_ambient_1px_defect']=='DEFERRED_ROOT_CAUSE_UNRESOLVED'
+          assert s['special_state_view_policy']=='SPECIAL_STATE_MAY_PRESERVE_DIRECTIONLESS_PMDCOLLAB_VIEW'
           expected={
               'Cyndaquil_player':([24,24],42),
               'Marill_opponent':([40,24],44),
@@ -67,8 +68,15 @@ jobs:
               assert r['visible_pixel_conservation'] is True
               assert len(r['sleep_shadow_frames'])==2
               assert r['expanded_shadow_atlas_frame_count']==atlas,(key,r['expanded_shadow_atlas_frame_count'])
-              print(key,'Sleep PASS',r['sleep_source_frame_size'],r['sleep_durations'])
-          print('G3R8 Sleep source asset contract PASS')
+              assert r['sleep_source_layout']=='DIRECTIONLESS_SINGLE_ROW',(key,r['sleep_source_layout'])
+              assert r['sleep_source_row']==0
+              assert r['sleep_applied_direction'] is None
+              assert r['sleep_view_policy']=='PRESERVE_PMDCOLLAB_SPECIAL_STATE_SOURCE_VIEW'
+              assert r['sleep_sheet_sizes']['Anim'][1]==size[1]
+              assert r['sleep_sheet_sizes']['Offsets'][1]==size[1]
+              assert r['sleep_sheet_sizes']['Shadow'][1]==size[1]
+              print(key,'Sleep PASS',r['sleep_source_frame_size'],r['sleep_durations'],r['sleep_source_layout'])
+          print('G3R8 Sleep special-state source-view contract PASS')
           PY
       - name: Verify generated Sleep C contracts
         run: |
