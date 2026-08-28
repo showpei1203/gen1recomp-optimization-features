@@ -145,8 +145,17 @@ def patch_host(soulgold: Path) -> None:
     )
     replace_once(
         battle_main,
-        "    AnimateSprites();\n    BuildOamBuffer();",
-        "    AnimateSprites();\n    PmdSoulGoldPrototype_Tick();\n    BuildOamBuffer();",
+        "static void RunBattleSoftwareTick(void)\n{\n"
+        "    // Preserve the original order for every logical tick. BuildOamBuffer only\n"
+        "    // creates the software snapshot; the last snapshot is uploaded at VBlank.\n"
+        "    AnimateSprites();\n"
+        "    BuildOamBuffer();",
+        "static void RunBattleSoftwareTick(void)\n{\n"
+        "    // Preserve the original order for every logical tick. BuildOamBuffer only\n"
+        "    // creates the software snapshot; the last snapshot is uploaded at VBlank.\n"
+        "    AnimateSprites();\n"
+        "    PmdSoulGoldPrototype_Tick();\n"
+        "    BuildOamBuffer();",
         "RunBattleSoftwareTick PMD ownership slot",
     )
 
