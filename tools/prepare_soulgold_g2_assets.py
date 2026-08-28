@@ -79,7 +79,7 @@ def main() -> int:
     (staging / "graphics" / "pmd" / "cyndaquil").mkdir(parents=True)
     (staging / "src").mkdir(parents=True)
 
-    converter = framework / "tools" / "pmd_gba_converter.py"
+    converter = framework / "tools" / "convert_soulgold_g2.py"
     remapper = framework / "tools" / "pmd_gba_remap_host_palette.py"
     emitter = framework / "tools" / "emit_soulgold_g2_c.py"
     action_arg = ",".join(ACTIONS)
@@ -98,6 +98,7 @@ def main() -> int:
         "home_source": "Idle frame 0",
         "palette_policy": "remap_to_existing_soulgold_cyndaquil_palette",
         "renderer_contract": "two_slot_rolling_cache_MAX_MON_PIC_FRAMES_unchanged",
+        "source_layout_support": "eight_direction_or_single_row_shared",
         "variants": {},
     }
 
