@@ -118,29 +118,71 @@ def patch_battle_controllers(path: Path) -> tuple[int, int]:
         text = text.replace(anchor, anchor + PROTOTYPE_INCLUDE, 1)
 
     template_anchor = "    SetMultiuseSpriteTemplateToPokemon(species, GetBattlerPosition(battler));\n"
-    template_hook = template_anchor + "    PmdSoulGoldPrototype_PrimeTemplateBody(battler, species);\n"
-    template_existing = text.count("PmdSoulGoldPrototype_PrimeTemplateBody(battler, species);")
+    template_hook_line = "    PmdSoulGoldPrototype_PrimeTemplateBody(battler, species);\n"
+    template_hook = template_anchor + template_hook_line
+    template_existing = text.count(template_hook_line)
     if template_existing == 0:
         template_paths = text.count(template_anchor)
         if template_paths != 2:
             raise SystemExit(f"Expected exactly 2 battler Pokemon template paths, got {template_paths}")
         text = text.replace(template_anchor, template_hook)
     else:
+        if template_existing != 2:
+            raise SystemExit(f"Expected exactly 2 existing PMD template hooks, got {template_existing}")
         template_paths = template_existing
 
-    # Both authoritative normal battler creation paths call this exact line after
-    # CreateSprite and before send-out/slide callbacks take ownership. Queue PMD
-    # HOME here so the first later visible OBJ pixels are PMD, not stale native.
+    # Queue PMD HOME only on the two authoritative *creation* chains:
+    # SetMultiuseSpriteTemplateToPokemon -> CreateSprite(gMultiuseSpriteTemplate)
+    # -> StartSpriteAnim.  battle_controllers.c contains other StartSpriteAnim
+    # calls for reload/switch-in of an already-created sprite; those are not OBJ
+    # creation ownership points and must not be patched merely because the text
+    # happens to match.
     start_anchor = "    StartSpriteAnim(&gSprites[gBattlerSpriteIds[battler]], 0);\n"
-    created_hook = start_anchor + "    PmdSoulGoldPrototype_PrimeCreatedSpriteBody(battler, species);\n"
-    created_existing = text.count("PmdSoulGoldPrototype_PrimeCreatedSpriteBody(battler, species);")
+    created_hook_line = "    PmdSoulGoldPrototype_PrimeCreatedSpriteBody(battler, species);\n"
+    created_hook = start_anchor + created_hook_line
+    create_anchor = "    gBattlerSpriteIds[battler] = CreateSprite(&gMultiuseSpriteTemplate,\n"
+    created_existing = text.count(created_hook_line)
     if created_existing == 0:
-        created_paths = text.count(start_anchor)
-        if created_paths != 2:
-            raise SystemExit(f"Expected exactly 2 battler StartSpriteAnim creation paths, got {created_paths}")
-        text = text.replace(start_anchor, created_hook)
+        template_positions = []
+        cursor = 0
+        while True:
+            pos = text.find(template_hook, cursor)
+            if pos < 0:
+                break
+            template_positions.append(pos)
+            cursor = pos + len(template_hook)
+        if len(template_positions) != 2:
+            raise SystemExit(f"Expected exactly 2 PMD template creation chains, got {len(template_positions)}")
+
+        created_paths = 0
+        search_from = 0
+        for chain_index in range(2):
+            template_pos = text.find(template_hook, search_from)
+            if template_pos < 0:
+                raise SystemExit(f"PMD creation chain {chain_index + 1}: template hook not found")
+
+            create_pos = text.find(create_anchor, template_pos + len(template_hook))
+            if create_pos < 0 or create_pos - template_pos > 1200:
+                raise SystemExit(f"PMD creation chain {chain_index + 1}: CreateSprite anchor not found near template")
+
+            next_template = text.find(template_hook, template_pos + len(template_hook))
+            start_pos = text.find(start_anchor, create_pos + len(create_anchor))
+            if start_pos < 0 or start_pos - create_pos > 1600:
+                raise SystemExit(f"PMD creation chain {chain_index + 1}: StartSpriteAnim anchor not found near CreateSprite")
+            if next_template >= 0 and start_pos > next_template:
+                raise SystemExit(f"PMD creation chain {chain_index + 1}: crossed into next template path")
+
+            insert_pos = start_pos + len(start_anchor)
+            text = text[:insert_pos] + created_hook_line + text[insert_pos:]
+            created_paths += 1
+            search_from = insert_pos + len(created_hook_line)
     else:
+        if created_existing != 2:
+            raise SystemExit(f"Expected exactly 2 existing created-sprite PMD hooks, got {created_existing}")
         created_paths = created_existing
+
+    if text.count(created_hook_line) != 2:
+        raise SystemExit(f"Expected exactly 2 authoritative created-sprite PMD hooks after patch, got {text.count(created_hook_line)}")
 
     if text != original:
         path.write_text(text, encoding="utf-8")
