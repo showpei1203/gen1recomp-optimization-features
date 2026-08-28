@@ -161,11 +161,11 @@ def patch_prototype(path: Path) -> None:
         "    PmdSoulGold_SetNativeSpatialOwnership(battler, TRUE);\n"
     )
     if text.count(move_new)==0:
-        if text.count(move_anchor)!=2:
-            raise SystemExit(f"G3R8C expected Attack/Shoot ownership anchors=2, got {text.count(move_anchor)}")
+        if text.count(move_anchor)!=3:
+            raise SystemExit(f"G3R8C expected Attack/Shoot/MoveReturn ownership anchors=3, got {text.count(move_anchor)}")
         text=text.replace(move_anchor,move_new)
-    if text.count("PmdSoulGold_SetPersistentPresentation(battler, FALSE);\n    PmdSoulGold_SetReactivePresentation(battler, TRUE);") != 2:
-        raise SystemExit("G3R8C Attack/Shoot do not both release persistent ownership")
+    if text.count("PmdSoulGold_SetPersistentPresentation(battler, FALSE);\n    PmdSoulGold_SetReactivePresentation(battler, TRUE);") != 3:
+        raise SystemExit("G3R8C Attack/Shoot/MoveReturn must all release persistent ownership")
 
     sleep_anchor=(
         "    PmdSoulGold_SetReactivePresentation(battler, FALSE);\n"
