@@ -73,7 +73,7 @@ jobs:
           c=Path('soulgold/src/battle_move_resolution.c').read_text()
           m=Path('soulgold/src/battle_main.c').read_text()
           assert 'PMD_PHASE_WAKE' in p
-          assert c.count('PmdSoulGoldPrototype_NotifyWake(gBattlerAttacker);') == 2
+          assert c.count('PmdSoulGoldPrototype_NotifyWake(ctx->battlerAtk);') == 2
           f=m[m.index('static void RunBattleSoftwareTick(void)\n{'):]
           f=f[:f.index('\n}')+2]
           assert f.index('AnimateSprites();') < f.index('PmdSoulGoldPrototype_Tick();') < f.index('BuildOamBuffer();')
