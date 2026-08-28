@@ -22,6 +22,12 @@ static bool32 SoulGold_CanPresentBattler(u8 battler)
     if (gMonSpritesGfxPtr == NULL || gBattleSpritesDataPtr == NULL)
         return FALSE;
 
+    // G1 is deliberately narrower than the final framework. Only take body
+    // ownership while the battle is waiting at move selection. This excludes
+    // intro/send-out, switch, move, hit, faint and most script-driven owners.
+    if (!InBattleChoosingMoves())
+        return FALSE;
+
     spriteId = gBattlerSpriteIds[battler];
     if (spriteId >= MAX_SPRITES || !gSprites[spriteId].inUse || gSprites[spriteId].invisible)
         return FALSE;
@@ -37,9 +43,6 @@ static bool32 SoulGold_CanPresentBattler(u8 battler)
 
     // Native send-out/switch/front/back animation callbacks own x2/y2 and body
     // presentation until they settle on one of SoulGold's idle callbacks.
-    // SpriteCallbackDummy_2 is also a stable post-launch callback used by the
-    // stock front/back animation path; animFromTableActive below keeps PMD out
-    // until that animation task has actually completed.
     if (sprite->callback != SpriteCallbackDummy
      && sprite->callback != SpriteCallbackDummy_2)
         return FALSE;
