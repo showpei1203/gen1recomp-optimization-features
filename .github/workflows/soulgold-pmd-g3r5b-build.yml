@@ -62,16 +62,25 @@ jobs:
           python3 - <<'PY'
           import json
           s=json.load(open('g3r5b_assets/G3R5B_ASSET_SUMMARY.json',encoding='utf-8'))
-          assert s['phase']=='G3R5B_BODY_SUPPORT_CENTERED_PMD_SHADOW'
+          assert s['phase']=='G3R5B_RUNTIME_OVERRIDE_CENTERED_PMD_SHADOW'
+          assert s['body_grounding_policy']=='G3R4B_ZERO_PLUS_RUNTIME_ACCEPTANCE_OVERRIDE'
           assert s['shadow_png_may_move_body'] is False
           cy=s['targets']['Cyndaquil_player']
-          assert cy['idle_corrections'][0] == 0
-          assert cy['idle_corrections'][1] < 0, cy['idle_corrections']
-          assert cy['battle_shadow_x_offset'] == 0
-          print('Cyndaquil Idle corrections:', cy['idle_corrections'])
-          print('Cyndaquil shadow authored X -> battle X:', cy['pmd_authored_idle0_shadow_x_offset'], '->', cy['battle_shadow_x_offset'])
+          assert cy['idle_corrections']==[0,-1], cy['idle_corrections']
+          assert cy['body_ground_correction_range']==[-1,0]
+          assert cy['battle_shadow_x_offset']==0
+          assert cy['pmd_authored_idle0_shadow_x_offset']==5
+          assert len(cy['runtime_acceptance_overrides'])==1
+          for action, vals in cy['body_ground_corrections'].items():
+              if action == 'Idle':
+                  assert vals == [0,-1]
+              else:
+                  assert all(v == 0 for v in vals), (action,vals)
           ma=s['targets']['Marill_opponent']
-          print('Marill Idle corrections:', ma['idle_corrections'])
+          assert all(v == 0 for vals in ma['body_ground_corrections'].values() for v in vals)
+          print('Cyndaquil Idle corrections:',cy['idle_corrections'])
+          print('Cyndaquil shadow authored X -> battle X:',cy['pmd_authored_idle0_shadow_x_offset'],'->',cy['battle_shadow_x_offset'])
+          print('Marill ambient offsets: all zero')
           PY
 
       - name: Install G3R5B candidate
@@ -91,7 +100,14 @@ jobs:
           fn=text[start:end]
           assert fn.index('AnimateSprites();') < fn.index('PmdSoulGoldPrototype_Tick();') < fn.index('BuildOamBuffer();') < fn.index('RunTasks();')
           assert fn.count('PmdSoulGoldPrototype_Tick();')==1
+          cy=Path('soulgold/src/pmd_cyndaquil_player_ambient.c').read_text()
+          ma=Path('soulgold/src/pmd_marill_opponent_ambient.c').read_text()
+          assert cy.count('.presentationY = -1') == 1
+          assert '.presentationY = 1' not in cy
+          assert '.presentationY = -1' not in ma and '.presentationY = 1' not in ma
           PY
+          grep -q "body_grounding=G3R4B_ZERO_PLUS_RUNTIME_ACCEPTANCE_OVERRIDE" soulgold/PMD_G3R5B_INSTALL_STATUS.txt
+          grep -q "cyndaquil_idle1_presentation_y=-1" soulgold/PMD_G3R5B_INSTALL_STATUS.txt
           grep -q "shadow_png_may_move_body=FALSE" soulgold/PMD_G3R5B_INSTALL_STATUS.txt
           grep -q "GroundShadowXOffset = 0;" soulgold/src/pmd_cyndaquil_player_shadow.c
           grep -q "SpriteCollab sprite/0155/Idle-Shadow.png" soulgold/src/pmd_cyndaquil_player_shadow.c
@@ -139,12 +155,15 @@ jobs:
           cp soulgold/src/pmd_marill_opponent_shadow.c evidence/installed_source/ || true
           cp soulgold/src/pmd_soulgold_adapter.c evidence/installed_source/ || true
           {
-            echo "SoulGold PMD G3R5B residual grounding evidence"
+            echo "SoulGold PMD G3R5B runtime acceptance correction evidence"
             echo "framework_commit=${GITHUB_SHA}"
-            echo "parent=G3R5"
-            echo "body_grounding=ROBUST_BODY_SUPPORT_BASELINE"
+            echo "parent=G3R5_AUTHENTIC_SHADOW_RUNTIME_PARTIAL_FAIL"
+            echo "body_grounding=G3R4B_ZERO_PLUS_RUNTIME_ACCEPTANCE_OVERRIDE"
+            echo "cyndaquil_idle1_presentation_y=-1"
+            echo "all_other_ambient_body_offsets=0"
             echo "shadow_png_may_move_body=FALSE"
             echo "player_shadow_x=CENTERED_ON_BATTLER_BASE_X"
+            echo "authentic_pmd_shadow_mask=PRESERVED"
             echo "g3r4b_oam_timing=PRESERVED"
             echo "runtime_visual_status=PENDING_USER_ACCEPTANCE"
             if [ -f "${UNIQUE_ROM_PATH}" ]; then
