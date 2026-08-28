@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""Install SoulGold G3 battle-facing Rich Ambient + PMD send-out body prime.
+"""Install SoulGold G3R3 two-sided grounded PMD prototype.
 
-G3 preserves the sealed G1 rolling renderer and G2 HOME/interruption state
-machine. It adds two narrowly-scoped host integrations:
-- src/battle_main.c: the existing init/software-tick lifecycle hooks;
-- src/battle_controllers.c: prime both mon image slots with PMD HOME immediately
-  before the native Pokemon sprite is created.
+G3R3 acceptance target:
+- player Cyndaquil uses PMD UpRight HOME/Idle/Walk/Nod/Rotate;
+- opponent Marill uses PMD DownLeft HOME/Idle/Walk/Nod/Rotate;
+- grounded frames are normalized by PMD white shadow origin;
+- runtime presentation offsets stay zero;
+- native load/template ownership is species+side scoped.
 
-Generated G3 frames already contain authentic PMD per-frame shadows under the
-body, so send-out and ambient use one atomic body+shadow frame contract.
-The send-out animation/timing/callbacks remain native SoulGold ownership.
+Host hooks are intentionally narrow:
+- battle_main.c: PMD runtime init/tick;
+- battle_gfx_sfx_util.c: after BattleLoadMonSpriteGfx completes native loading,
+  re-prime only the current supported battler's canonical image buffer;
+- battle_controllers.c: immediately after SetMultiuseSpriteTemplateToPokemon,
+  prime only that exact Pokemon template before CreateSprite.
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from pathlib import Path
 
 SOULGOLD_REV = "b5122bdf188943862c13abe4938e88b7bb3c5c4a"
 PROTOTYPE_INCLUDE = '#include "pmd_soulgold_prototype.h"\n'
+TARGETS = (("cyndaquil", "player"), ("marill", "opponent"))
 
 
 def git(repo: Path, *args: str) -> str:
@@ -87,7 +92,36 @@ def patch_battle_main(path: Path) -> None:
 
     if text != original:
         path.write_text(text, encoding="utf-8")
-        print("PATCH src/battle_main.c: G3 init + software-tick lifecycle")
+        print("PATCH src/battle_main.c: G3R3 init + software-tick lifecycle")
+
+
+def patch_battle_gfx_sfx_util(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+    original = text
+
+    if PROTOTYPE_INCLUDE not in text:
+        anchor = '#include "battle.h"\n'
+        if anchor not in text:
+            raise SystemExit("battle_gfx_sfx_util.c include anchor not found")
+        text = text.replace(anchor, anchor + PROTOTYPE_INCLUDE, 1)
+
+    fn_start = text.find("void BattleLoadMonSpriteGfx(struct Pokemon *mon, enum BattlerId battler)\n{")
+    fn_end = text.find("\nvoid BattleGfxSfxDummy2(u16 species)", fn_start)
+    if fn_start < 0 or fn_end < 0:
+        raise SystemExit("BattleLoadMonSpriteGfx boundary not found")
+
+    fn = text[fn_start:fn_end]
+    hook = "    PmdSoulGoldPrototype_PrimeLoadedBattlerBody(battler);\n"
+    if hook not in fn:
+        close = fn.rfind("\n}")
+        if close < 0:
+            raise SystemExit("BattleLoadMonSpriteGfx closing brace not found")
+        fn = fn[:close] + "\n\n" + hook + fn[close:]
+        text = text[:fn_start] + fn + text[fn_end:]
+
+    if text != original:
+        path.write_text(text, encoding="utf-8")
+        print("PATCH src/battle_gfx_sfx_util.c: species-safe PMD canonical prime after native load")
 
 
 def patch_battle_controllers(path: Path) -> int:
@@ -100,30 +134,22 @@ def patch_battle_controllers(path: Path) -> int:
             raise SystemExit("battle_controllers.c include anchor not found")
         text = text.replace(anchor, anchor + PROTOTYPE_INCLUDE, 1)
 
-    old = (
-        "    SetMultiuseSpriteTemplateToPokemon(species, GetBattlerPosition(battler));\n\n"
-        "    gBattlerSpriteIds[battler] = CreateSprite"
-    )
-    new = (
-        "    SetMultiuseSpriteTemplateToPokemon(species, GetBattlerPosition(battler));\n"
-        "    PmdSoulGoldPrototype_PrimeBattlerBody(battler);\n\n"
-        "    gBattlerSpriteIds[battler] = CreateSprite"
-    )
+    anchor = "    SetMultiuseSpriteTemplateToPokemon(species, GetBattlerPosition(battler));\n"
+    hook = anchor + "    PmdSoulGoldPrototype_PrimeTemplateBody(battler, species);\n"
 
-    already = text.count("PmdSoulGoldPrototype_PrimeBattlerBody(battler);")
-    inserted = 0
+    already = text.count("PmdSoulGoldPrototype_PrimeTemplateBody(battler, species);")
     if already == 0:
-        occurrences = text.count(old)
+        occurrences = text.count(anchor)
         if occurrences == 0:
-            raise SystemExit("battle_controllers.c Pokemon CreateSprite anchor not found")
-        text = text.replace(old, new)
+            raise SystemExit("battle_controllers.c Pokemon template anchor not found")
+        text = text.replace(anchor, hook)
         inserted = occurrences
     else:
         inserted = already
 
     if text != original:
         path.write_text(text, encoding="utf-8")
-        print(f"PATCH src/battle_controllers.c: PMD HOME prime before {inserted} Pokemon sprite creation path(s)")
+        print(f"PATCH src/battle_controllers.c: species-safe PMD template prime on {inserted} path(s)")
 
     return inserted
 
@@ -150,13 +176,13 @@ def main() -> int:
     copy_file(g3 / "pmd_soulgold_prototype.c", soulgold / "src" / "pmd_soulgold_prototype.c")
     copy_file(g3 / "pmd_soulgold_prototype.h", soulgold / "include" / "pmd_soulgold_prototype.h")
 
-    for variant in ("player", "opponent"):
+    for slug, variant in TARGETS:
         copy_file(
-            staging / "src" / f"pmd_cyndaquil_{variant}_ambient.c",
-            soulgold / "src" / f"pmd_cyndaquil_{variant}_ambient.c",
+            staging / "src" / f"pmd_{slug}_{variant}_ambient.c",
+            soulgold / "src" / f"pmd_{slug}_{variant}_ambient.c",
         )
-        src_graphics = staging / "graphics" / "pmd" / "cyndaquil" / variant
-        dst_graphics = soulgold / "graphics" / "pmd" / "cyndaquil" / variant
+        src_graphics = staging / "graphics" / "pmd" / slug / variant
+        dst_graphics = soulgold / "graphics" / "pmd" / slug / variant
         if not src_graphics.is_dir():
             raise SystemExit(f"Missing staged graphics: {src_graphics}")
         if dst_graphics.exists():
@@ -166,30 +192,32 @@ def main() -> int:
         print(f"COPY {src_graphics} -> {dst_graphics}")
 
     patch_battle_main(soulgold / "src" / "battle_main.c")
-    prime_paths = patch_battle_controllers(soulgold / "src" / "battle_controllers.c")
+    patch_battle_gfx_sfx_util(soulgold / "src" / "battle_gfx_sfx_util.c")
+    template_paths = patch_battle_controllers(soulgold / "src" / "battle_controllers.c")
 
     status = git(soulgold, "status", "--short")
     (soulgold / "PMD_G3_INSTALL_STATUS.txt").write_text(
-        "SoulGold G3 PMD battle-facing/sendout/shadow candidate installed.\n"
+        "SoulGold G3R3 two-sided grounded PMD candidate installed.\n"
         f"baseline={SOULGOLD_REV}\n"
-        "scope=Cyndaquil HOME+Idle+Walk+Nod+Pose+Rotate\n"
-        "banned_ambient=LookUp,DeepBreath,Sit (shared single-row/non-directional)\n"
-        "direction_policy=45-degree HOME start/end; transitional turn allowed; real directional source required\n"
-        "shadow_policy=authentic PMD per-frame Shadow.png / ShadowSize=1 / composited below body / atomic frame sync\n"
-        "host_files_modified=src/battle_main.c,src/battle_controllers.c\n"
-        f"sendout_prime_paths={prime_paths}\n"
+        "player=Cyndaquil PMD UpRight HOME+Idle+Walk+Nod+Rotate\n"
+        "opponent=Marill PMD DownLeft HOME+Idle+Walk+Nod+Rotate\n"
+        "ground_anchor=PMD Shadow.png white origin\n"
+        "runtime_offsets=0,0 for all grounded frames\n"
+        "pose=EXCLUDED from G3R3 grounded acceptance\n"
+        "ownership=species+side registry; loaded buffer and template hooks separated\n"
+        "host_files_modified=src/battle_main.c,src/battle_gfx_sfx_util.c,src/battle_controllers.c\n"
+        f"template_prime_paths={template_paths}\n"
         "sendout_motion_owner=SOULGOLD_NATIVE\n"
         "save_structure=UNCHANGED\n"
         "MAX_MON_PIC_FRAMES=UNCHANGED\n"
         "native sprite->anims=UNCHANGED\n"
-        "G1_renderer_contract=SEALED_REUSED\n"
         "compile_status=PENDING\n"
         "runtime_status=PENDING\n\n"
         + status + "\n",
         encoding="utf-8",
     )
 
-    print("G3 candidate prepared. Next gate: full compile + PMD-from-entry + shadow visual test.")
+    print("G3R3 candidate prepared. Next gate: compile + two-sided Cyndaquil-vs-Marill visual test.")
     return 0
 
 
