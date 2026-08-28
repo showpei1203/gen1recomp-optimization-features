@@ -155,7 +155,7 @@ def main() -> int:
 
     converter = framework / "tools" / "convert_soulgold_g3r5.py"
     remapper = framework / "tools" / "pmd_gba_remap_host_palette.py"
-    emitter = framework / "tools" / "emit_soulgold_g3_c.py"
+    emitter = framework / "tools" / "emit_soulgold_g3r5_c.py"
     action_arg = ",".join(ACTIONS)
 
     summary: dict[str, object] = {
