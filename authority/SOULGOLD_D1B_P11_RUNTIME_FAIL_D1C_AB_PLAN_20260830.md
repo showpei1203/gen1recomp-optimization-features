@@ -1,4 +1,4 @@
-# SoulGoldRecomp D1B/P1.1 Runtime Failure and D1C A/B Authority
+# SoulGoldRecomp D1B/P1.1 Runtime Failure and D1C C3H-Controlled A/B Authority
 
 Date: 2026-08-30
 
@@ -17,6 +17,7 @@ The candidate actually used the intended D1B isolation state:
 - C3H `IntrMain_RetAddr` root count = 1;
 - FastUnsafeCopy32 static native root count = 0;
 - SoundMainRAM static native root count = 0;
+- `S0_D1_HOT_RAM.toml` is comment-only / no-op;
 - D1B codegen gate = PASS.
 
 Therefore the D1A battle regression is not explained by either D1 native root alone. FastUnsafeCopy32 is no longer the primary causal suspect.
@@ -34,28 +35,64 @@ The runtime then repeatedly reports:
 
 D1B is therefore REJECTED.
 
-## D1C runtime-only A/B
+## Corrected known-good control: C3H
 
-Do not rebuild or change guest correctness. Reuse the exact D1B runner:
+The user explicitly recalled that an earlier build had normal battle performance, likely the first build where BGM was reported normal.
 
-`b474d25455f34a9a9681fc30094b51470c08d0dc83a39da4f599f702c7d1acdb`
+The sealed C3H authority confirms this is the correct known-good control:
+- BGM normal / clean;
+- no perceived lag;
+- indoor traversal works;
+- outdoor traversal works;
+- scripted events work;
+- battle entry works;
+- ~201 sec capture;
+- mean ~59.67 FPS;
+- median ~59.81 FPS.
 
-Candidate A:
-- same D1B/C3H correctness;
-- scale 2 / 480x320;
-- LCD filter OFF;
-- interframe OFF.
+C3H is therefore not merely an interaction-correct guess. It is the last recorded known-good runtime control before D1 changes.
 
-If A still lags, Candidate B:
-- exact same binary/correctness;
+## Regression chronology
+
+1. `C3H`: BGM clean, no perceived lag, battle entry accepted.
+2. `D1P1`: added FastUnsafeCopy32 + SoundMainRAM native roots; large static-coverage gain, but BGM corruption/noise -> REJECTED.
+3. `D1A/P1.1`: SoundMainRAM native rolled back; BGM recovered; battle lag/abnormal audio appeared.
+4. `D1B/P1.1`: FastUnsafeCopy32 also rolled back; correctness/codegen returned to C3H roots; battle still very laggy.
+
+This narrows the next investigation to post-C3H host/presentation/runtime differences rather than D1 guest native roots.
+
+## D1C controlled A/B
+
+Build one unpatched C3H-equivalent host/runtime from the same pinned base and C3H roots, then run two presentation modes against the same guest correctness:
+
+### Candidate A — C3H replay control
+- no P1 LCD host patch;
+- LCD OFF;
+- interframe OFF;
 - scale 1 / 240x160;
-- LCD filter OFF;
-- interframe OFF.
+- C3H roots only.
 
-Decision matrix:
-- A smooth => P1.1 LCD execution path is primary causal candidate;
-- A lag + B smooth => scale2/window/host timing is primary causal candidate;
-- A lag + B lag => presentation filter and scale2 are exonerated; audit runtime IRQ return semantics and re-audit whether C3H was battle-performance validated rather than only interaction-correct.
+### Candidate B — scale-only isolation
+- exact same unpatched runner binary as A;
+- LCD OFF;
+- interframe OFF;
+- scale 2 / 480x320.
+
+The already-tested D1B/P1.1 candidate is the failing Candidate C reference:
+- C3H roots only;
+- P1 LCD host patch present;
+- LCD ON;
+- interframe ON;
+- scale 2 / 480x320;
+- battle very laggy.
+
+## Decision matrix
+
+- A smooth + B smooth + C lag => P1.1 LCD/interframe host patch is causally implicated.
+- A smooth + B lag + C lag => 2x/window/host timing path is causally implicated.
+- A lag => the reconstructed runner differs materially from the sealed C3H runtime despite matching guest roots; diff host/runtime source, instrumentation, and build lineage before any further presentation work.
+
+Do not return to IRQ-semantics redesign unless Candidate A itself reproduces the lag. The known-good C3H control must remain the anchor.
 
 ## Permanent release contract
 
