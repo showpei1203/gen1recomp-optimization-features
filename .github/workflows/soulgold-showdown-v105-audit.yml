@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  SOULGOLD_REV: b1ec11a30e8c11be8840801855a776bf58a64dc2
+  SOULGOLD_REV: 77ec3fc6275bb94dd703f4c1976f1457cc44a60b
 
 jobs:
   build-v105:
@@ -42,6 +42,7 @@ jobs:
           mkdir -p evidence
           {
             echo "revision=${SOULGOLD_REV}"
+            echo "candidate=final_commit_before_v1.0.6"
             cat soulgold/include/config/version.h
             sha256sum soulgold/Soulgold_Beta_1.gba
             python3 - <<'PY'
@@ -54,12 +55,12 @@ jobs:
           } | tee evidence/V105_EVIDENCE.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: SoulGold-v1.0.5-Clean-ROM
+          name: SoulGold-v1.0.5-FinalCommit-Clean-ROM
           path: soulgold/Soulgold_Beta_1.gba
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: SoulGold-v1.0.5-Debug
+          name: SoulGold-v1.0.5-FinalCommit-Debug
           path: |
             evidence/V105_EVIDENCE.txt
             soulgold/V105_BUILD.log
