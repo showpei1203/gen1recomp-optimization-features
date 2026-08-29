@@ -1,0 +1,104 @@
+name: SoulGold Showdown Full 32MiB ROM Budget Audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/showdown-animated-battlers
+    paths:
+      - "tools/showdown_full_rom_budget.py"
+      - ".github/workflows/soulgold-showdown-full-rom-budget.yml"
+
+env:
+  SOULGOLD_REV: 77ec3fc6275bb94dd703f4c1976f1457cc44a60b
+  SHOWDOWN_SPRITES_URL: https://www.pokemonshowdown.com/files/resources/sprites.zip
+
+jobs:
+  full-budget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+      - name: Checkout SoulGold v1.0.5 authority
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi libpng-dev python3 python3-pil curl unzip
+      - name: Build clean SoulGold authority
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee FULL_ROM_BUDGET_BUILD.log
+          test -s Soulgold_Beta_1.elf
+          test -s Soulgold_Beta_1.gba
+          test "$(stat -c %s Soulgold_Beta_1.gba)" -eq 33554432
+      - name: Download official Showdown sprites
+        run: |
+          mkdir -p source evidence
+          curl --fail --location --retry 3 --retry-delay 2 "$SHOWDOWN_SPRITES_URL" --output source/sprites.zip
+          test -s source/sprites.zip
+      - name: Build exact normal front/back catalog
+        run: |
+          python3 framework/tools/showdown_bulk_catalog.py \
+            --sprites-zip source/sprites.zip \
+            --soulgold soulgold \
+            --output-json evidence/SHOWDOWN_FULL_CATALOG.json \
+            --output-csv evidence/SHOWDOWN_FULL_CATALOG.csv \
+            | tee evidence/SHOWDOWN_FULL_CATALOG_SUMMARY.txt
+          python3 - <<'PY'
+          import json
+          p=json.load(open('evidence/SHOWDOWN_FULL_CATALOG.json'))
+          assert p['runtime_candidates_normal_front_back'] == 1002, p['runtime_candidates_normal_front_back']
+          PY
+      - name: Measure all 1002 species against 32 MiB
+        run: |
+          python3 framework/tools/showdown_full_rom_budget.py \
+            --catalog evidence/SHOWDOWN_FULL_CATALOG.json \
+            --sprites-zip source/sprites.zip \
+            --soulgold soulgold \
+            --elf soulgold/Soulgold_Beta_1.elf \
+            --rom soulgold/Soulgold_Beta_1.gba \
+            --converter framework/tools/showdown_sprites_ingest.py \
+            --output evidence/SHOWDOWN_FULL_ROM_BUDGET.json \
+            | tee evidence/SHOWDOWN_FULL_ROM_BUDGET_SUMMARY.txt
+      - name: Validate result
+        run: |
+          python3 - <<'PY'
+          import json
+          p=json.load(open('evidence/SHOWDOWN_FULL_ROM_BUDGET.json'))
+          assert p['clean_rom_bytes'] == 33554432
+          assert p['totals']['species'] == 1002
+          assert p['totals']['lanes'] == 2004
+          assert p['totals']['native_reclaim_species'] > 950
+          for k in ('2','3','4','6','8'):
+              assert k in p['budgets']
+          print(json.dumps(p['budgets'], indent=2))
+          PY
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-Showdown-Full-32MiB-ROM-Budget
+          if-no-files-found: warn
+          path: |
+            evidence/SHOWDOWN_FULL_CATALOG.json
+            evidence/SHOWDOWN_FULL_CATALOG.csv
+            evidence/SHOWDOWN_FULL_CATALOG_SUMMARY.txt
+            evidence/SHOWDOWN_FULL_ROM_BUDGET.json
+            evidence/SHOWDOWN_FULL_ROM_BUDGET_SUMMARY.txt
+            soulgold/FULL_ROM_BUDGET_BUILD.log
