@@ -27,7 +27,9 @@ function Write-Log([string]$Message) {
 }
 
 function To-WslPath([string]$Path) {
-    $value = @(& wsl.exe wslpath -a $Path 2>&1)
+    # -u explicitly means Windows -> WSL path.  Without it, wslpath may treat
+    # C:\... as a Linux-style input and reject it.
+    $value = @(& wsl.exe wslpath -a -u $Path 2>&1)
     if ($LASTEXITCODE -ne 0) { throw "wslpath failed for $Path" }
     return ($value | Select-Object -Last 1).Trim()
 }
@@ -65,7 +67,10 @@ function Clone-Pinned([string]$Name, [string]$Url, [string]$Commit) {
         if ($LASTEXITCODE -ne 0) { throw "Unable to read $Name HEAD" }
     } else {
         if (-not $Wsl) { throw 'Neither Git for Windows nor WSL is available.' }
-        $destWsl = To-WslPath $dest
+        # The child directory does not exist on first clone. Convert the known,
+        # existing workspace, then append the child name on the WSL side.
+        $workspaceWsl = To-WslPath $Workspace
+        $destWsl = "$workspaceWsl/$Name"
         if (-not (Test-Path (Join-Path $dest '.git'))) {
             Write-Log "CLONE[WSL] $Url -> $destWsl"
             Invoke-WslGit @('clone', '--filter=blob:none', $Url, $destWsl)
