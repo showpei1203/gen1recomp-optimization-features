@@ -1,5 +1,6 @@
 name: SoulGold Showdown Baseline Audit
 
+# Baseline audit v2: compare pinned source build against the user's known-good ROM.
 on:
   workflow_dispatch:
   push:
