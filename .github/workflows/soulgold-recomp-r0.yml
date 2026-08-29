@@ -104,6 +104,7 @@ jobs:
             --syms r0/symbols/readelf_syms.txt \
             --sections r0/symbols/readelf_sections.txt \
             --map "$MAP_PATH" \
+            --data-source map \
             --rom "$ROM_PATH" \
             --out r0/symbols \
             2>&1 | tee r0/evidence/SYMBOL_IMPORT.txt
@@ -111,6 +112,7 @@ jobs:
           test -s r0/symbols/imported_data_symbols.tsv
           test -s r0/symbols/function_boundaries.tsv
           test -s r0/symbols/SOULGOLD105_symbols.toml
+          grep -q "coalesced from \['map'\]" r0/evidence/SYMBOL_IMPORT.txt
 
       - name: Generate deterministic SoulGoldRecomp base config
         run: |
@@ -175,7 +177,7 @@ jobs:
           mkdir -p r0/evidence
           python3 - <<'PY' > r0/evidence/R0_SUMMARY.txt
           from pathlib import Path
-          import hashlib, os, re
+          import hashlib, os
 
           rom = Path(os.environ['ROM_PATH'])
           print('SoulGoldRecomp R0 evidence')
