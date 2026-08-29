@@ -9,12 +9,39 @@ The project now has two product profiles:
 
 The native profile is the primary path for unrestricted animated battlers. The GBA profile remains supported, but full-Pokédex animation compression is no longer the main blocker for the project.
 
+## EmeraldRecomp reuse rule
+
+Use **EmeraldRecomp as the runner/scaffold reference**, not as a binary host that treats SoulGold itself as a `.gbamod`.
+
+Why:
+
+- an EmeraldRecomp executable contains Emerald-specific generated dispatch/function bodies and an Emerald ROM identity gate;
+- GBARecomp `.gbamod` archives are data packages and cannot provide arbitrary native code, generated guest functions, DLLs, or symbol tables;
+- a mod may require a user-owned ROM or other file as an external asset, but that only makes the file available to a trusted plugin. It does not make the foreign ROM execute as the current game.
+
+Therefore the native product is built by **forking/reusing EmeraldRecomp's generic app structure** and replacing the game-specific corpus/config with SoulGold:
+
+```text
+EmeraldRecomp scaffold
+  + GBARecomp shared runtime
+  - Emerald generated guest corpus
+  - Emerald ROM identity
+  - Emerald-only RAM dispatch hooks
+  + SoulGold generated guest corpus
+  + SoulGold ROM identity/config
+  + SoulGold-specific hooks only when proven necessary
+  = SoulGoldRecomp
+```
+
+After SoulGoldRecomp exists, Showdown/PMD content should be distributed as external `.gbamod` data packs with statically linked, reviewed SoulGold trusted plugins. This is the intended way to escape the cartridge's 32 MiB asset ceiling without turning the entire SoulGold game into a fake mod.
+
 ## Fixed inputs
 
 - SoulGold source: `Eemeliri/soulgold`
 - SoulGold v1.0.5 source authority: `77ec3fc6275bb94dd703f4c1976f1457cc44a60b`
 - GBARecomp framework: `mstan/gbarecomp`
 - GBARecomp pinned revision for R0: `ed9824b70aa350cd9e1653894beaf6b1b6b27787`
+- EmeraldRecomp is a **structural reference/scaffold source**, not a SoulGold runtime dependency.
 - Development ROM, ELF and MAP MUST be produced by the same SoulGold source build. They are one inseparable authority set.
 
 The release ROM previously supplied by the user is not used as the symbol-import target because a different compiler/linker build can change addresses. GBARecomp's decomp symbol importer expects build metadata that byte-matches the ROM being recompiled.
@@ -39,11 +66,11 @@ R0 PASS means: **SoulGold machine code can be translated into buildable native C
 
 ## R1 goal
 
-Create a SoulGoldRecomp host runner using the shared GBARecomp runtime and validate:
+Create a SoulGoldRecomp host runner by adapting the generic EmeraldRecomp scaffold and validate:
 
 `reset/boot -> title screen`
 
-R1 requires mGBA/reference comparison and may use interpreter/self-heal fallback for uncovered code. Do not claim static coverage where interpreter fallback was used.
+R1 must remove Emerald-specific identity and RAM-dispatch assumptions. It may use interpreter/self-heal fallback for uncovered SoulGold code. Do not claim static coverage where interpreter fallback was used.
 
 ## R2 goal
 
@@ -63,7 +90,7 @@ The external asset must not be inserted into the GBA ROM. Missing overrides fall
 
 ## R4 goal
 
-Promote the external battler asset registry to bulk Showdown/PMD packs. Preserve SoulGold native battle choreography:
+Promote the external battler asset registry to bulk Showdown/PMD `.gbamod` data packs. Preserve SoulGold native battle choreography:
 
 - x/y and x2/y2 movement;
 - shake/lunge;
@@ -72,6 +99,25 @@ Promote the external battler asset registry to bulk Showdown/PMD packs. Preserve
 - battle FX.
 
 Animated asset runtimes own body pixels and animation timing only at their explicit ownership boundary. Native battler transforms remain a separate composable layer.
+
+## Mod packaging rule
+
+A Showdown/PMD pack may contain data such as:
+
+```text
+manifest.toml
+battlers/
+  sprigatito/
+    front/*
+    back/*
+    metadata.json
+  marill/
+    front/*
+    back/*
+    metadata.json
+```
+
+The executable owns the trusted native loader/renderer hook. Packages do not ship arbitrary executable code. A feature targets the exact SoulGold game ID + ROM identity accepted by the SoulGoldRecomp runner.
 
 ## Non-negotiable rules
 
