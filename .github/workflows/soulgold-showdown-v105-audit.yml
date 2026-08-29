@@ -1,0 +1,72 @@
+name: SoulGold v1.0.5 Authority Audit
+
+on:
+  push:
+    branches:
+      - feature/showdown-animated-battlers
+    paths:
+      - ".github/workflows/soulgold-showdown-v105-audit.yml"
+  workflow_dispatch:
+
+env:
+  SOULGOLD_REV: b1ec11a30e8c11be8840801855a776bf58a64dc2
+
+jobs:
+  build-v105:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi libpng-dev python3 curl unzip
+      - name: Build v1.0.5 clean
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee V105_BUILD.log
+      - name: Evidence
+        run: |
+          mkdir -p evidence
+          {
+            echo "revision=${SOULGOLD_REV}"
+            cat soulgold/include/config/version.h
+            sha256sum soulgold/Soulgold_Beta_1.gba
+            python3 - <<'PY'
+          import zlib
+          p='soulgold/Soulgold_Beta_1.gba'; crc=0
+          with open(p,'rb') as f:
+              for c in iter(lambda:f.read(1048576),b''): crc=zlib.crc32(c,crc)
+          print(f'crc32={crc&0xffffffff:08X}')
+          PY
+          } | tee evidence/V105_EVIDENCE.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-v1.0.5-Clean-ROM
+          path: soulgold/Soulgold_Beta_1.gba
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: SoulGold-v1.0.5-Debug
+          path: |
+            evidence/V105_EVIDENCE.txt
+            soulgold/V105_BUILD.log
+            soulgold/*.map
+            soulgold/*.sym
+            soulgold/*.elf
+            soulgold/build/emerald/*.map
+            soulgold/build/emerald/*.sym
+            soulgold/build/emerald/*.elf
+          if-no-files-found: warn
