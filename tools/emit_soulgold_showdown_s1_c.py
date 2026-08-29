@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit Cyndaquil Showdown front/back idle descriptors for SoulGold S1."""
+"""Emit Pokémon Showdown idle descriptors for SoulGold S1 candidates."""
 from __future__ import annotations
 
 import argparse
@@ -50,6 +50,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ingest-root", type=Path, required=True)
     ap.add_argument("--species", default="cyndaquil")
+    ap.add_argument("--lanes", nargs="+", choices=tuple(LANES), default=("front", "back"))
     ap.add_argument("--asset-root", default="graphics/showdown/cyndaquil")
     ap.add_argument("--output", type=Path, required=True)
     args = ap.parse_args()
@@ -60,7 +61,7 @@ def main() -> int:
         '#include "showdown_gba_runtime.h"',
         "",
     ]
-    for lane in ("front", "back"):
+    for lane in args.lanes:
         path = args.ingest_root / args.species / lane / "manifest.json"
         manifest = json.loads(path.read_text(encoding="utf-8"))
         emit_lane(lines, args.species, lane, manifest, args.asset_root)
