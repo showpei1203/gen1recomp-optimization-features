@@ -38,6 +38,14 @@ def copy_file(src: Path, dst: Path) -> None:
     print(f"COPY {src} -> {dst}")
 
 
+def software_tick_slice(text: str) -> str:
+    start = text.find("static void RunBattleSoftwareTick(void)\n{")
+    end = text.find("\nstatic void AdvanceBattleFrameRng(void)", start)
+    if start < 0 or end < 0:
+        raise SystemExit("G4F RunBattleSoftwareTick boundary missing")
+    return text[start:end]
+
+
 def patch_battle_main(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     runtime_include = '#include "pmd_gba_runtime.h"\n'
@@ -62,11 +70,7 @@ def patch_battle_main(path: Path) -> None:
             raise SystemExit("G4F exact AnimateSprites -> PMD Tick -> BuildOamBuffer anchor missing")
         text = text.replace(anchor, replacement, 1)
 
-    fn_start = text.find("static void RunBattleSoftwareTick(void)\n{")
-    fn_end = text.find("\nstatic void AdvanceBattleFrameRng(void)", fn_start)
-    if fn_start < 0 or fn_end < 0:
-        raise SystemExit("G4F RunBattleSoftwareTick boundary missing")
-    fn = text[fn_start:fn_end]
+    fn = software_tick_slice(text)
     prepare = fn.find("PmdGbaRuntime_Prepare();")
     animate = fn.find("AnimateSprites();")
     pmd = fn.find("PmdSoulGoldPrototype_Tick();")
@@ -179,12 +183,14 @@ def main() -> int:
     for name, attack in (("Cyndaquil", cy_attack), ("Marill", ma_attack)):
         if ".packed = &" not in attack or ".4bpp.lz" in attack:
             raise SystemExit(f"G4F {name} Attack did not replace legacy frame blobs")
-    critical = (
-        battle.find("PmdGbaRuntime_Prepare();"),
-        battle.find("AnimateSprites();"),
-        battle.find("PmdSoulGoldPrototype_Tick();"),
-        battle.find("BuildOamBuffer();"),
-    )
+
+    fn = software_tick_slice(battle)
+    critical = tuple(fn.find(call) for call in (
+        "PmdGbaRuntime_Prepare();",
+        "AnimateSprites();",
+        "PmdSoulGoldPrototype_Tick();",
+        "BuildOamBuffer();",
+    ))
     if not (0 <= critical[0] < critical[1] < critical[2] < critical[3]):
         raise SystemExit(f"G4F installed timing contract invalid: {critical}")
 
