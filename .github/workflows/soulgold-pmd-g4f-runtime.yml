@@ -1,0 +1,181 @@
+name: SoulGold PMD G4F Runtime Tile Delta Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pmd-portable-battle-framework
+    paths:
+      - "prototype/soulgold_g4f/**"
+      - "tools/prepare_soulgold_g4f_runtime_assets.py"
+      - "tools/install_soulgold_g4f_runtime.py"
+      - ".github/workflows/soulgold-pmd-g4f-runtime.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  SPRITECOLLAB_REV: 4b6b72aacde89abecf8d8e2f6b9e4c8a778570d7
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  UNIQUE_ROM_PATH: soulgold/SoulGold-PMD-G4F.gba
+
+jobs:
+  build-g4f:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Checkout pinned SpriteCollab
+        uses: actions/checkout@v4
+        with:
+          repository: PMDCollab/SpriteCollab
+          ref: ${{ env.SPRITECOLLAB_REV }}
+          path: spritecollab
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3 python3-pil
+      - name: Prepare G3R11 parent assets
+        run: |
+          python3 framework/tools/prepare_soulgold_g3r10_special_state_assets.py \
+            --framework-root framework --spritecollab spritecollab \
+            --soulgold soulgold --output g4f_parent
+      - name: Prepare G4F runtime packs
+        run: |
+          python3 framework/tools/prepare_soulgold_g4f_runtime_assets.py \
+            --parent-staging g4f_parent/staging \
+            --output g4f_assets | tee G4F_ASSET_PREP.log
+      - name: Verify G4F pack proof
+        run: |
+          python3 - <<'PY'
+          import json
+          d=json.load(open('g4f_assets/G4F_ASSET_SUMMARY.json'))
+          assert d['phase']=='G4F_RUNTIME_TILE_DELTA_ATTACK_PILOT'
+          assert d['activation_change']=='NONE_TWO_EXISTING_PROFILES_ONLY'
+          assert d['native_battle_semantics']=='UNCHANGED'
+          assert d['known_ambient_1px_defect']=='DEFERRED_ROOT_CAUSE_UNRESOLVED'
+          assert len(d['targets'])==2
+          for key,r in d['targets'].items():
+              assert r['byte_exact_reconstruction'] is True, (key,r)
+              assert r['legacy_attack_blob_removed'] is True, (key,r)
+              assert r['dictionary_raw_bytes'] <= 4096, (key,r)
+              assert r['command_raw_bytes'] <= 512, (key,r)
+              assert r['g4f_packed_bytes'] < r['legacy_per_frame_lz77_bytes'], (key,r)
+              print(key, 'legacy_lz',r['legacy_per_frame_lz77_bytes'],'g4f',r['g4f_packed_bytes'],
+                    'dict_entries',r['dictionary_entries'],'max_changed',r['max_changed_tiles'])
+          print('G4F byte-exact storage proof PASS')
+          PY
+      - name: Install G4F runtime candidate
+        run: |
+          python3 framework/tools/install_soulgold_g4f_runtime.py \
+            --framework-root framework --soulgold soulgold \
+            --assets-staging g4f_assets/staging
+      - name: Verify G4F runtime timing and fallback
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          runtime=Path('soulgold/src/pmd_gba_runtime.c').read_text()
+          battle=Path('soulgold/src/battle_main.c').read_text()
+          adapter=Path('soulgold/src/pmd_soulgold_adapter.c').read_text()
+          registry=Path('soulgold/src/pmd_soulgold_species_registry.c').read_text()
+          cy=Path('soulgold/src/pmd_cyndaquil_player_attack.c').read_text()
+          ma=Path('soulgold/src/pmd_marill_opponent_attack.c').read_text()
+
+          prepare=runtime.index('void PmdGbaRuntime_Prepare(void)')
+          stage=runtime.index('sHost->StageFrame(')
+          tick=runtime.index('void PmdGbaRuntime_Tick(void)')
+          assert prepare < stage < tick
+          assert runtime.count('sHost->StageFrame(')==1
+          tick_body=runtime[tick:]
+          assert 'sHost->StageFrame(' not in tick_body
+
+          fn=battle[battle.index('static void RunBattleSoftwareTick(void)'):]
+          positions=[fn.index(x) for x in (
+              'PmdGbaRuntime_Prepare();','AnimateSprites();',
+              'PmdSoulGoldPrototype_Tick();','BuildOamBuffer();')]
+          assert positions == sorted(positions), positions
+          assert len(set(positions))==4
+
+          assert 'PmdG4fCodec_DecodeFrame(battler, frame->packed, dest)' in adapter
+          assert registry.count('.species = SPECIES_')==2
+          assert 'return NULL;' in registry
+          for name,text in [('Cyndaquil',cy),('Marill',ma)]:
+              assert '.packed = &' in text, name
+              assert '.4bpp.lz' not in text, name
+          print('G4F timing/fallback source contract PASS')
+          PY
+      - name: Build SoulGold G4F
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee PMD_G4F_BUILD.log
+      - name: Audit PMD warnings or errors
+        run: |
+          if grep -E "src/pmd_.*(warning:|error:)" soulgold/PMD_G4F_BUILD.log; then exit 1; fi
+      - name: Verify G4F ROM and symbols
+        run: |
+          cp "${ROM_PATH}" "${UNIQUE_ROM_PATH}"
+          test "$(stat -c %s "${UNIQUE_ROM_PATH}")" -eq 33554432
+          test -f soulgold/build/emerald.elf
+          arm-none-eabi-nm soulgold/build/emerald.elf | grep -q 'PmdGbaRuntime_Prepare'
+          arm-none-eabi-nm soulgold/build/emerald.elf | grep -q 'PmdG4fCodec_DecodeFrame'
+          arm-none-eabi-nm soulgold/build/emerald.elf | grep -q 'gPmdCyndaquilPlayerAttackPackedFrames'
+          arm-none-eabi-nm soulgold/build/emerald.elf | grep -q 'gPmdMarillOpponentAttackPackedFrames'
+      - name: Record G4F evidence
+        if: always()
+        run: |
+          mkdir -p evidence
+          cp g4f_assets/G4F_ASSET_SUMMARY.json evidence/ 2>/dev/null || true
+          cp G4F_ASSET_PREP.log evidence/ 2>/dev/null || true
+          cp soulgold/PMD_G4F_INSTALL_STATUS.txt evidence/ 2>/dev/null || true
+          {
+            echo "SoulGold PMD G4F Runtime Tile Delta evidence"
+            echo "framework_commit=${GITHUB_SHA}"
+            echo "soulgold_revision=${SOULGOLD_REV}"
+            echo "spritecollab_revision=${SPRITECOLLAB_REV}"
+            echo "runtime_parent=G4B_G3R11"
+            echo "activation_change=NONE_TWO_EXISTING_PROFILES_ONLY"
+            echo "codec=RUNTIME_LZ77_TILE_DICTIONARY_HOME_MAP_LZ77_TILE_DELTA"
+            echo "decode_timing=BEFORE_ANIMATE_SPRITES"
+            echo "oam_critical_order=ANIMATE_THEN_PMD_TICK_THEN_BUILD_OAM"
+            echo "native_battle_semantics=UNCHANGED"
+            echo "known_ambient_1px_defect=DEFERRED_ROOT_CAUSE_UNRESOLVED"
+            echo "runtime_visual_status=PENDING_USER_ACCEPTANCE"
+            if [ -f "${UNIQUE_ROM_PATH}" ]; then
+              echo "build_status=PASS"
+              stat -c "rom_bytes=%s" "${UNIQUE_ROM_PATH}"
+              sha256sum "${UNIQUE_ROM_PATH}"
+            else
+              echo "build_status=FAIL_OR_NO_ROM"
+            fi
+          } | tee evidence/PMD_G4F_CI_EVIDENCE.txt
+      - name: Upload G4F evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-pmd-g4f-runtime-evidence
+          path: |
+            evidence/
+            soulgold/PMD_G4F_BUILD.log
+      - name: Upload G4F ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-PMD-G4F-ROM
+          path: soulgold/SoulGold-PMD-G4F.gba
