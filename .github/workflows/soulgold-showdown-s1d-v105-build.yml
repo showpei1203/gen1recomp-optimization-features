@@ -1,0 +1,145 @@
+name: SoulGold Showdown S1D v1.0.5 Build Gate
+
+on:
+  push:
+    branches:
+      - feature/showdown-animated-battlers
+    paths:
+      - "prototype/soulgold_showdown_s1/**"
+      - "tools/showdown_sprites_ingest.py"
+      - "tools/emit_soulgold_showdown_s1_c.py"
+      - "tools/prepare_soulgold_showdown_v105_assets.py"
+      - "tools/install_soulgold_showdown_v105.py"
+      - "tests/test_showdown_s0_ingest.py"
+      - ".github/workflows/soulgold-showdown-s1d-v105-build.yml"
+  workflow_dispatch:
+
+env:
+  SOULGOLD_REV: b1ec11a30e8c11be8840801855a776bf58a64dc2
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  SHOWDOWN_SPRITES_URL: https://www.pokemonshowdown.com/files/resources/sprites.zip
+
+jobs:
+  compile-s1d-v105:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+      - name: Checkout SoulGold v1.0.5 authority
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi libpng-dev python3 python3-pil curl unzip
+      - name: Verify v1.0.5 baseline
+        run: |
+          grep -q 'DISPLAY_VERSION "v1.0.5"' soulgold/include/config/version.h
+          test "$(git -C soulgold rev-parse HEAD)" = "$SOULGOLD_REV"
+      - name: Run Showdown ingest regression
+        run: python3 framework/tests/test_showdown_s0_ingest.py --tool framework/tools/showdown_sprites_ingest.py
+      - name: Download official Showdown sprites
+        run: |
+          mkdir -p source
+          curl --fail --location --retry 3 --retry-delay 2 "$SHOWDOWN_SPRITES_URL" --output source/sprites.zip
+          test -s source/sprites.zip
+          unzip -l source/sprites.zip | grep -Ei '/?ani-back/sprigatito\.gif$'
+          unzip -l source/sprites.zip | grep -Ei '/?ani/marill\.gif$'
+      - name: Prepare v1.0.5 assets
+        run: |
+          python3 framework/tools/prepare_soulgold_showdown_v105_assets.py \
+            --framework-root framework --sprites-zip source/sprites.zip \
+            --soulgold soulgold --output s1d_assets
+      - name: Install S1D v1.0.5 candidate
+        run: |
+          python3 framework/tools/install_soulgold_showdown_v105.py \
+            --framework-root framework --soulgold soulgold \
+            --assets-staging s1d_assets/staging
+      - name: Verify normal-flow isolation
+        run: |
+          grep -q 'SHOWDOWN_S1D_V105_TEST_STARTER' soulgold/src/starter_choose.c
+          grep -q 'SHOWDOWN_S1D_V105_FIRST_BATTLE_MARILL' soulgold/src/battle_setup.c
+          grep -q 'ShowdownSoulGoldPrototype_Init' soulgold/src/battle_main.c
+          grep -q 'ShowdownSoulGoldPrototype_Tick' soulgold/src/battle_main.c
+          grep -q 'SPECIES_SPRIGATITO' soulgold/src/showdown_soulgold_prototype.c
+          grep -q 'SPECIES_MARILL' soulgold/src/showdown_soulgold_prototype.c
+          ! grep -q 'TryStartTestBattle\|B_BUTTON\|DoStandardWildBattle_Debug' soulgold/src/showdown_soulgold_prototype.c
+          test -z "$(git -C soulgold diff -- src/overworld.c src/new_game.c src/event_data.c)" || { echo 'Early-game host files changed unexpectedly' >&2; exit 1; }
+          test -z "$(git -C soulgold diff -- src/data.c src/pokemon.c)" || { echo 'Pokemon/data core changed unexpectedly' >&2; exit 1; }
+          ! grep -R 'PmdSoulGold\|PmdGba\|pmd_' -n soulgold/src/showdown_*.c soulgold/include/showdown_*.h
+      - name: Build S1D v1.0.5
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee SHOWDOWN_S1D_V105_BUILD.log
+      - name: Audit compiler output
+        if: always()
+        run: |
+          if [ -f soulgold/SHOWDOWN_S1D_V105_BUILD.log ]; then
+            if grep -E 'src/(showdown_.*|starter_choose|battle_setup)\.c.*(warning:|error:)' soulgold/SHOWDOWN_S1D_V105_BUILD.log; then
+              exit 1
+            fi
+          fi
+      - name: Record evidence
+        if: always()
+        run: |
+          mkdir -p evidence
+          {
+            echo 'SoulGold Showdown S1D v1.0.5 evidence'
+            echo "soulgold_revision=${SOULGOLD_REV}"
+            echo 'soulgold_version=v1.0.5'
+            echo 'known_good_user_rom_sha256=a22aa2bbcaa9953f15d9abc2ef1069d4a082fab059d701781e5b83ff376c1f9d'
+            echo 'previous_bad_baseline=b5122bdf188943862c13abe4938e88b7bb3c5c4a (v1.0.6.1)'
+            echo 'b_button_harness=REMOVED'
+            echo 'overworld_patch=NONE'
+            echo 'player_target=Sprigatito back idle'
+            echo 'opponent_target=Marill front idle'
+            echo 'runtime_visual_status=PENDING_HUMAN_TEST'
+            if [ -f "$ROM_PATH" ]; then
+              echo 'build_status=PASS'
+              stat -c 'rom_bytes=%s' "$ROM_PATH"
+              sha256sum "$ROM_PATH"
+              python3 - <<'PY'
+          import os,zlib
+          p=os.environ['ROM_PATH']; crc=0
+          with open(p,'rb') as f:
+              for c in iter(lambda:f.read(1048576),b''): crc=zlib.crc32(c,crc)
+          print(f'rom_crc32={crc&0xffffffff:08X}')
+          PY
+            else
+              echo 'build_status=FAIL_OR_NO_ROM'
+            fi
+          } | tee evidence/SHOWDOWN_S1D_V105_CI_EVIDENCE.txt
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-showdown-s1d-v105-evidence
+          if-no-files-found: warn
+          path: |
+            evidence/SHOWDOWN_S1D_V105_CI_EVIDENCE.txt
+            s1d_assets/SHOWDOWN_S1D_V105_ASSET_SUMMARY.json
+            s1d_assets/ingest/sprigatito/back/manifest.json
+            s1d_assets/ingest/marill/front/manifest.json
+            soulgold/SHOWDOWN_S1D_V105_INSTALL_STATUS.txt
+            soulgold/SHOWDOWN_S1D_V105_BUILD.log
+      - name: Upload test ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-Showdown-S1D-v1.0.5-Sprigatito-Marill-ROM
+          if-no-files-found: error
+          path: soulgold/Soulgold_Beta_1.gba
