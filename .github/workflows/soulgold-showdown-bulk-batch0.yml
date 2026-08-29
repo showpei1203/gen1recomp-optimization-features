@@ -1,0 +1,77 @@
+name: SoulGold Showdown Bulk Migration Batch 0
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/showdown-animated-battlers
+    paths:
+      - "tools/prepare_soulgold_showdown_bulk_batch.py"
+      - ".github/workflows/soulgold-showdown-bulk-batch0.yml"
+
+env:
+  SOULGOLD_REV: 77ec3fc6275bb94dd703f4c1976f1457cc44a60b
+  SHOWDOWN_SPRITES_URL: https://www.pokemonshowdown.com/files/resources/sprites.zip
+  BATCH_INDEX: 0
+  BATCH_SIZE: 32
+
+jobs:
+  convert-batch-0:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+      - name: Checkout SoulGold v1.0.5 authority
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3 python3-pil curl unzip
+      - name: Download official Showdown sprites
+        run: |
+          mkdir -p source evidence
+          curl --fail --location --retry 3 --retry-delay 2 "$SHOWDOWN_SPRITES_URL" --output source/sprites.zip
+          test -s source/sprites.zip
+      - name: Generate current full catalog
+        run: |
+          python3 framework/tools/showdown_bulk_catalog.py \
+            --sprites-zip source/sprites.zip \
+            --soulgold soulgold \
+            --output-json evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG.json \
+            --output-csv evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG.csv \
+            | tee evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG_SUMMARY.txt
+      - name: Convert deterministic batch 0
+        run: |
+          python3 framework/tools/prepare_soulgold_showdown_bulk_batch.py \
+            --framework-root framework \
+            --catalog evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG.json \
+            --sprites-zip source/sprites.zip \
+            --soulgold soulgold \
+            --output bulk_batch_0 \
+            --batch-index "$BATCH_INDEX" \
+            --batch-size "$BATCH_SIZE" \
+            | tee evidence/SHOWDOWN_BULK_BATCH_000_CONVERT.log
+      - name: Structural audit
+        run: |
+          test -f bulk_batch_0/SHOWDOWN_BULK_BATCH_000_SUMMARY.json
+          test "$(find bulk_batch_0/staging/src -maxdepth 1 -name 'showdown_*_idle.c' | wc -l)" -eq "$BATCH_SIZE"
+          test "$(find bulk_batch_0/staging/graphics/showdown -name manifest.json | wc -l)" -eq "$((BATCH_SIZE * 2))"
+          ! grep -R 'PmdSoulGold\|PmdGba\|pmd_' -n bulk_batch_0/staging/src
+      - name: Upload install-ready converted batch
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-Showdown-Bulk-Batch-000-InstallReady
+          if-no-files-found: error
+          compression-level: 6
+          path: |
+            bulk_batch_0/staging
+            bulk_batch_0/SHOWDOWN_BULK_BATCH_000_SUMMARY.json
+            evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG_SUMMARY.txt
+            evidence/SHOWDOWN_BULK_BATCH_000_CONVERT.log
