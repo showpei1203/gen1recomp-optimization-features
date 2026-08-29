@@ -22,8 +22,20 @@ function WslPath([string]$p) {
 }
 
 function Test-WslTool([string]$Name) {
-    $lines = @(& wsl.exe $Name --version 2>&1)
-    $rc = $LASTEXITCODE
+    # Windows PowerShell 5 can promote native stderr into a terminating error
+    # when the script-wide ErrorActionPreference is Stop. Missing commands are
+    # expected probe results, not exceptional control flow, so temporarily
+    # downgrade only this one native invocation.
+    $savedPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $lines = @(& wsl.exe $Name --version 2>&1)
+        $rc = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $savedPreference
+    }
+
     if ($rc -eq 0) {
         $first = ($lines | Select-Object -First 1)
         Log ("WSL_TOOL_OK=" + $Name + $(if ($first) { " :: $first" } else { '' }))
