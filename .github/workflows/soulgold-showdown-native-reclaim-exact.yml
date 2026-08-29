@@ -1,0 +1,99 @@
+name: SoulGold Showdown Exact Native Reclaim Audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/showdown-animated-battlers
+    paths:
+      - "tools/showdown_native_reclaim_exact.py"
+      - "authority/SHOWDOWN_FULL_ROM_BUDGET_BASELINE_RUN_33235195473.json"
+      - ".github/workflows/soulgold-showdown-native-reclaim-exact.yml"
+
+env:
+  SOULGOLD_REV: 77ec3fc6275bb94dd703f4c1976f1457cc44a60b
+  SHOWDOWN_SPRITES_URL: https://www.pokemonshowdown.com/files/resources/sprites.zip
+
+jobs:
+  exact-native-reclaim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+      - name: Checkout SoulGold v1.0.5 authority
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi libpng-dev python3 python3-pil curl
+      - name: Build clean SoulGold authority
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee EXACT_NATIVE_RECLAIM_BUILD.log
+          test -s Soulgold_Beta_1.elf
+          test -s Soulgold_Beta_1.gba
+          test "$(stat -c %s Soulgold_Beta_1.gba)" -eq 33554432
+      - name: Rebuild exact 1002 candidate catalog
+        run: |
+          mkdir -p source evidence
+          curl --fail --location --retry 3 --retry-delay 2 "$SHOWDOWN_SPRITES_URL" --output source/sprites.zip
+          sha256sum source/sprites.zip | tee evidence/SHOWDOWN_SPRITES_ZIP_SHA256.txt
+          python3 framework/tools/showdown_bulk_catalog.py \
+            --sprites-zip source/sprites.zip \
+            --soulgold soulgold \
+            --output-json evidence/SHOWDOWN_FULL_CATALOG.json \
+            --output-csv evidence/SHOWDOWN_FULL_CATALOG.csv \
+            | tee evidence/SHOWDOWN_FULL_CATALOG_SUMMARY.txt
+          python3 - <<'PY'
+          import json
+          p=json.load(open('evidence/SHOWDOWN_FULL_CATALOG.json'))
+          assert p['runtime_candidates_normal_front_back'] == 1002, p['runtime_candidates_normal_front_back']
+          PY
+      - name: Resolve SpeciesInfo pointers and safe reclaim
+        run: |
+          python3 framework/tools/showdown_native_reclaim_exact.py \
+            --catalog evidence/SHOWDOWN_FULL_CATALOG.json \
+            --budget-baseline framework/authority/SHOWDOWN_FULL_ROM_BUDGET_BASELINE_RUN_33235195473.json \
+            --soulgold soulgold \
+            --elf soulgold/Soulgold_Beta_1.elf \
+            --output evidence/SHOWDOWN_NATIVE_RECLAIM_EXACT.json \
+            | tee evidence/SHOWDOWN_NATIVE_RECLAIM_EXACT_SUMMARY.txt
+      - name: Integrity gate
+        run: |
+          python3 - <<'PY'
+          import json
+          p=json.load(open('evidence/SHOWDOWN_NATIVE_RECLAIM_EXACT.json'))
+          assert p['runtime_candidate_count'] == 1002
+          assert p['candidate_exact_mapping_count'] >= 950, p['candidate_exact_mapping_count']
+          assert p['missing_nm_symbol_count'] == 0, p['missing_nm_symbol_count']
+          assert p['safe_native_reclaim_bytes'] > 1000000, p['safe_native_reclaim_bytes']
+          print('exact-native-reclaim integrity PASS')
+          print(json.dumps(p['budgets'], indent=2))
+          PY
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-Showdown-Exact-Native-Reclaim
+          if-no-files-found: warn
+          path: |
+            evidence/SHOWDOWN_NATIVE_RECLAIM_EXACT.json
+            evidence/SHOWDOWN_NATIVE_RECLAIM_EXACT_SUMMARY.txt
+            evidence/SHOWDOWN_FULL_CATALOG_SUMMARY.txt
+            evidence/SHOWDOWN_SPRITES_ZIP_SHA256.txt
+            soulgold/EXACT_NATIVE_RECLAIM_BUILD.log
