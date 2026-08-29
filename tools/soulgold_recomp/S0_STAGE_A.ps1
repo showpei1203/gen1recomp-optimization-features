@@ -1,12 +1,18 @@
 param(
-    [string]$Workspace = "$env:USERPROFILE\SoulGoldRecomp_S0"
+    [string]$EvidenceRoot = "$env:USERPROFILE\SoulGoldRecomp_S0\_evidence"
 )
 
 $ErrorActionPreference = 'Stop'
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Evidence = Join-Path $Workspace '_evidence'
-New-Item -ItemType Directory -Force -Path $Evidence | Out-Null
-$Log = Join-Path $Evidence ('S0_STAGE_A_{0}.log' -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
+New-Item -ItemType Directory -Force -Path $EvidenceRoot | Out-Null
+$Stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+$Log = Join-Path $EvidenceRoot ("S0_STAGE_A_WSLNATIVE_{0}.log" -f $Stamp)
+
+$SoulGoldRepo = 'https://github.com/Eemeliri/soulgold.git'
+$SoulGoldCommit = 'a6efa38348f978348da9dc4f4a7878cccf27bfd0'
+$GbaRecompRepo = 'https://github.com/mstan/gbarecomp.git'
+$GbaRecompCommit = 'ed9824b70aa350cd9e1653894beaf6b1b6b27787'
+$EmeraldRecompCommit = '4e1f89669b9945e338c0f2e52816aa0533fa30d3'
 
 function Log([string]$s) {
     $line = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $s
@@ -14,99 +20,165 @@ function Log([string]$s) {
     Write-Host $line
 }
 
-function WslPath([string]$p) {
-    $resolved = (Resolve-Path $p).Path
-    # Explicitly translate a Windows path to its WSL/Linux form.
-    $value = @(& wsl.exe wslpath -a -u $resolved 2>&1)
-    if ($LASTEXITCODE -ne 0) { throw "wslpath failed for $resolved" }
-    return ($value | Select-Object -Last 1).Trim()
+function WinPath-ToWslMount([string]$p) {
+    $full = (Resolve-Path $p).Path
+    if ($full -notmatch '^([A-Za-z]):\\(.*)$') {
+        throw "Unsupported Windows path for WSL mount conversion: $full"
+    }
+    $drive = $Matches[1].ToLowerInvariant()
+    $rest = $Matches[2].Replace('\\', '/')
+    return "/mnt/$drive/$rest"
 }
 
-function Test-WslTool([string]$Name) {
-    # Windows PowerShell 5 can promote native stderr into a terminating error
-    # when the script-wide ErrorActionPreference is Stop. Missing commands are
-    # expected probe results, not exceptional control flow, so temporarily
-    # downgrade only this one native invocation.
-    $savedPreference = $ErrorActionPreference
+function Invoke-Wsl([string]$Label, [string[]]$Args) {
+    $saved = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'
-        $lines = @(& wsl.exe $Name --version 2>&1)
+        $lines = @(& wsl.exe @Args 2>&1)
         $rc = $LASTEXITCODE
     }
     finally {
-        $ErrorActionPreference = $savedPreference
+        $ErrorActionPreference = $saved
     }
+    foreach ($line in $lines) { Log "$Label $line" }
+    if ($rc -ne 0) { throw "$Label failed ($rc): $($Args -join ' ')" }
+    return ,$lines
+}
 
-    if ($rc -eq 0) {
-        $first = ($lines | Select-Object -First 1)
-        Log ("WSL_TOOL_OK=" + $Name + $(if ($first) { " :: $first" } else { '' }))
-        return $true
+function Wsl-Exists([string]$path) {
+    $saved = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & wsl.exe test -e $path 2>$null
+        $rc = $LASTEXITCODE
     }
-    Log ("WSL_TOOL_MISSING=" + $Name)
-    return $false
+    finally {
+        $ErrorActionPreference = $saved
+    }
+    return ($rc -eq 0)
+}
+
+function Clone-Pinned([string]$Name, [string]$Url, [string]$Commit, [string]$Dest) {
+    if (-not (Wsl-Exists "$Dest/.git")) {
+        Log "CLONE $Name $Url -> $Dest"
+        Invoke-Wsl "GIT[$Name]" @('git','clone','--recurse-submodules',$Url,$Dest) | Out-Null
+    } else {
+        Log "EXISTS $Name $Dest"
+        Invoke-Wsl "GIT[$Name]" @('git','-C',$Dest,'fetch','origin',$Commit) | Out-Null
+    }
+    Invoke-Wsl "GIT[$Name]" @('git','-C',$Dest,'checkout','--detach',$Commit) | Out-Null
+    Invoke-Wsl "GIT[$Name]" @('git','-C',$Dest,'submodule','update','--init','--recursive') | Out-Null
+    $headLines = Invoke-Wsl "HEAD[$Name]" @('git','-C',$Dest,'rev-parse','HEAD')
+    $head = (($headLines | Select-Object -Last 1).ToString()).Trim()
+    if ($head -ne $Commit) { throw "$Name pin mismatch: expected $Commit got $head" }
+    Log "PIN_OK $Name $head"
 }
 
 try {
-    Log 'S0_STAGE_A_BEGIN'
+    Log 'S0_STAGE_A_WSLNATIVE_BEGIN'
     if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
-        throw 'WSL is required for the pinned SoulGold build. WSL2 is the upstream-recommended Windows path.'
+        throw 'WSL is not available.'
     }
 
-    $winGit = Get-Command git.exe -ErrorAction SilentlyContinue
-    if ($winGit) {
-        Log ("GIT_BACKEND=WINDOWS " + $winGit.Source)
-    } else {
-        Log 'GIT_BACKEND=WSL (Git for Windows not installed; this is supported)'
-    }
-
-    # Probe tools one process at a time. Do NOT pass a shell for-loop through
-    # PowerShell -> wsl.exe -> bash -lc; quoting differs across those layers.
-    $required = @('git', 'make', 'python3', 'arm-none-eabi-gcc', 'arm-none-eabi-readelf')
-    $missing = @()
+    $required = @('git','make','python3','arm-none-eabi-gcc','arm-none-eabi-readelf','sha1sum','sha256sum','stat')
     foreach ($tool in $required) {
-        if (-not (Test-WslTool $tool)) { $missing += $tool }
+        $saved = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            & wsl.exe which $tool *> $null
+            $rc = $LASTEXITCODE
+        }
+        finally { $ErrorActionPreference = $saved }
+        if ($rc -ne 0) { throw "WSL tool missing: $tool" }
+        Log "WSL_TOOL_OK=$tool"
     }
-    if ($missing.Count -gt 0) {
-        throw ("WSL toolchain incomplete. Missing: " + ($missing -join ', '))
+
+    $homeLines = Invoke-Wsl 'WSL_HOME' @('printenv','HOME')
+    $WslHome = (($homeLines | Select-Object -Last 1).ToString()).Trim()
+    if (-not $WslHome.StartsWith('/')) { throw "Unexpected WSL HOME: $WslHome" }
+    $WslWorkspace = "$WslHome/SoulGoldRecomp_S0"
+    $sg = "$WslWorkspace/soulgold"
+    $gb = "$WslWorkspace/gbarecomp"
+    Log "WSL_WORKSPACE=$WslWorkspace"
+    Invoke-Wsl 'MKDIR' @('mkdir','-p',$WslWorkspace) | Out-Null
+
+    Clone-Pinned 'soulgold' $SoulGoldRepo $SoulGoldCommit $sg
+    Clone-Pinned 'gbarecomp' $GbaRecompRepo $GbaRecompCommit $gb
+    Log 'UPSTREAM_PINS_OK=1'
+
+    $nprocLines = Invoke-Wsl 'NPROC' @('nproc')
+    $jobs = (($nprocLines | Select-Object -Last 1).ToString()).Trim()
+    if ($jobs -notmatch '^\d+$') { $jobs = '4' }
+    Log "SOULGOLD_BUILD_START jobs=$jobs"
+    Invoke-Wsl 'MAKE' @('make','-C',$sg,"-j$jobs") | Out-Null
+    Log 'SOULGOLD_BUILD_EXIT=0'
+
+    $rom = "$sg/Soulgold_Beta_1.gba"
+    $elf = "$sg/Soulgold_Beta_1.elf"
+    $map = "$sg/Soulgold_Beta_1.map"
+    $sym = "$sg/Soulgold_Beta_1.sym"
+    foreach ($p in @($rom,$elf,$map,$sym)) {
+        if (-not (Wsl-Exists $p)) { throw "Required SoulGold artifact missing: $p" }
     }
-    Log 'WSL_TOOLCHAIN_OK=1'
 
-    Log 'STEP=BOOTSTRAP_AND_BUILD'
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Here 'S0_BOOTSTRAP.ps1') -Workspace $Workspace -BuildSoulGold -NoPause
-    if ($LASTEXITCODE -ne 0) { throw "S0_BOOTSTRAP failed: $LASTEXITCODE" }
+    $sizeLines = Invoke-Wsl 'ROM_SIZE' @('stat','-c','%s',$rom)
+    $sha1Lines = Invoke-Wsl 'ROM_SHA1' @('sha1sum',$rom)
+    $sha256Lines = Invoke-Wsl 'ROM_SHA256' @('sha256sum',$rom)
+    $romSize = (($sizeLines | Select-Object -Last 1).ToString()).Trim()
+    $romSha1 = ((($sha1Lines | Select-Object -Last 1).ToString()).Split(' ')[0]).Trim()
+    $romSha256 = ((($sha256Lines | Select-Object -Last 1).ToString()).Split(' ')[0]).Trim()
+    Log "ROM_AUTHORITY size=$romSize sha1=$romSha1 sha256=$romSha256"
 
-    $sg = Join-Path $Workspace 'soulgold'
-    $gb = Join-Path $Workspace 'gbarecomp'
-    $sgWsl = WslPath $sg
-    $gbWsl = WslPath $gb
+    $importerWsl = WinPath-ToWslMount (Join-Path $Here 'S0_IMPORT_SYMBOLS.py')
+    $prepareWsl = WinPath-ToWslMount (Join-Path $Here 'S0_PREPARE_RUNNER.py')
 
     Log 'STEP=IMPORT_SYMBOLS'
-    $importerWin = Join-Path $Here 'S0_IMPORT_SYMBOLS.py'
-    $importerWsl = WslPath $importerWin
-    & wsl.exe python3 $importerWsl --soulgold $sgWsl --gbarecomp $gbWsl 2>&1 | ForEach-Object {
-        Add-Content -Path $Log -Value $_ -Encoding UTF8
-        Write-Host $_
-    }
-    if ($LASTEXITCODE -ne 0) { throw "S0_IMPORT_SYMBOLS failed: $LASTEXITCODE" }
+    Invoke-Wsl 'IMPORT' @('python3',$importerWsl,'--soulgold',$sg,'--gbarecomp',$gb) | Out-Null
 
     Log 'STEP=PREPARE_RUNNER'
-    $prepareWin = Join-Path $Here 'S0_PREPARE_RUNNER.py'
-    $prepareWsl = WslPath $prepareWin
-    $wsWsl = WslPath $Workspace
-    & wsl.exe python3 $prepareWsl --workspace $wsWsl 2>&1 | ForEach-Object {
-        Add-Content -Path $Log -Value $_ -Encoding UTF8
-        Write-Host $_
-    }
-    if ($LASTEXITCODE -ne 0) { throw "S0_PREPARE_RUNNER failed: $LASTEXITCODE" }
+    Invoke-Wsl 'PREPARE' @('python3',$prepareWsl,'--workspace',$WslWorkspace) | Out-Null
 
-    $authority = Join-Path $Workspace 'SoulGoldRecomp\S0_RUNNER_AUTHORITY.txt'
-    if (-not (Test-Path $authority)) { throw 'Runner authority file was not produced.' }
-    foreach ($line in Get-Content $authority) { Log "AUTH $line" }
+    $runnerAuthorityWsl = "$WslWorkspace/SoulGoldRecomp/S0_RUNNER_AUTHORITY.txt"
+    $symbolReportWsl = "$sg/_recomp_symbols/S0_SYMBOL_IMPORT_REPORT.txt"
+    if (-not (Wsl-Exists $runnerAuthorityWsl)) { throw 'Runner authority was not produced.' }
+    if (-not (Wsl-Exists $symbolReportWsl)) { throw 'Symbol import report was not produced.' }
+
+    $runnerLines = Invoke-Wsl 'RUNNER_AUTH' @('cat',$runnerAuthorityWsl)
+    $symbolLines = Invoke-Wsl 'SYMBOL_AUTH' @('cat',$symbolReportWsl)
+    $runnerLocal = Join-Path $EvidenceRoot 'S0_RUNNER_AUTHORITY.txt'
+    $symbolLocal = Join-Path $EvidenceRoot 'S0_SYMBOL_IMPORT_REPORT.txt'
+    $runnerLines | Set-Content -Encoding UTF8 $runnerLocal
+    $symbolLines | Set-Content -Encoding UTF8 $symbolLocal
+
+    $sourceAuthority = [ordered]@{
+        captured_at = (Get-Date).ToString('o')
+        wsl_workspace = $WslWorkspace
+        pins = [ordered]@{
+            soulgold = $SoulGoldCommit
+            gbarecomp = $GbaRecompCommit
+            emeraldrecomp_reference = $EmeraldRecompCommit
+        }
+        rom = [ordered]@{
+            path = $rom
+            size = [int64]$romSize
+            sha1 = $romSha1
+            sha256 = $romSha256
+        }
+    }
+    $sourceAuthority | ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 (Join-Path $EvidenceRoot 'S0_SOURCE_AUTHORITY.json')
 
     Log 'RESULT=PASS'
+    $zip = Join-Path $EvidenceRoot ("SOULGOLD_S0_A_EVIDENCE_{0}.zip" -f $Stamp)
+    $files = @(
+        $Log,
+        $runnerLocal,
+        $symbolLocal,
+        (Join-Path $EvidenceRoot 'S0_SOURCE_AUTHORITY.json')
+    )
+    Compress-Archive -Path $files -DestinationPath $zip -Force
     Write-Host ''
-    Write-Host 'S0-A PASS: SoulGold built, hashed, symbols imported, minimal runner prepared.' -ForegroundColor Green
-    Write-Host "Return the _evidence folder (or ZIP it) plus: $authority"
+    Write-Host 'S0-A PASS: WSL-native SoulGold build, symbol import and runner preparation completed.' -ForegroundColor Green
+    Write-Host "Evidence ZIP: $zip"
 }
 catch {
     Log 'RESULT=FAIL'
