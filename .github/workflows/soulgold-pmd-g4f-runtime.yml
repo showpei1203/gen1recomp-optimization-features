@@ -98,12 +98,18 @@ jobs:
           tick_body=runtime[tick:]
           assert 'sHost->StageFrame(' not in tick_body
 
-          fn=battle[battle.index('static void RunBattleSoftwareTick(void)'):]
+          fn_start=battle.index('static void RunBattleSoftwareTick(void)\n{')
+          fn_end=battle.index('\nstatic void AdvanceBattleFrameRng(void)', fn_start)
+          fn=battle[fn_start:fn_end]
           positions=[fn.index(x) for x in (
               'PmdGbaRuntime_Prepare();','AnimateSprites();',
               'PmdSoulGoldPrototype_Tick();','BuildOamBuffer();')]
           assert positions == sorted(positions), positions
           assert len(set(positions))==4
+          assert fn.count('PmdGbaRuntime_Prepare();')==1
+          assert fn.count('AnimateSprites();')==1
+          assert fn.count('PmdSoulGoldPrototype_Tick();')==1
+          assert fn.count('BuildOamBuffer();')==1
 
           assert 'PmdG4fCodec_DecodeFrame(battler, frame->packed, dest)' in adapter
           assert registry.count('.species = SPECIES_')==2
