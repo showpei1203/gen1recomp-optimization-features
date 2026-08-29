@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Install the SoulGold Showdown S1A Cyndaquil idle candidate into a clean checkout.
+"""Install the SoulGold Showdown S1B deterministic runtime-test candidate.
 
-S1A modifies only src/battle_main.c in the host and adds isolated showdown_*.c/.h
-plus generated Cyndaquil front/back frame descriptors and graphics.
+S1B adds isolated showdown_*.c/.h, Sprigatito-back and Marill-front assets,
+plus a temporary overworld B-button test hook. The player's saved party is not
+modified; the harness creates only an in-memory Marill enemy party entry.
 """
 from __future__ import annotations
 
@@ -36,15 +37,18 @@ def copy_file(src: Path, dst: Path) -> None:
     print(f"COPY {src} -> {dst}")
 
 
+def ensure_include(text: str, anchor: str) -> str:
+    if INCLUDE_LINE in text:
+        return text
+    if anchor not in text:
+        raise SystemExit(f"include anchor not found: {anchor.strip()}")
+    return text.replace(anchor, anchor + INCLUDE_LINE, 1)
+
+
 def patch_battle_main(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     original = text
-
-    if INCLUDE_LINE not in text:
-        anchor = '#include "battle_main.h"\n'
-        if anchor not in text:
-            raise SystemExit("battle_main.c include anchor not found")
-        text = text.replace(anchor, anchor + INCLUDE_LINE, 1)
+    text = ensure_include(text, '#include "battle_main.h"\n')
 
     fn_start = text.find("static void CB2_InitBattleInternal(void)\n{")
     fn_end = text.find("\n#define BUFFER_PARTY_VS_SCREEN_STATUS", fn_start)
@@ -87,6 +91,42 @@ def patch_battle_main(path: Path) -> None:
     print("PATCH src/battle_main.c: Showdown include + init + software-tick hook")
 
 
+def patch_overworld(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+    original = text
+    text = ensure_include(text, '#include "battle_setup.h"\n')
+
+    old = (
+        "void CB1_Overworld(void)\n"
+        "{\n"
+        "    if (gMain.callback2 == CB2_Overworld)\n"
+        "        DoCB1_Overworld(gMain.newKeys, gMain.heldKeys);\n"
+        "}\n"
+    )
+    new = (
+        "void CB1_Overworld(void)\n"
+        "{\n"
+        "    if (gMain.callback2 == CB2_Overworld)\n"
+        "    {\n"
+        "        // SHOWDOWN_S1B_TEMP_TEST_HARNESS: remove before formal release.\n"
+        "        if (ShowdownSoulGoldPrototype_TryStartTestBattle(gMain.newKeys))\n"
+        "            return;\n"
+        "        DoCB1_Overworld(gMain.newKeys, gMain.heldKeys);\n"
+        "    }\n"
+        "}\n"
+    )
+    if "SHOWDOWN_S1B_TEMP_TEST_HARNESS" not in text:
+        if old not in text:
+            raise SystemExit("CB1_Overworld exact anchor not found")
+        text = text.replace(old, new, 1)
+
+    if text == original:
+        print("overworld.c already contains Showdown S1B B-button harness")
+        return
+    path.write_text(text, encoding="utf-8")
+    print("PATCH src/overworld.c: temporary B-button deterministic battle harness")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--soulgold", type=Path, required=True)
@@ -106,28 +146,36 @@ def main() -> int:
     for name in ("showdown_gba_runtime.h", "showdown_soulgold_adapter.h", "showdown_soulgold_prototype.h"):
         copy_file(proto / name, soulgold / "include" / name)
 
-    copy_file(staging / "src" / "showdown_cyndaquil_idle.c", soulgold / "src" / "showdown_cyndaquil_idle.c")
+    for name in ("showdown_sprigatito_back_idle.c", "showdown_marill_front_idle.c"):
+        copy_file(staging / "src" / name, soulgold / "src" / name)
 
-    src_graphics = staging / "graphics" / "showdown" / "cyndaquil"
-    dst_graphics = soulgold / "graphics" / "showdown" / "cyndaquil"
-    if not src_graphics.is_dir():
-        raise SystemExit(f"Missing staged graphics: {src_graphics}")
-    if dst_graphics.exists():
-        shutil.rmtree(dst_graphics)
-    dst_graphics.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(src_graphics, dst_graphics)
-    print(f"COPY {src_graphics} -> {dst_graphics}")
+    for species in ("sprigatito", "marill"):
+        src_graphics = staging / "graphics" / "showdown" / species
+        dst_graphics = soulgold / "graphics" / "showdown" / species
+        if not src_graphics.is_dir():
+            raise SystemExit(f"Missing staged graphics: {src_graphics}")
+        if dst_graphics.exists():
+            shutil.rmtree(dst_graphics)
+        dst_graphics.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src_graphics, dst_graphics)
+        print(f"COPY {src_graphics} -> {dst_graphics}")
 
     patch_battle_main(soulgold / "src" / "battle_main.c")
+    patch_overworld(soulgold / "src" / "overworld.c")
 
     status = git(soulgold, "status", "--short")
     (soulgold / "SHOWDOWN_S1_INSTALL_STATUS.txt").write_text(
-        "SoulGold Showdown S1A Cyndaquil idle candidate installed.\n"
+        "SoulGold Showdown S1B deterministic runtime-test candidate installed.\n"
         f"baseline={SOULGOLD_REV}\n"
-        "scope=Cyndaquil front/back Showdown idle GIF loops\n"
+        "player_target=Sprigatito back Showdown idle\n"
+        "opponent_target=Marill front Showdown idle\n"
         "ownership=move-selection-only\n"
-        "palette=existing SoulGold Cyndaquil palette\n"
-        "host_files_modified=src/battle_main.c only\n"
+        "palette=per-species existing SoulGold normal palette\n"
+        "test_harness=overworld new B press starts debug wild Marill battle\n"
+        "player_party_mutation=NONE\n"
+        "battle_stat_increment=NONE (DoStandardWildBattle_Debug)\n"
+        "host_files_modified=src/battle_main.c,src/overworld.c\n"
+        "formal_release_requirement=REMOVE_B_BUTTON_HARNESS\n"
         "PMD_RUNTIME_DEPENDENCY=NONE\n"
         "compile_status=PENDING\n"
         "runtime_status=PENDING\n\n"
@@ -135,7 +183,7 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    print("Showdown S1A install candidate prepared. Next gate: compile/link, then mGBA visual evidence.")
+    print("Showdown S1B install candidate prepared. Next gate: compile/link, then AYN THOR mGBA visual evidence.")
     return 0
 
 
