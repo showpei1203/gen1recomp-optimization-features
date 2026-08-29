@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit Pokémon Showdown idle descriptors for SoulGold S1 candidates."""
+"""Emit Pokémon Showdown idle descriptors for SoulGold candidates."""
 from __future__ import annotations
 
 import argparse
@@ -10,6 +10,7 @@ LANES = {
     "front": "Front",
     "back": "Back",
 }
+MAX_ACTION_FRAMES = 65535
 
 
 def emit_lane(lines: list[str], species: str, lane: str, manifest: dict, asset_root: str) -> None:
@@ -19,8 +20,8 @@ def emit_lane(lines: list[str], species: str, lane: str, manifest: dict, asset_r
     frames = manifest.get("frames", [])
     if not frames:
         raise ValueError(f"{lane} manifest has no frames")
-    if len(frames) > 255:
-        raise ValueError(f"{lane} has {len(frames)} frames; u8 frameCount would overflow")
+    if len(frames) > MAX_ACTION_FRAMES:
+        raise ValueError(f"{lane} has {len(frames)} frames; u16 frameCount would overflow")
 
     for frame in frames:
         idx = int(frame["index"])
