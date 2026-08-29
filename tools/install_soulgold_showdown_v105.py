@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-SOULGOLD_REV = "b1ec11a30e8c11be8840801855a776bf58a64dc2"
+SOULGOLD_REV = "77ec3fc6275bb94dd703f4c1976f1457cc44a60b"
 INCLUDE_LINE = '#include "showdown_soulgold_prototype.h"\n'
 
 
@@ -154,9 +154,10 @@ def main() -> int:
 
     status = git(soulgold, "status", "--short")
     (soulgold / "SHOWDOWN_S1D_V105_INSTALL_STATUS.txt").write_text(
-        "SoulGold Showdown S1D v1.0.5 candidate installed.\n"
+        "SoulGold Showdown S1D v1.0.5 final-state candidate installed.\n"
         f"baseline={SOULGOLD_REV}\n"
         "baseline_version=v1.0.5\n"
+        "baseline_reason=final v1.0.5 state; Marill first-battle EXP tuning commit\n"
         "known_good_user_rom_sha256=a22aa2bbcaa9953f15d9abc2ef1069d4a082fab059d701781e5b83ff376c1f9d\n"
         "player_target=Sprigatito back Showdown idle\n"
         "opponent_target=Marill front Showdown idle\n"
