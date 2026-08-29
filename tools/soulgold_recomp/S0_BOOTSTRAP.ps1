@@ -42,11 +42,11 @@ function Invoke-WindowsGit([string[]]$GitArgs) {
     if ($rc -ne 0) { throw "git failed ($rc): git $($GitArgs -join ' ')" }
 }
 
-function Invoke-WslGit([string]$Command) {
-    $lines = @(& wsl.exe bash -lc $Command 2>&1)
+function Invoke-WslGit([string[]]$GitArgs) {
+    $lines = @(& wsl.exe git @GitArgs 2>&1)
     $rc = $LASTEXITCODE
     foreach ($line in $lines) { Write-Log "GIT[WSL] $line" }
-    if ($rc -ne 0) { throw "WSL git failed ($rc): $Command" }
+    if ($rc -ne 0) { throw "WSL git failed ($rc): git $($GitArgs -join ' ')" }
 }
 
 function Clone-Pinned([string]$Name, [string]$Url, [string]$Commit) {
@@ -66,16 +66,15 @@ function Clone-Pinned([string]$Name, [string]$Url, [string]$Commit) {
     } else {
         if (-not $Wsl) { throw 'Neither Git for Windows nor WSL is available.' }
         $destWsl = To-WslPath $dest
-        $parentWsl = To-WslPath $Workspace
         if (-not (Test-Path (Join-Path $dest '.git'))) {
             Write-Log "CLONE[WSL] $Url -> $destWsl"
-            Invoke-WslGit "mkdir -p '$parentWsl'; git clone --filter=blob:none '$Url' '$destWsl'"
+            Invoke-WslGit @('clone', '--filter=blob:none', $Url, $destWsl)
         } else {
             Write-Log "EXISTS[WSL] $destWsl; fetching target commit"
-            Invoke-WslGit "git -C '$destWsl' fetch origin '$Commit'"
+            Invoke-WslGit @('-C', $destWsl, 'fetch', 'origin', $Commit)
         }
-        Invoke-WslGit "git -C '$destWsl' checkout --detach '$Commit'"
-        $headLines = @(& wsl.exe bash -lc "git -C '$destWsl' rev-parse HEAD" 2>&1)
+        Invoke-WslGit @('-C', $destWsl, 'checkout', '--detach', $Commit)
+        $headLines = @(& wsl.exe git -C $destWsl rev-parse HEAD 2>&1)
         if ($LASTEXITCODE -ne 0) { throw "Unable to read $Name HEAD through WSL git" }
         $head = ($headLines | Select-Object -Last 1).Trim()
     }
@@ -105,10 +104,9 @@ try {
     if ($WinGit) {
         Write-Log "GIT_BACKEND=WINDOWS $($WinGit.Source)"
     } elseif ($Wsl) {
-        $gitProbe = @(& wsl.exe bash -lc 'command -v git || true' 2>&1)
-        $gitPath = ($gitProbe | Select-Object -Last 1).Trim()
-        if (-not $gitPath) { throw 'Git is missing inside WSL.' }
-        Write-Log "GIT_BACKEND=WSL $gitPath"
+        $gitProbe = @(& wsl.exe git --version 2>&1)
+        if ($LASTEXITCODE -ne 0) { throw 'Git is missing inside WSL.' }
+        Write-Log ("GIT_BACKEND=WSL " + (($gitProbe | Select-Object -First 1).ToString()))
     } else {
         throw 'Git unavailable: install WSL or Git for Windows.'
     }
@@ -119,28 +117,22 @@ try {
 
     Write-Log 'UPSTREAM_PINS_OK=1'
 
-    if ($Wsl) {
-        Write-Log "FOUND wsl.exe -> $($Wsl.Source)"
-        try {
-            $wslLines = @(& wsl.exe bash -lc 'printf "WSL_OK=1\n"; uname -a; command -v git || true; command -v make || true; command -v arm-none-eabi-gcc || true; command -v arm-none-eabi-readelf || true; command -v python3 || true' 2>&1)
-            foreach ($line in $wslLines) { Write-Log "WSL $line" }
-        } catch {
-            Write-Log "WSL_PROBE_FAIL $($_.Exception.Message)"
-        }
-    } else {
-        Write-Log 'WSL_FOUND=0'
-    }
-
     if ($BuildSoulGold) {
         if (-not $Wsl) { throw 'BuildSoulGold requested but WSL is unavailable.' }
         $sgWin = (Resolve-Path $sg).Path
         $sgWsl = To-WslPath $sgWin
         if (-not $sgWsl) { throw 'Unable to translate SoulGold workspace path into WSL path.' }
 
-        Write-Log "SOULGOLD_BUILD_START $sgWsl"
-        $buildCmd = "set -o pipefail; cd '$sgWsl'; make -j`$(nproc) 2>&1 | tee '$sgWsl/S0_SOULGOLD_BUILD.log'"
-        & wsl.exe bash -lc $buildCmd
-        if ($LASTEXITCODE -ne 0) { throw "SoulGold make failed with exit code $LASTEXITCODE" }
+        $nprocLines = @(& wsl.exe nproc 2>&1)
+        if ($LASTEXITCODE -ne 0) { throw 'Unable to query WSL CPU count with nproc.' }
+        $jobs = (($nprocLines | Select-Object -Last 1).ToString()).Trim()
+        if ($jobs -notmatch '^\d+$') { $jobs = '4' }
+
+        Write-Log "SOULGOLD_BUILD_START $sgWsl jobs=$jobs"
+        $buildLines = @(& wsl.exe make -C $sgWsl "-j$jobs" 2>&1)
+        $buildRc = $LASTEXITCODE
+        foreach ($line in $buildLines) { Write-Log "MAKE $line" }
+        if ($buildRc -ne 0) { throw "SoulGold make failed with exit code $buildRc" }
         Write-Log 'SOULGOLD_BUILD_EXIT=0'
     }
 
