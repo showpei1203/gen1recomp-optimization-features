@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""Pack converted Showdown frames as delta candidates and measure ROM cost.
+"""Measure lossless and sampled Showdown animation storage for SoulGold/GBA.
 
-Two lossless formats are measured against SoulGold's native gbagfx LZ77:
+Lossless candidates:
+- frame 0 keyframe + per-transition changed 8x8 tiles
+- frame 0 keyframe + per-transition 2048-byte XOR mask compressed with GBA LZ
 
-Tile-delta v1
-- frame 0: full 64x64 4bpp keyframe
-- later frames: changed 8x8 tiles relative to the previous frame
+Full-ROM candidate:
+- Showdown frame 0 REPLACES the existing native front/back battler body and is
+  therefore not counted as new ROM payload.
+- Keep 4/6/8 time-spaced representative frames per loop.
+- Store GBA-LZ XOR transitions between selected frames, including the final
+  transition back to frame 0.
+- Fold skipped source-frame durations into the selected frame immediately
+  preceding them so total loop duration is preserved exactly.
 
-XOR-delta v1
-- frame 0: full 64x64 4bpp keyframe
-- later frames: 2048-byte XOR mask against the previous frame, then GBA LZ
-- unchanged regions become long zero runs, which GBA LZ compresses efficiently
-
-Both preserve every original Showdown frame and timing. A runtime can keep one
-2KB canonical decoded frame per battler. Native battle choreography continues to
-operate on the battler sprite; after a native move, the canonical frame can be
-copied back exactly as in S1E ownership recovery.
+This is a storage audit, not permission to silently reduce animation quality.
+A sampled runtime still requires human visual acceptance before promotion.
 """
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ from PIL import Image
 TILE_BYTES = 32
 TILES_PER_FRAME = 64
 FRAME_BYTES = 2048
+SAMPLE_COUNTS = (4, 6, 8)
 
 
 def png_to_4bpp_tiles(path: Path) -> list[bytes]:
@@ -85,6 +86,106 @@ def lz_compress(gbagfx: Path, src: Path) -> Path:
     dst = src.with_suffix(src.suffix + ".lz")
     subprocess.run([str(gbagfx), str(src), str(dst)], check=True, stdout=subprocess.DEVNULL)
     return dst
+
+
+def durations(frame_meta: list[dict]) -> list[int]:
+    return [max(1, int(x.get("duration_ticks_60hz", 1))) for x in frame_meta]
+
+
+def select_time_spaced_indices(frame_meta: list[dict], wanted: int) -> list[int]:
+    """Choose frame 0 plus frames closest to equally-spaced loop times."""
+    n = len(frame_meta)
+    if n <= wanted:
+        return list(range(n))
+    ds = durations(frame_meta)
+    starts = []
+    t = 0
+    for d in ds:
+        starts.append(t)
+        t += d
+    total = t
+    chosen = {0}
+    for slot in range(1, wanted):
+        target = total * slot / wanted
+        idx = min(range(n), key=lambda i: (abs(starts[i] - target), i))
+        chosen.add(idx)
+    # Very short/odd timing can select the same nearest frame twice. Fill any
+    # collision deterministically using the frame with greatest time distance
+    # from already selected starts.
+    while len(chosen) < wanted:
+        remaining = [i for i in range(n) if i not in chosen]
+        idx = max(
+            remaining,
+            key=lambda i: min(abs(starts[i] - starts[j]) for j in chosen),
+        )
+        chosen.add(idx)
+    return sorted(chosen)
+
+
+def sampled_durations(frame_meta: list[dict], selected: list[int]) -> list[int]:
+    """Fold skipped-frame time into preceding selected frame, preserving loop."""
+    ds = durations(frame_meta)
+    result = []
+    for pos, idx in enumerate(selected):
+        next_idx = selected[pos + 1] if pos + 1 < len(selected) else len(ds)
+        result.append(sum(ds[idx:next_idx]))
+    if sum(result) != sum(ds):
+        raise AssertionError((sum(result), sum(ds)))
+    return result
+
+
+def measure_sampled_xor(
+    frames: list[bytes],
+    frame_meta: list[dict],
+    out_dir: Path,
+    gbagfx: Path | None,
+    wanted: int,
+) -> dict:
+    selected = select_time_spaced_indices(frame_meta, wanted)
+    held_durations = sampled_durations(frame_meta, selected)
+    sample_dir = out_dir / f"sample_{wanted}"
+    sample_dir.mkdir(parents=True, exist_ok=True)
+    payload = 0
+    transition_rows = []
+    # Include wrap-around delta last -> frame0. Frame0 itself is assumed to
+    # replace the native battler body, so no extra keyframe is budgeted here.
+    for pos, src_idx in enumerate(selected):
+        dst_idx = selected[(pos + 1) % len(selected)]
+        record = xor_delta(frames[src_idx], frames[dst_idx])
+        nonzero = sum(1 for b in record if b)
+        item = {
+            "from": src_idx,
+            "to": dst_idx,
+            "source_hold_ticks": held_durations[pos],
+            "xor_nonzero_bytes": nonzero,
+            "gba_lz_bytes": 0,
+        }
+        if nonzero:
+            path = sample_dir / f"transition_{pos:02d}_{src_idx:03d}_to_{dst_idx:03d}.xor_delta"
+            path.write_bytes(record)
+            if gbagfx:
+                item["gba_lz_bytes"] = lz_compress(gbagfx, path).stat().st_size
+                payload += item["gba_lz_bytes"]
+            else:
+                item["gba_lz_bytes"] = FRAME_BYTES
+                payload += FRAME_BYTES
+        transition_rows.append(item)
+    # pointer/offset + u16 duration + compact flags/count, conservative 8 bytes.
+    descriptor = len(selected) * 8
+    return {
+        "requested_frames": wanted,
+        "selected_frame_count": len(selected),
+        "selected_indices": selected,
+        "original_total_ticks": sum(durations(frame_meta)),
+        "sampled_total_ticks": sum(held_durations),
+        "sampled_hold_ticks": held_durations,
+        "frame0_replaces_native_body": True,
+        "new_keyframe_payload_bytes": 0,
+        "xor_transition_gba_lz_payload_bytes": payload,
+        "descriptor_bytes_estimate": descriptor,
+        "incremental_rom_bytes": payload + descriptor,
+        "transitions": transition_rows,
+    }
 
 
 def process_lane(lane_dir: Path, out_dir: Path, gbagfx: Path | None) -> dict:
@@ -151,6 +252,10 @@ def process_lane(lane_dir: Path, out_dir: Path, gbagfx: Path | None) -> dict:
     tile_raw_total = FRAME_BYTES + tile_raw_bytes + descriptor_bytes_estimate
     tile_lz_total = (key_bytes + tile_lz_bytes + descriptor_bytes_estimate) if gbagfx else None
     xor_lz_total = (key_bytes + xor_lz_bytes + descriptor_bytes_estimate) if gbagfx else None
+    sampled = {
+        str(k): measure_sampled_xor(frames, frame_meta, out_dir, gbagfx, min(k, frame_count))
+        for k in SAMPLE_COUNTS
+    }
 
     report = {
         "frame_count": frame_count,
@@ -168,7 +273,8 @@ def process_lane(lane_dir: Path, out_dir: Path, gbagfx: Path | None) -> dict:
         "average_changed_tiles_per_transition": round(average_changed, 4),
         "max_changed_tiles_in_transition": max_changed_tiles,
         "empty_delta_frames": empty_delta_frames,
-        "transitions": transition_rows,
+        "lossless_transitions": transition_rows,
+        "sampled_xor_incremental": sampled,
     }
     (out_dir / "delta_manifest.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return report
@@ -197,6 +303,7 @@ def main() -> int:
         "changed_tile_total": 0,
         "transitions": 0,
         "empty_delta_frames": 0,
+        "sampled_xor_incremental_bytes": {str(k): 0 for k in SAMPLE_COUNTS},
     }
     species_dirs = sorted(p for p in args.graphics_root.iterdir() if p.is_dir())
     for species_dir in species_dirs:
@@ -218,6 +325,8 @@ def main() -> int:
             totals["changed_tile_total"] += report["changed_tile_total"]
             totals["transitions"] += max(0, report["frame_count"] - 1)
             totals["empty_delta_frames"] += report["empty_delta_frames"]
+            for k in SAMPLE_COUNTS:
+                totals["sampled_xor_incremental_bytes"][str(k)] += report["sampled_xor_incremental"][str(k)]["incremental_rom_bytes"]
         if lane_seen:
             totals["species"] += 1
             rows.append(species_row)
@@ -235,11 +344,15 @@ def main() -> int:
         totals["xor_lz_vs_full_raw_ratio"] = round(
             totals["xor_delta_gba_lz_total_bytes"] / max(1, totals["full_frame_raw_bytes"]), 6
         )
-        totals["winner"] = (
+        totals["winner_lossless"] = (
             "xor_delta_gba_lz" if totals["xor_delta_gba_lz_total_bytes"] < totals["tile_delta_gba_lz_total_bytes"]
             else "tile_delta_gba_lz"
         )
-    result = {"format": "showdown-delta-v2-budget", "totals": totals, "species": rows}
+    for k in SAMPLE_COUNTS:
+        b = totals["sampled_xor_incremental_bytes"][str(k)]
+        totals[f"sampled_{k}_incremental_mib"] = round(b / 1048576, 6)
+        totals[f"sampled_{k}_bytes_per_species_average"] = round(b / max(1, totals["species"]), 3)
+    result = {"format": "showdown-delta-v3-budget", "totals": totals, "species": rows}
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / "SHOWDOWN_TILE_DELTA_BUDGET.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(totals, indent=2))
