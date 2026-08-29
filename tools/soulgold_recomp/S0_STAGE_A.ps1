@@ -21,6 +21,18 @@ function WslPath([string]$p) {
     return ($value | Select-Object -Last 1).Trim()
 }
 
+function Test-WslTool([string]$Name) {
+    $lines = @(& wsl.exe $Name --version 2>&1)
+    $rc = $LASTEXITCODE
+    if ($rc -eq 0) {
+        $first = ($lines | Select-Object -First 1)
+        Log ("WSL_TOOL_OK=" + $Name + $(if ($first) { " :: $first" } else { '' }))
+        return $true
+    }
+    Log ("WSL_TOOL_MISSING=" + $Name)
+    return $false
+}
+
 try {
     Log 'S0_STAGE_A_BEGIN'
     if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
@@ -34,14 +46,17 @@ try {
         Log 'GIT_BACKEND=WSL (Git for Windows not installed; this is supported)'
     }
 
-    # Probe the WSL build environment before cloning/building anything expensive.
-    # WSL git is sufficient; Git for Windows is deliberately NOT required.
-    $probe = (& wsl.exe bash -lc 'missing=""; for x in git make python3 arm-none-eabi-gcc arm-none-eabi-readelf; do command -v "$x" >/dev/null 2>&1 || missing="$missing $x"; done; printf "MISSING=%s\n" "$missing"' 2>&1) -join "`n"
-    Add-Content -Path $Log -Value $probe -Encoding UTF8
-    Write-Host $probe
-    if ($probe -match 'MISSING=\s*(.+)' -and $Matches[1].Trim()) {
-        throw ("WSL toolchain incomplete. Missing:" + $Matches[1] + ". Install the SoulGold/pokeemerald-expansion WSL prerequisites, then rerun this same file.")
+    # Probe tools one process at a time. Do NOT pass a shell for-loop through
+    # PowerShell -> wsl.exe -> bash -lc; quoting differs across those layers.
+    $required = @('git', 'make', 'python3', 'arm-none-eabi-gcc', 'arm-none-eabi-readelf')
+    $missing = @()
+    foreach ($tool in $required) {
+        if (-not (Test-WslTool $tool)) { $missing += $tool }
     }
+    if ($missing.Count -gt 0) {
+        throw ("WSL toolchain incomplete. Missing: " + ($missing -join ', '))
+    }
+    Log 'WSL_TOOLCHAIN_OK=1'
 
     Log 'STEP=BOOTSTRAP_AND_BUILD'
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Here 'S0_BOOTSTRAP.ps1') -Workspace $Workspace -BuildSoulGold -NoPause
@@ -55,8 +70,7 @@ try {
     Log 'STEP=IMPORT_SYMBOLS'
     $importerWin = Join-Path $Here 'S0_IMPORT_SYMBOLS.py'
     $importerWsl = WslPath $importerWin
-    $cmd = "python3 '$importerWsl' --soulgold '$sgWsl' --gbarecomp '$gbWsl'"
-    & wsl.exe bash -lc $cmd 2>&1 | ForEach-Object {
+    & wsl.exe python3 $importerWsl --soulgold $sgWsl --gbarecomp $gbWsl 2>&1 | ForEach-Object {
         Add-Content -Path $Log -Value $_ -Encoding UTF8
         Write-Host $_
     }
@@ -66,8 +80,7 @@ try {
     $prepareWin = Join-Path $Here 'S0_PREPARE_RUNNER.py'
     $prepareWsl = WslPath $prepareWin
     $wsWsl = WslPath $Workspace
-    $cmd = "python3 '$prepareWsl' --workspace '$wsWsl'"
-    & wsl.exe bash -lc $cmd 2>&1 | ForEach-Object {
+    & wsl.exe python3 $prepareWsl --workspace $wsWsl 2>&1 | ForEach-Object {
         Add-Content -Path $Log -Value $_ -Encoding UTF8
         Write-Host $_
     }
