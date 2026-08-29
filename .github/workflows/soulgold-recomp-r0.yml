@@ -1,0 +1,218 @@
+name: SoulGoldRecomp R0 Generate Library Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/soulgold-recomp
+    paths:
+      - "authority/SOULGOLD_RECOMP_R0_AUTHORITY_20260829.md"
+      - "tools/make_soulgold_recomp_config.py"
+      - ".github/workflows/soulgold-recomp-r0.yml"
+
+env:
+  SOULGOLD_REV: 77ec3fc6275bb94dd703f4c1976f1457cc44a60b
+  GBARECOMP_REV: ed9824b70aa350cd9e1653894beaf6b1b6b27787
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  ELF_PATH: soulgold/Soulgold_Beta_1.elf
+  MAP_PATH: soulgold/Soulgold_Beta_1.map
+
+jobs:
+  r0-generate-library:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout authority branch
+        uses: actions/checkout@v4
+        with:
+          path: framework
+
+      - name: Checkout SoulGold v1.0.5
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+
+      - name: Checkout pinned GBARecomp
+        uses: actions/checkout@v4
+        with:
+          repository: mstan/gbarecomp
+          ref: ${{ env.GBARECOMP_REV }}
+          path: gbarecomp
+          submodules: recursive
+
+      - name: Install toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev cmake ninja-build python3 python3-pip ccache
+
+      - name: Verify pinned revisions
+        run: |
+          test "$(git -C soulgold rev-parse HEAD)" = "$SOULGOLD_REV"
+          test "$(git -C gbarecomp rev-parse HEAD)" = "$GBARECOMP_REV"
+          grep -q 'DISPLAY_VERSION "v1.0.5"' soulgold/include/config/version.h
+
+      - name: Build SoulGold ROM ELF MAP authority set
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j"$(nproc)" -O all 2>&1 | tee ../soulgold_build.log
+          test -s Soulgold_Beta_1.gba
+          test -s Soulgold_Beta_1.elf
+          test -s Soulgold_Beta_1.map
+          test "$(stat -c %s Soulgold_Beta_1.gba)" -eq 33554432
+
+      - name: Build GBARecomp scan and recompiler
+        run: |
+          cmake -S gbarecomp -B gbarecomp/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGBARECOMP_COMPILER_CACHE=AUTO
+          cmake --build gbarecomp/build --target gba_scan gba_recompile --parallel
+          test -x gbarecomp/build/gba_scan
+          test -x gbarecomp/build/gba_recompile
+
+      - name: Scan SoulGold cartridge
+        run: |
+          mkdir -p r0/evidence r0/symbols r0/generated
+          gbarecomp/build/gba_scan "$ROM_PATH" | tee r0/evidence/GBA_SCAN.txt
+          grep -q '^ok=1$' r0/evidence/GBA_SCAN.txt
+          grep -q '^rom_size=0x2000000$' r0/evidence/GBA_SCAN.txt
+
+      - name: Export byte-matching ELF metadata
+        run: |
+          arm-none-eabi-readelf -sW "$ELF_PATH" > r0/symbols/readelf_syms.txt
+          arm-none-eabi-readelf -SW "$ELF_PATH" > r0/symbols/readelf_sections.txt
+          test -s r0/symbols/readelf_syms.txt
+          test -s r0/symbols/readelf_sections.txt
+
+      - name: Import SoulGold decomp symbols
+        run: |
+          python3 gbarecomp/tools/symbol_import/import_decomp_symbols.py \
+            --id SOULGOLD105 \
+            --name "Pokemon SoulGold v1.0.5 source-build" \
+            --syms r0/symbols/readelf_syms.txt \
+            --sections r0/symbols/readelf_sections.txt \
+            --map "$MAP_PATH" \
+            --rom "$ROM_PATH" \
+            --out r0/symbols \
+            2>&1 | tee r0/evidence/SYMBOL_IMPORT.txt
+          test -s r0/symbols/imported_symbols.tsv
+          test -s r0/symbols/imported_data_symbols.tsv
+          test -s r0/symbols/function_boundaries.tsv
+          test -s r0/symbols/SOULGOLD105_symbols.toml
+
+      - name: Generate deterministic SoulGoldRecomp base config
+        run: |
+          python3 framework/tools/make_soulgold_recomp_config.py \
+            --rom "$ROM_PATH" \
+            --output r0/game.toml \
+            --symbols symbols/imported_symbols.tsv \
+            --boundaries symbols/function_boundaries.tsv \
+            --generated generated \
+            | tee r0/evidence/ROM_IDENTITY.txt
+
+      - name: Recompile SoulGold machine code to native C++
+        run: |
+          gbarecomp/build/gba_recompile \
+            --rom "$ROM_PATH" \
+            --symbols r0/symbols/imported_symbols.tsv \
+            --data-symbols r0/symbols/imported_data_symbols.tsv \
+            --config r0/game.toml \
+            --config r0/symbols/SOULGOLD105_symbols.toml \
+            --out r0/generated \
+            --max-functions 50000 \
+            --codegen-shards 64 \
+            2>&1 | tee r0/evidence/GBA_RECOMPILE.txt
+          test -s r0/generated/recompiled.h
+          test -s r0/generated/dispatch_table.cpp
+          test "$(find r0/generated -maxdepth 1 -name 'recompiled_*.cpp' | wc -l)" -eq 64
+
+      - name: Compile generated corpus into static library
+        run: |
+          mkdir -p r0/framework/include r0/build_project
+          cp gbarecomp/src/armv4t/runtime_arm.h r0/framework/include/runtime_arm.h
+          cp gbarecomp/external/arm-recomp-core/profiles/armv4t_gba/runtime_arm_types.h \
+             r0/framework/include/runtime_arm_types.h
+          cat > r0/build_project/CMakeLists.txt <<'CMAKE'
+          cmake_minimum_required(VERSION 3.20)
+          project(SoulGoldRecompR0Generated CXX)
+          file(GLOB GBARECOMP_SHARDS CONFIGURE_DEPENDS
+              "${CMAKE_CURRENT_LIST_DIR}/../generated/recompiled_*.cpp")
+          set(GENERATED_SOURCES ${GBARECOMP_SHARDS}
+              "${CMAKE_CURRENT_LIST_DIR}/../generated/dispatch_table.cpp")
+          foreach(optional_source symbol_map.cpp data_symbol_map.cpp)
+              if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../generated/${optional_source}")
+                  list(APPEND GENERATED_SOURCES
+                       "${CMAKE_CURRENT_LIST_DIR}/../generated/${optional_source}")
+              endif()
+          endforeach()
+          add_library(gbarecomp_game STATIC ${GENERATED_SOURCES})
+          target_include_directories(gbarecomp_game PRIVATE
+              "${CMAKE_CURRENT_LIST_DIR}/../framework/include"
+              "${CMAKE_CURRENT_LIST_DIR}/../generated")
+          set_target_properties(gbarecomp_game PROPERTIES
+              CXX_STANDARD 20 CXX_STANDARD_REQUIRED YES)
+          CMAKE
+          cmake -S r0/build_project -B r0/build_project/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build r0/build_project/build --parallel
+          test -s r0/build_project/build/libgbarecomp_game.a
+
+      - name: Record R0 evidence
+        if: always()
+        run: |
+          mkdir -p r0/evidence
+          python3 - <<'PY' > r0/evidence/R0_SUMMARY.txt
+          from pathlib import Path
+          import hashlib, os, re
+
+          rom = Path(os.environ['ROM_PATH'])
+          print('SoulGoldRecomp R0 evidence')
+          print(f"soulgold_revision={os.environ['SOULGOLD_REV']}")
+          print(f"gbarecomp_revision={os.environ['GBARECOMP_REV']}")
+          if rom.is_file():
+              b=rom.read_bytes()
+              print(f"rom_bytes={len(b)}")
+              print(f"rom_sha1={hashlib.sha1(b).hexdigest()}")
+              print(f"rom_sha256={hashlib.sha256(b).hexdigest()}")
+          syms=Path('r0/symbols/imported_symbols.tsv')
+          if syms.is_file():
+              rows=[x for x in syms.read_text(errors='replace').splitlines() if x and not x.startswith('#')]
+              print(f"imported_function_seeds={len(rows)}")
+          data=Path('r0/symbols/imported_data_symbols.tsv')
+          if data.is_file():
+              rows=[x for x in data.read_text(errors='replace').splitlines() if x and not x.startswith('#')]
+              print(f"imported_data_symbols={len(rows)}")
+          gen=Path('r0/generated')
+          if gen.is_dir():
+              shards=list(gen.glob('recompiled_*.cpp'))
+              print(f"generated_shards={len(shards)}")
+              print(f"generated_cpp_bytes={sum(p.stat().st_size for p in gen.glob('*.cpp'))}")
+          lib=Path('r0/build_project/build/libgbarecomp_game.a')
+          print(f"generated_library={'PASS' if lib.is_file() and lib.stat().st_size else 'FAIL'}")
+          if lib.is_file(): print(f"generated_library_bytes={lib.stat().st_size}")
+          print('runtime_boot_status=PENDING_R1')
+          print('rom_or_generated_cpp_uploaded=NO')
+          PY
+          cat r0/evidence/R0_SUMMARY.txt
+
+      - name: Upload evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGoldRecomp-R0-Evidence
+          if-no-files-found: warn
+          path: |
+            r0/evidence/*.txt
+            r0/game.toml
