@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends python3 python3-pil curl unzip
+          sudo apt-get install -y --no-install-recommends python3 python3-pil curl unzip build-essential libpng-dev
       - name: Download official Showdown sprites
         run: |
           mkdir -p source evidence
@@ -64,6 +64,52 @@ jobs:
           test "$(find bulk_batch_0/staging/src -maxdepth 1 -name 'showdown_*_idle.c' | wc -l)" -eq "$BATCH_SIZE"
           test "$(find bulk_batch_0/staging/graphics/showdown -name manifest.json | wc -l)" -eq "$((BATCH_SIZE * 2))"
           ! grep -R 'PmdSoulGold\|PmdGba\|pmd_' -n bulk_batch_0/staging/src
+      - name: Measure real GBA LZ frame budget
+        run: |
+          make -C soulgold -f make_tools.mk tools/gbagfx
+          mkdir -p soulgold/graphics/showdown
+          cp -a bulk_batch_0/staging/graphics/showdown/. soulgold/graphics/showdown/
+          cd soulgold
+          find graphics/showdown -name 'frame_*.png' -print0 | \
+            xargs -0 -P"$(nproc)" -n1 bash -c '
+              p="$1"
+              raw="${p%.png}.4bpp"
+              lz="${raw}.lz"
+              tools/gbagfx/gbagfx "$p" "$raw"
+              tools/gbagfx/gbagfx "$raw" "$lz"
+            ' _
+          cd ..
+          python3 - <<'PY' | tee evidence/SHOWDOWN_BULK_BATCH_000_GBA_LZ_BUDGET.json
+          import json
+          from pathlib import Path
+          catalog=json.loads(Path('evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG.json').read_text())
+          root=Path('soulgold/graphics/showdown')
+          files=list(root.rglob('frame_*.4bpp.lz'))
+          lz_bytes=sum(p.stat().st_size for p in files)
+          raw_bytes=len(files)*2048
+          full_normal_raw=0
+          full_normal_frames=0
+          for row in catalog['rows']:
+              if row.get('runtime_exact_candidate'):
+                  full_normal_raw += int(row['front_raw_4bpp_bytes']) + int(row['back_raw_4bpp_bytes'])
+                  full_normal_frames += int(row['front_frames']) + int(row['back_frames'])
+          ratio=(lz_bytes/raw_bytes) if raw_bytes else 0
+          out={
+              'batch_index':0,
+              'species':32,
+              'compressed_frame_files':len(files),
+              'batch_raw_4bpp_bytes':raw_bytes,
+              'batch_gba_lz_bytes':lz_bytes,
+              'gba_lz_ratio':round(ratio,6),
+              'full_exact_normal_front_back_frames':full_normal_frames,
+              'full_exact_normal_front_back_raw_bytes':full_normal_raw,
+              'full_exact_normal_front_back_raw_mib':round(full_normal_raw/1048576,3),
+              'full_exact_normal_front_back_estimated_gba_lz_bytes_at_batch0_ratio':round(full_normal_raw*ratio),
+              'full_exact_normal_front_back_estimated_gba_lz_mib_at_batch0_ratio':round(full_normal_raw*ratio/1048576,3),
+              'note':'Estimate uses batch-0 compression ratio; later batches refine confidence interval.'
+          }
+          print(json.dumps(out,indent=2))
+          PY
       - name: Upload install-ready converted batch
         uses: actions/upload-artifact@v4
         with:
@@ -75,3 +121,4 @@ jobs:
             bulk_batch_0/SHOWDOWN_BULK_BATCH_000_SUMMARY.json
             evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG_SUMMARY.txt
             evidence/SHOWDOWN_BULK_BATCH_000_CONVERT.log
+            evidence/SHOWDOWN_BULK_BATCH_000_GBA_LZ_BUDGET.json
