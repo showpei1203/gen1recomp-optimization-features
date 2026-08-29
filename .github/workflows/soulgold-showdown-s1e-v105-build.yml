@@ -78,7 +78,9 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           p=Path('soulgold/src/battle_main.c').read_text()
-          fn=p[p.index('static void RunBattleSoftwareTick(void)'):p.index('static void AdvanceBattleFrameRng(void)')]
+          start=p.index('static void RunBattleSoftwareTick(void)\n{')
+          end=p.index('static void AdvanceBattleFrameRng(void)\n{', start)
+          fn=p[start:end]
           assert fn.index('AnimateSprites();') < fn.index('ShowdownSoulGoldPrototype_PrepareOam();') < fn.index('BuildOamBuffer();')
           PY
           test -z "$(git -C soulgold diff -- src/overworld.c src/new_game.c src/event_data.c)" || { echo 'Early-game host files changed unexpectedly' >&2; exit 1; }
