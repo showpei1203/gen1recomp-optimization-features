@@ -7,6 +7,7 @@ on:
       - feature/showdown-animated-battlers
     paths:
       - "tools/showdown_full_rom_budget.py"
+      - "tools/showdown_full_rom_budget_dedup.py"
       - ".github/workflows/soulgold-showdown-full-rom-budget.yml"
 
 env:
@@ -65,9 +66,9 @@ jobs:
           p=json.load(open('evidence/SHOWDOWN_FULL_CATALOG.json'))
           assert p['runtime_candidates_normal_front_back'] == 1002, p['runtime_candidates_normal_front_back']
           PY
-      - name: Measure all 1002 species against 32 MiB
+      - name: Measure all 1002 species against 32 MiB with content dedup
         run: |
-          python3 framework/tools/showdown_full_rom_budget.py \
+          python3 framework/tools/showdown_full_rom_budget_dedup.py \
             --catalog evidence/SHOWDOWN_FULL_CATALOG.json \
             --sprites-zip source/sprites.zip \
             --soulgold soulgold \
