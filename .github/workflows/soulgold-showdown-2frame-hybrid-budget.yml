@@ -1,0 +1,85 @@
+name: SoulGold Showdown 2-Frame Hybrid Budget
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/showdown-animated-battlers]
+    paths:
+      - "tools/showdown_2frame_hybrid_budget.py"
+      - ".github/workflows/soulgold-showdown-2frame-hybrid-budget.yml"
+
+env:
+  SOULGOLD_REV: 77ec3fc6275bb94dd703f4c1976f1457cc44a60b
+  SHOWDOWN_SPRITES_URL: https://www.pokemonshowdown.com/files/resources/sprites.zip
+
+jobs:
+  hybrid-budget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: framework
+      - uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Install runtime audit dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 python3-pil curl
+      - name: Download full 1002-species budget evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: SoulGold-Showdown-Full-32MiB-ROM-Budget
+          path: recorded/full
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 33235195473
+      - name: Download conservative reclaim evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: SoulGold-Showdown-Exact-Native-Reclaim
+          path: recorded/reclaim
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 33242490270
+      - name: Download official Showdown sprites
+        run: |
+          mkdir -p source evidence
+          curl --fail --location --retry 3 --retry-delay 2 "$SHOWDOWN_SPRITES_URL" -o source/sprites.zip
+          sha256sum source/sprites.zip | tee evidence/SHOWDOWN_SPRITES_ZIP_SHA256.txt
+      - name: Measure hybrid two-frame bank
+        run: |
+          RECLAIM=$(python3 - <<'PY'
+          import json
+          p=json.load(open('recorded/reclaim/SHOWDOWN_NATIVE_RECLAIM_EXACT.json'))
+          print(p['safe_native_reclaim_bytes'])
+          PY
+          )
+          python3 framework/tools/showdown_2frame_hybrid_budget.py \
+            --full-report recorded/full/evidence/SHOWDOWN_FULL_ROM_BUDGET.json \
+            --sprites-zip source/sprites.zip \
+            --soulgold soulgold \
+            --converter framework/tools/showdown_sprites_ingest.py \
+            --budget-module framework/tools/showdown_full_rom_budget.py \
+            --budget-baseline framework/authority/SHOWDOWN_FULL_ROM_BUDGET_BASELINE_RUN_33235195473.json \
+            --native-reclaim-bytes "$RECLAIM" \
+            --output evidence/SHOWDOWN_2FRAME_HYBRID_BUDGET.json \
+            | tee evidence/SHOWDOWN_2FRAME_HYBRID_BUDGET_SUMMARY.txt
+      - name: Integrity gate
+        run: |
+          python3 - <<'PY'
+          import json
+          p=json.load(open('evidence/SHOWDOWN_2FRAME_HYBRID_BUDGET.json'))
+          assert p['species'] == 1002 and p['lanes'] == 2004
+          assert p['incremental_savings_bytes'] > 0
+          assert sum(p['codec_counts'].values()) == 2004
+          print(json.dumps({k:p[k] for k in ('codec_counts','unique_delta_payload_bytes','descriptor_bytes','incremental_bytes','incremental_savings_bytes','headroom_bytes','fits_32mib')},indent=2))
+          PY
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-Showdown-2Frame-Hybrid-Budget
+          if-no-files-found: warn
+          path: evidence/
