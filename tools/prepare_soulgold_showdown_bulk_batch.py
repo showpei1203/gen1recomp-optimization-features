@@ -80,7 +80,6 @@ def main() -> int:
 
     catalog = json.loads(args.catalog.read_text(encoding="utf-8"))
     candidates = []
-    skipped_overflow = []
     skipped_source_mismatch = []
     for row in catalog["rows"]:
         if not row.get("runtime_candidate", row.get("runtime_exact_candidate", False)):
@@ -93,10 +92,6 @@ def main() -> int:
                 "front_source_slug": source_front,
                 "back_source_slug": source_back,
             })
-            continue
-        max_frames = max(int(row.get("front_frames", 0)), int(row.get("back_frames", 0)))
-        if max_frames > 255:
-            skipped_overflow.append({"slug": row["slug"], "max_frames": max_frames})
             continue
         candidates.append(row)
     candidates.sort(key=lambda r: r["slug"])
@@ -158,7 +153,7 @@ def main() -> int:
         })
 
     summary = {
-        "format": "soulgold-showdown-bulk-batch-v2",
+        "format": "soulgold-showdown-bulk-batch-v3",
         "soulgold_revision": SOULGOLD_REV,
         "candidate_count": len(candidates),
         "batch_index": args.batch_index,
@@ -167,7 +162,7 @@ def main() -> int:
         "slice_end_exclusive": end,
         "converted_count": len(converted),
         "converted": converted,
-        "skipped_over_255_frame_lanes": skipped_overflow,
+        "frame_count_storage": "u16",
         "skipped_front_back_source_slug_mismatch": skipped_source_mismatch,
         "runtime_status": "ASSET_CONVERSION_ONLY_NOT_YET_LINKED",
         "ownership_reference": "authority/SHOWDOWN_S1E_OWNERSHIP_AND_PMD_PORT_RULES_20260829.md",
