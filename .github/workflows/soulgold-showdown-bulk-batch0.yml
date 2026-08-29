@@ -7,6 +7,10 @@ on:
       - feature/showdown-animated-battlers
     paths:
       - "tools/prepare_soulgold_showdown_bulk_batch.py"
+      - "tools/showdown_tile_delta_pack.py"
+      - "prototype/soulgold_showdown_s1/showdown_gba_runtime.c"
+      - "prototype/soulgold_showdown_s1/showdown_gba_runtime.h"
+      - "tools/emit_soulgold_showdown_s1_c.py"
       - ".github/workflows/soulgold-showdown-bulk-batch0.yml"
 
 env:
@@ -90,7 +94,7 @@ jobs:
           full_normal_raw=0
           full_normal_frames=0
           for row in catalog['rows']:
-              if row.get('runtime_exact_candidate'):
+              if row.get('runtime_candidate', row.get('runtime_exact_candidate', False)):
                   full_normal_raw += int(row['front_raw_4bpp_bytes']) + int(row['back_raw_4bpp_bytes'])
                   full_normal_frames += int(row['front_frames']) + int(row['back_frames'])
           ratio=(lz_bytes/raw_bytes) if raw_bytes else 0
@@ -101,15 +105,23 @@ jobs:
               'batch_raw_4bpp_bytes':raw_bytes,
               'batch_gba_lz_bytes':lz_bytes,
               'gba_lz_ratio':round(ratio,6),
-              'full_exact_normal_front_back_frames':full_normal_frames,
-              'full_exact_normal_front_back_raw_bytes':full_normal_raw,
-              'full_exact_normal_front_back_raw_mib':round(full_normal_raw/1048576,3),
-              'full_exact_normal_front_back_estimated_gba_lz_bytes_at_batch0_ratio':round(full_normal_raw*ratio),
-              'full_exact_normal_front_back_estimated_gba_lz_mib_at_batch0_ratio':round(full_normal_raw*ratio/1048576,3),
-              'note':'Estimate uses batch-0 compression ratio; later batches refine confidence interval.'
+              'full_candidate_normal_front_back_frames':full_normal_frames,
+              'full_candidate_normal_front_back_raw_bytes':full_normal_raw,
+              'full_candidate_normal_front_back_raw_mib':round(full_normal_raw/1048576,3),
+              'full_candidate_normal_front_back_estimated_gba_lz_bytes_at_batch0_ratio':round(full_normal_raw*ratio),
+              'full_candidate_normal_front_back_estimated_gba_lz_mib_at_batch0_ratio':round(full_normal_raw*ratio/1048576,3),
+              'note':'Estimate uses batch-0 compression ratio; tile-delta audit below is the preferred full-ROM direction.'
           }
           print(json.dumps(out,indent=2))
           PY
+      - name: Measure tile-delta GBA storage
+        run: |
+          python3 framework/tools/showdown_tile_delta_pack.py \
+            --graphics-root bulk_batch_0/staging/graphics/showdown \
+            --output delta_batch_0 \
+            --gbagfx soulgold/tools/gbagfx/gbagfx \
+            | tee evidence/SHOWDOWN_BULK_BATCH_000_TILE_DELTA_SUMMARY.txt
+          cp delta_batch_0/SHOWDOWN_TILE_DELTA_BUDGET.json evidence/SHOWDOWN_BULK_BATCH_000_TILE_DELTA_BUDGET.json
       - name: Upload install-ready converted batch
         uses: actions/upload-artifact@v4
         with:
@@ -122,3 +134,5 @@ jobs:
             evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG_SUMMARY.txt
             evidence/SHOWDOWN_BULK_BATCH_000_CONVERT.log
             evidence/SHOWDOWN_BULK_BATCH_000_GBA_LZ_BUDGET.json
+            evidence/SHOWDOWN_BULK_BATCH_000_TILE_DELTA_SUMMARY.txt
+            evidence/SHOWDOWN_BULK_BATCH_000_TILE_DELTA_BUDGET.json
