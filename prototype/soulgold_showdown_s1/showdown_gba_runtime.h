@@ -15,7 +15,7 @@ struct ShowdownGbaFrame
 struct ShowdownGbaAction
 {
     const struct ShowdownGbaFrame *frames;
-    u8 frameCount;
+    u16 frameCount;
     bool8 loop;
 };
 
