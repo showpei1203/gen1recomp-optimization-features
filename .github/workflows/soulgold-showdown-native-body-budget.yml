@@ -1,0 +1,80 @@
+name: SoulGold Showdown Native Body Budget Audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/showdown-animated-battlers
+    paths:
+      - "tools/showdown_native_body_budget.py"
+      - ".github/workflows/soulgold-showdown-native-body-budget.yml"
+
+env:
+  SOULGOLD_REV: 77ec3fc6275bb94dd703f4c1976f1457cc44a60b
+
+jobs:
+  audit-native-body-budget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+      - name: Checkout SoulGold v1.0.5 authority
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi libpng-dev python3
+      - name: Build clean SoulGold authority
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee NATIVE_BODY_BUDGET_BUILD.log
+      - name: Locate build products
+        run: |
+          find soulgold -maxdepth 2 -type f \( -name '*.elf' -o -name '*.gba' \) -printf '%p %s bytes\n' | tee BUILD_PRODUCTS.txt
+          ELF="$(find soulgold -maxdepth 2 -type f -name '*.elf' | head -n1)"
+          ROM="$(find soulgold -maxdepth 2 -type f -name '*.gba' | head -n1)"
+          test -n "$ELF" && test -n "$ROM"
+          echo "ELF=$ELF" >> "$GITHUB_ENV"
+          echo "ROM=$ROM" >> "$GITHUB_ENV"
+      - name: Measure linked native front/back payload
+        run: |
+          mkdir -p evidence
+          python3 framework/tools/showdown_native_body_budget.py \
+            --elf "$ELF" --rom "$ROM" \
+            --output evidence/SHOWDOWN_NATIVE_BODY_BUDGET.json \
+            | tee evidence/SHOWDOWN_NATIVE_BODY_BUDGET_SUMMARY.txt
+      - name: Sanity gate
+        run: |
+          python3 - <<'PY'
+          import json
+          p=json.load(open('evidence/SHOWDOWN_NATIVE_BODY_BUDGET.json'))
+          assert p['linked_front_symbol_count'] > 900, p['linked_front_symbol_count']
+          assert p['linked_back_symbol_count'] > 900, p['linked_back_symbol_count']
+          assert p['linked_front_back_payload_bytes'] > 1000000, p['linked_front_back_payload_bytes']
+          print('native-body-budget gate PASS')
+          PY
+      - name: Upload budget evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-Showdown-Native-Body-Budget
+          if-no-files-found: error
+          path: |
+            evidence/SHOWDOWN_NATIVE_BODY_BUDGET.json
+            evidence/SHOWDOWN_NATIVE_BODY_BUDGET_SUMMARY.txt
+            BUILD_PRODUCTS.txt
+            soulgold/NATIVE_BODY_BUDGET_BUILD.log
