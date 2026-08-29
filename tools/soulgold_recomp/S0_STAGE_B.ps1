@@ -10,6 +10,7 @@ $Log = Join-Path $EvidenceRoot ("S0_STAGE_B_{0}.log" -f $Stamp)
 
 $SoulGoldCommit = 'a6efa38348f978348da9dc4f4a7878cccf27bfd0'
 $GbaRecompCommit = 'ed9824b70aa350cd9e1653894beaf6b1b6b27787'
+$ExpectedRomSha1 = 'd88b6a59802ccd442275ecbcfc9140fff34556dc'
 
 function Log([string]$s) {
     $line = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $s
@@ -27,7 +28,15 @@ function Invoke-WslCapture([string]$Label, [string[]]$CommandArgs) {
     finally { $ErrorActionPreference = $saved }
     foreach ($line in $lines) { Log "$Label $line" }
     if ($rc -ne 0) { throw "$Label failed ($rc): $($CommandArgs -join ' ')" }
-    return ,$lines
+    # Return ordinary pipeline strings. Do not wrap the array as one object;
+    # that turns single-line git/hash output into System.Object[] downstream.
+    return $lines
+}
+
+function Invoke-WslScalar([string]$Label, [string[]]$CommandArgs) {
+    $items = @(Invoke-WslCapture $Label $CommandArgs)
+    if ($items.Count -eq 0) { throw "$Label produced no output" }
+    return ([string]$items[$items.Count - 1]).Trim()
 }
 
 function Invoke-WslStream([string]$Label, [string[]]$CommandArgs) {
@@ -123,8 +132,7 @@ try {
 
     Install-BuildPrereqsIfNeeded
 
-    $homeLines = Invoke-WslCapture 'WSL_HOME' @('python3','-c','from pathlib import Path; print(Path.home())')
-    $WslHome = (($homeLines | Select-Object -Last 1).ToString()).Trim()
+    $WslHome = Invoke-WslScalar 'WSL_HOME' @('python3','-c','from pathlib import Path; print(Path.home())')
     if (-not $WslHome.StartsWith('/')) { throw "Unexpected WSL HOME: $WslHome" }
 
     $ws = "$WslHome/SoulGoldRecomp_S0"
@@ -148,13 +156,18 @@ try {
         if (-not (Wsl-Exists $p)) { throw "S0-A prerequisite missing: $p" }
     }
 
-    $sgHead = ((Invoke-WslCapture 'SOULGOLD_HEAD' @('git','-C',$sg,'rev-parse','HEAD') | Select-Object -Last 1).ToString()).Trim()
-    $gbHead = ((Invoke-WslCapture 'GBARECOMP_HEAD' @('git','-C',$gb,'rev-parse','HEAD') | Select-Object -Last 1).ToString()).Trim()
+    $sgHead = Invoke-WslScalar 'SOULGOLD_HEAD' @('git','-C',$sg,'rev-parse','HEAD')
+    $gbHead = Invoke-WslScalar 'GBARECOMP_HEAD' @('git','-C',$gb,'rev-parse','HEAD')
     if ($sgHead -ne $SoulGoldCommit) { throw "SoulGold pin drift: $sgHead" }
     if ($gbHead -ne $GbaRecompCommit) { throw "GBARecomp pin drift: $gbHead" }
     Log 'S0B_PINS_OK=1'
 
-    $jobs = ((Invoke-WslCapture 'NPROC' @('nproc') | Select-Object -Last 1).ToString()).Trim()
+    $romSha1Line = Invoke-WslScalar 'ROM_SHA1' @('sha1sum',$rom)
+    $romSha1 = ($romSha1Line.Split(' ')[0]).Trim().ToLowerInvariant()
+    if ($romSha1 -ne $ExpectedRomSha1) { throw "SoulGold ROM SHA1 drift: expected $ExpectedRomSha1 got $romSha1" }
+    Log "S0B_ROM_SHA1_OK=$romSha1"
+
+    $jobs = Invoke-WslScalar 'NPROC' @('nproc')
     if ($jobs -notmatch '^\d+$') { $jobs = '4' }
 
     Log 'STEP=CONFIGURE_GBARECOMP'
@@ -168,7 +181,8 @@ try {
 
     $recompiler = "$engineBuild/gba_recompile"
     if (-not (Wsl-Exists $recompiler)) { throw "gba_recompile not produced: $recompiler" }
-    $recompilerSha = (((Invoke-WslCapture 'RECOMPILER_SHA256' @('sha256sum',$recompiler) | Select-Object -Last 1).ToString()).Split(' ')[0]).Trim()
+    $recompilerShaLine = Invoke-WslScalar 'RECOMPILER_SHA256' @('sha256sum',$recompiler)
+    $recompilerSha = ($recompilerShaLine.Split(' ')[0]).Trim()
     Log "GBA_RECOMPILE_SHA256=$recompilerSha"
 
     Log 'STEP=CLEAN_GENERATED_OUTPUT'
@@ -194,8 +208,8 @@ try {
         if (-not (Wsl-Exists $p)) { throw "generated output missing: $p" }
     }
 
-    $shardLines = Invoke-WslCapture 'SHARDS' @('find',$generated,'-maxdepth','1','-type','f','-name','recompiled_*.cpp')
-    $shardCount = @($shardLines | Where-Object { $_ -and $_.ToString().StartsWith('/') }).Count
+    $shardLines = @(Invoke-WslCapture 'SHARDS' @('find',$generated,'-maxdepth','1','-type','f','-name','recompiled_*.cpp'))
+    $shardCount = @($shardLines | Where-Object { $_ -and ([string]$_).StartsWith('/') }).Count
     Log "GENERATED_SHARD_COUNT=$shardCount"
     if ($shardCount -lt 2) { throw "Too few generated shards: $shardCount" }
 
@@ -212,9 +226,10 @@ try {
 
     $runnerExe = "$runnerBuild/SoulGoldRecomp"
     if (-not (Wsl-Exists $runnerExe)) { throw "SoulGoldRecomp runner not produced: $runnerExe" }
-    $runnerSize = ((Invoke-WslCapture 'RUNNER_SIZE' @('stat','-c','%s',$runnerExe) | Select-Object -Last 1).ToString()).Trim()
-    $runnerSha = (((Invoke-WslCapture 'RUNNER_SHA256' @('sha256sum',$runnerExe) | Select-Object -Last 1).ToString()).Split(' ')[0]).Trim()
-    $sdlVersion = ((Invoke-WslCapture 'SDL_VERSION' @('pkg-config','--modversion','sdl2') | Select-Object -Last 1).ToString()).Trim()
+    $runnerSize = Invoke-WslScalar 'RUNNER_SIZE' @('stat','-c','%s',$runnerExe)
+    $runnerShaLine = Invoke-WslScalar 'RUNNER_SHA256' @('sha256sum',$runnerExe)
+    $runnerSha = ($runnerShaLine.Split(' ')[0]).Trim()
+    $sdlVersion = Invoke-WslScalar 'SDL_VERSION' @('pkg-config','--modversion','sdl2')
 
     Log "RUNNER_PATH=$runnerExe"
     Log "RUNNER_SIZE=$runnerSize"
