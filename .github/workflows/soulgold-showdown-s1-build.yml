@@ -1,10 +1,193 @@
-name: SoulGold Showdown S1 Transition Gate
+name: SoulGold Showdown S1C First-Battle Build Gate
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feature/showdown-animated-battlers
+    paths:
+      - "prototype/soulgold_showdown_s1/**"
+      - "tools/showdown_sprites_ingest.py"
+      - "tools/emit_soulgold_showdown_s1_c.py"
+      - "tools/prepare_soulgold_showdown_s1_assets.py"
+      - "tools/install_soulgold_showdown_s1.py"
+      - "tests/test_showdown_s0_ingest.py"
+      - ".github/workflows/soulgold-showdown-s1-build.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+  ROM_PATH: soulgold/Soulgold_Beta_1.gba
+  SHOWDOWN_SPRITES_URL: https://www.pokemonshowdown.com/files/resources/sprites.zip
 
 jobs:
-  transition-note:
+  compile-s1c:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - run: echo "Push builds temporarily paused while S1B B-button harness is replaced by the natural starter/first-battle path."
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi \
+            gcc-arm-none-eabi \
+            libnewlib-arm-none-eabi \
+            libpng-dev \
+            python3 \
+            python3-pil \
+            curl \
+            unzip
+
+      - name: Run deterministic S0 self-test
+        run: python3 framework/tests/test_showdown_s0_ingest.py --tool framework/tools/showdown_sprites_ingest.py
+
+      - name: Download official Showdown sprites.zip
+        run: |
+          mkdir -p source
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "$SHOWDOWN_SPRITES_URL" \
+            --output source/sprites.zip
+          test -s source/sprites.zip
+          unzip -l source/sprites.zip | grep -Ei '/?ani-back/sprigatito\.gif$'
+          unzip -l source/sprites.zip | grep -Ei '/?ani/marill\.gif$'
+
+      - name: Prepare S1C Sprigatito back and Marill front assets
+        run: |
+          python3 framework/tools/prepare_soulgold_showdown_s1_assets.py \
+            --framework-root framework \
+            --sprites-zip source/sprites.zip \
+            --soulgold soulgold \
+            --output s1_assets
+
+      - name: Install S1C normal first-battle candidate
+        run: |
+          python3 framework/tools/install_soulgold_showdown_s1.py \
+            --framework-root framework \
+            --soulgold soulgold \
+            --assets-staging s1_assets/staging
+
+      - name: Verify S1C normal-flow and separation invariants
+        run: |
+          grep -q "ShowdownSoulGoldPrototype_Init" soulgold/src/battle_main.c
+          grep -q "ShowdownSoulGoldPrototype_Tick" soulgold/src/battle_main.c
+          grep -q "SHOWDOWN_S1C_TEST_STARTER" soulgold/src/starter_choose.c
+          grep -q "SPECIES_SPRIGATITO" soulgold/src/starter_choose.c
+          grep -q "SHOWDOWN_S1C_FIRST_BATTLE_MARILL" soulgold/src/battle_setup.c
+          grep -q "CreateRandomMon(&gEnemyParty\[0\], SPECIES_MARILL, 5)" soulgold/src/battle_setup.c
+          grep -q "SPECIES_SPRIGATITO" soulgold/src/showdown_soulgold_prototype.c
+          grep -q "SPECIES_MARILL" soulgold/src/showdown_soulgold_prototype.c
+          ! grep -q "TryStartTestBattle\|B_BUTTON\|DoStandardWildBattle_Debug" soulgold/src/showdown_soulgold_prototype.c
+          ! grep -q "TryStartTestBattle" soulgold/include/showdown_soulgold_prototype.h
+          test -z "$(git -C soulgold diff -- src/overworld.c)" || {
+            echo "S1C must not patch overworld.c; B-button harness is forbidden." >&2
+            exit 1
+          }
+          test -f soulgold/src/showdown_gba_runtime.c
+          test -f soulgold/src/showdown_soulgold_adapter.c
+          test -f soulgold/src/showdown_soulgold_prototype.c
+          test -f soulgold/src/showdown_sprigatito_back_idle.c
+          test -f soulgold/src/showdown_marill_front_idle.c
+          test "$(find soulgold/graphics/showdown/sprigatito/back -name 'frame_*.png' | wc -l)" -gt 1
+          test "$(find soulgold/graphics/showdown/marill/front -name 'frame_*.png' | wc -l)" -gt 1
+          ! grep -R "PmdSoulGold\|PmdGba\|pmd_" -n \
+            soulgold/src/showdown_*.c soulgold/include/showdown_*.h || {
+            echo "Showdown lane must not depend on PMD runtime symbols" >&2
+            exit 1
+          }
+          test -z "$(git -C soulgold diff -- src/data.c src/pokemon.c)" || {
+            echo "S1C must not patch data.c or pokemon.c." >&2
+            exit 1
+          }
+
+      - name: Build SoulGold Showdown S1C
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee SHOWDOWN_S1C_BUILD.log
+
+      - name: Audit Showdown and first-battle patches for warnings or errors
+        if: always()
+        run: |
+          if [ -f soulgold/SHOWDOWN_S1C_BUILD.log ]; then
+            if grep -E "src/(showdown_.*|starter_choose|battle_setup)\.c.*(warning:|error:)" soulgold/SHOWDOWN_S1C_BUILD.log; then
+              echo "S1C source emitted a compiler warning/error; rejecting compile gate." >&2
+              exit 1
+            fi
+          fi
+
+      - name: Record build evidence
+        if: always()
+        run: |
+          mkdir -p evidence
+          {
+            echo "SoulGold Showdown S1C CI evidence"
+            echo "soulgold_revision=${SOULGOLD_REV}"
+            echo "framework_commit=${GITHUB_SHA}"
+            echo "source=${SHOWDOWN_SPRITES_URL}"
+            echo "player_target=Sprigatito back Showdown idle"
+            echo "opponent_target=Marill front Showdown idle"
+            echo "starter_flow=normal starter chooser; left option Sprigatito"
+            echo "first_battle_flow=normal CB2_GiveStarter -> CB2_StartFirstBattle"
+            echo "first_battle_enemy=Lv5 Marill"
+            echo "b_button_harness=REMOVED"
+            echo "overworld_patch=NONE"
+            echo "palette_policy=per-species existing SoulGold normal palette"
+            echo "pmd_runtime_dependency=NONE"
+            echo "runtime_visual_status=PENDING"
+            if [ -f "${ROM_PATH}" ]; then
+              echo "build_status=PASS"
+              stat -c "rom_bytes=%s" "${ROM_PATH}"
+              sha256sum "${ROM_PATH}"
+              python3 - <<'PY'
+          import os, zlib
+          p = os.environ["ROM_PATH"]
+          crc = 0
+          with open(p, "rb") as f:
+              for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                  crc = zlib.crc32(chunk, crc)
+          print(f"rom_crc32={crc & 0xffffffff:08X}")
+          PY
+            else
+              echo "build_status=FAIL_OR_NO_ROM"
+            fi
+          } | tee evidence/SHOWDOWN_S1C_CI_EVIDENCE.txt
+
+      - name: Upload logs and manifests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soulgold-showdown-s1c-build-evidence
+          if-no-files-found: warn
+          path: |
+            evidence/SHOWDOWN_S1C_CI_EVIDENCE.txt
+            s1_assets/SHOWDOWN_S1_ASSET_SUMMARY.json
+            s1_assets/ingest/sprigatito/back/manifest.json
+            s1_assets/ingest/marill/front/manifest.json
+            soulgold/SHOWDOWN_S1_INSTALL_STATUS.txt
+            soulgold/SHOWDOWN_S1C_BUILD.log
+
+      - name: Upload test ROM
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-Showdown-S1C-Sprigatito-Marill-First-Battle-ROM
+          if-no-files-found: error
+          path: soulgold/Soulgold_Beta_1.gba
