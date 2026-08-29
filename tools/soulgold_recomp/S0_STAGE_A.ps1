@@ -26,11 +26,16 @@ try {
     if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
         throw 'WSL is required for the pinned SoulGold build. WSL2 is the upstream-recommended Windows path.'
     }
-    if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) {
-        throw 'Git for Windows is required.'
+
+    $winGit = Get-Command git.exe -ErrorAction SilentlyContinue
+    if ($winGit) {
+        Log ("GIT_BACKEND=WINDOWS " + $winGit.Source)
+    } else {
+        Log 'GIT_BACKEND=WSL (Git for Windows not installed; this is supported)'
     }
 
     # Probe the WSL build environment before cloning/building anything expensive.
+    # WSL git is sufficient; Git for Windows is deliberately NOT required.
     $probe = (& wsl.exe bash -lc 'missing=""; for x in git make python3 arm-none-eabi-gcc arm-none-eabi-readelf; do command -v "$x" >/dev/null 2>&1 || missing="$missing $x"; done; printf "MISSING=%s\n" "$missing"' 2>&1) -join "`n"
     Add-Content -Path $Log -Value $probe -Encoding UTF8
     Write-Host $probe
