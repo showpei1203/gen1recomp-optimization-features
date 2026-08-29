@@ -91,7 +91,8 @@ try {
         if (-not $sgWsl) { throw 'Unable to translate SoulGold workspace path into WSL path.' }
 
         Write-Log "SOULGOLD_BUILD_START $sgWsl"
-        $buildCmd = "set -o pipefail; cd '$sgWsl'; make -j\$(nproc) 2>&1 | tee '$sgWsl/S0_SOULGOLD_BUILD.log'"
+        # Backtick escapes PowerShell's '$' so $(nproc) is expanded by bash inside WSL.
+        $buildCmd = "set -o pipefail; cd '$sgWsl'; make -j`$(nproc) 2>&1 | tee '$sgWsl/S0_SOULGOLD_BUILD.log'"
         & wsl.exe bash -lc $buildCmd
         if ($LASTEXITCODE -ne 0) { throw "SoulGold make failed with exit code $LASTEXITCODE" }
         Write-Log 'SOULGOLD_BUILD_EXIT=0'
