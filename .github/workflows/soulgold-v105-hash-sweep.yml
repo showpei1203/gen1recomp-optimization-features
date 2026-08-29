@@ -1,0 +1,101 @@
+name: SoulGold v1.0.5 17-State Hash Sweep
+
+on:
+  push:
+    branches:
+      - feature/showdown-animated-battlers
+    paths:
+      - ".github/workflows/soulgold-v105-hash-sweep.yml"
+  workflow_dispatch:
+
+env:
+  TARGET_SHA256: a22aa2bbcaa9953f15d9abc2ef1069d4a082fab059d701781e5b83ff376c1f9d
+
+jobs:
+  sweep:
+    name: ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 17
+      matrix:
+        include:
+          - {label: v105-01-77ec3fc, rev: 77ec3fc6275bb94dd703f4c1976f1457cc44a60b}
+          - {label: v105-02-724e1c2, rev: 724e1c2392c74d6380b974b228702567168698f8}
+          - {label: v105-03-5101dcc, rev: 5101dcc222d03a6a936deef9d95f72f24e93422f}
+          - {label: v105-04-b209cd8, rev: b209cd8349b8a3f8a93135ae2f2cd008b26f9e95}
+          - {label: v105-05-baf9768, rev: baf97684b2a03f85b4ba89fd7103963c3af0df54}
+          - {label: v105-06-5fb9d41, rev: 5fb9d413005a79f68ebf6b5e06b4a96454766b19}
+          - {label: v105-07-5dbc90f, rev: 5dbc90f67b5237e8b7487d3aef1ab5d27b29248c}
+          - {label: v105-08-397d054, rev: 397d054cd8ff9c6c4bc6fc375c5c7704a3c8ce2b}
+          - {label: v105-09-287f24e, rev: 287f24ec976f38e3aa9696c3296a858b6b204da5}
+          - {label: v105-10-307e3f2, rev: 307e3f21a0ebda70e4bc7539fc090270d2c86a0f}
+          - {label: v105-11-df1e7ff, rev: df1e7ff24e45235ad248515751060506ee280f9b}
+          - {label: v105-12-8ed0dd8, rev: 8ed0dd87f4b8d8bbbcf6f068afffc5bdb7b3ea59}
+          - {label: v105-13-d10246c, rev: d10246c5b40bd6e62fbb731db3a6d90c3d9c6272}
+          - {label: v105-14-950b29b, rev: 950b29b657c6c6e6c7a9a8724feab95274cdb492}
+          - {label: v105-15-4e32436, rev: 4e32436689d76f0903294f835574b061f3cb65db}
+          - {label: v105-16-95e20d5, rev: 95e20d5381ecee542d5540f3434fb7484730c261}
+          - {label: v105-17-b1ec11a, rev: b1ec11a30e8c11be8840801855a776bf58a64dc2}
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ matrix.rev }}
+          path: soulgold
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi libpng-dev python3
+      - name: Verify v1.0.5
+        run: |
+          grep -q 'DISPLAY_VERSION "v1.0.5"' soulgold/include/config/version.h
+          test "$(git -C soulgold rev-parse HEAD)" = "${{ matrix.rev }}"
+      - name: Build candidate
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: make -j$(nproc) -O all
+      - name: Compare hash
+        shell: bash
+        run: |
+          mkdir -p evidence match
+          SHA=$(sha256sum soulgold/Soulgold_Beta_1.gba | awk '{print $1}')
+          CRC=$(python3 - <<'PY'
+          import zlib
+          p='soulgold/Soulgold_Beta_1.gba'; c=0
+          with open(p,'rb') as f:
+              for x in iter(lambda:f.read(1048576),b''): c=zlib.crc32(x,c)
+          print(f'{c&0xffffffff:08X}')
+          PY
+          )
+          {
+            echo "label=${{ matrix.label }}"
+            echo "revision=${{ matrix.rev }}"
+            echo "sha256=$SHA"
+            echo "crc32=$CRC"
+            echo "target=$TARGET_SHA256"
+            if [ "$SHA" = "$TARGET_SHA256" ]; then echo 'MATCH=YES'; else echo 'MATCH=NO'; fi
+          } | tee evidence/${{ matrix.label }}.txt
+          if [ "$SHA" = "$TARGET_SHA256" ]; then
+            cp soulgold/Soulgold_Beta_1.gba match/SoulGold_v1.0.5_EXACT_MATCH.gba
+            cp evidence/${{ matrix.label }}.txt match/MATCH.txt
+          fi
+      - name: Upload hash evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: hash-${{ matrix.label }}
+          path: evidence/${{ matrix.label }}.txt
+      - name: Upload exact match if found
+        uses: actions/upload-artifact@v4
+        with:
+          name: exact-match-${{ matrix.label }}
+          path: match/*
+          if-no-files-found: ignore
