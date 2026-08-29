@@ -1,6 +1,7 @@
 param(
     [string]$Workspace = "$env:USERPROFILE\SoulGoldRecomp_S0",
-    [switch]$BuildSoulGold
+    [switch]$BuildSoulGold,
+    [switch]$NoPause
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,9 +20,12 @@ $LogPath = Join-Path $LogDir ('S0_BOOTSTRAP_{0}.log' -f (Get-Date -Format 'yyyyM
 New-Item -ItemType Directory -Force -Path $Workspace | Out-Null
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
+# Deliberately emits no pipeline output. This matters inside functions whose
+# return value is captured into a path variable.
 function Write-Log([string]$Message) {
     $line = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message
-    $line | Tee-Object -FilePath $LogPath -Append
+    Add-Content -Path $LogPath -Value $line -Encoding UTF8
+    Write-Host $line
 }
 
 function Require-Command([string]$Name) {
@@ -30,18 +34,26 @@ function Require-Command([string]$Name) {
     Write-Log "FOUND $Name -> $($cmd.Source)"
 }
 
+function Invoke-Git([string[]]$GitArgs) {
+    $lines = @(& git @GitArgs 2>&1)
+    $rc = $LASTEXITCODE
+    foreach ($line in $lines) { Write-Log "GIT $line" }
+    if ($rc -ne 0) { throw "git failed ($rc): git $($GitArgs -join ' ')" }
+}
+
 function Clone-Pinned([string]$Name, [string]$Url, [string]$Commit) {
     $dest = Join-Path $Workspace $Name
     if (-not (Test-Path (Join-Path $dest '.git'))) {
         Write-Log "CLONE $Url -> $dest"
-        git clone --filter=blob:none $Url $dest 2>&1 | Tee-Object -FilePath $LogPath -Append
+        Invoke-Git @('clone', '--filter=blob:none', $Url, $dest)
     } else {
         Write-Log "EXISTS $dest; fetching target commit"
-        git -C $dest fetch origin $Commit 2>&1 | Tee-Object -FilePath $LogPath -Append
+        Invoke-Git @('-C', $dest, 'fetch', 'origin', $Commit)
     }
 
-    git -C $dest checkout --detach $Commit 2>&1 | Tee-Object -FilePath $LogPath -Append
-    $head = (git -C $dest rev-parse HEAD).Trim()
+    Invoke-Git @('-C', $dest, 'checkout', '--detach', $Commit)
+    $head = (& git -C $dest rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw "Unable to read $Name HEAD" }
     if ($head -ne $Commit) { throw "$Name pin mismatch: expected $Commit got $head" }
     Write-Log "PIN_OK $Name $head"
     return $dest
@@ -75,8 +87,8 @@ try {
     if ($wsl) {
         Write-Log "FOUND wsl.exe -> $($wsl.Source)"
         try {
-            $wslInfo = (& wsl.exe bash -lc 'printf "WSL_OK=1\n"; uname -a; command -v make || true; command -v arm-none-eabi-gcc || true; command -v python3 || true' 2>&1) -join "`n"
-            $wslInfo | Tee-Object -FilePath $LogPath -Append
+            $wslLines = @(& wsl.exe bash -lc 'printf "WSL_OK=1\n"; uname -a; command -v make || true; command -v arm-none-eabi-gcc || true; command -v arm-none-eabi-readelf || true; command -v python3 || true' 2>&1)
+            foreach ($line in $wslLines) { Write-Log "WSL $line" }
         } catch {
             Write-Log "WSL_PROBE_FAIL $($_.Exception.Message)"
         }
@@ -88,10 +100,12 @@ try {
         if (-not $wsl) { throw 'BuildSoulGold requested but WSL is unavailable.' }
         $sgWin = (Resolve-Path $sg).Path
         $sgWsl = (& wsl.exe wslpath -a $sgWin).Trim()
-        if (-not $sgWsl) { throw 'Unable to translate SoulGold workspace path into WSL path.' }
+        if ($LASTEXITCODE -ne 0 -or -not $sgWsl) {
+            throw 'Unable to translate SoulGold workspace path into WSL path.'
+        }
 
         Write-Log "SOULGOLD_BUILD_START $sgWsl"
-        # Backtick escapes PowerShell's '$' so $(nproc) is expanded by bash inside WSL.
+        # Backtick escapes PowerShell's '$' so $(nproc) is expanded by bash.
         $buildCmd = "set -o pipefail; cd '$sgWsl'; make -j`$(nproc) 2>&1 | tee '$sgWsl/S0_SOULGOLD_BUILD.log'"
         & wsl.exe bash -lc $buildCmd
         if ($LASTEXITCODE -ne 0) { throw "SoulGold make failed with exit code $LASTEXITCODE" }
@@ -106,6 +120,7 @@ try {
     )
 
     $authority = @()
+    $missingArtifacts = @()
     foreach ($name in $expected) {
         $p = Join-Path $sg $name
         $h = Get-FileHashes $p
@@ -114,7 +129,11 @@ try {
             $authority += $h
         } else {
             Write-Log "ARTIFACT_MISSING $name"
+            $missingArtifacts += $name
         }
+    }
+    if ($BuildSoulGold -and $missingArtifacts.Count -gt 0) {
+        throw "SoulGold build exited successfully but required outputs are missing: $($missingArtifacts -join ', ')"
     }
 
     $jsonPath = Join-Path $LogDir 'S0_SOURCE_AUTHORITY.json'
@@ -133,11 +152,11 @@ try {
     Write-Log 'RESULT=PASS'
 }
 catch {
-    Write-Log "RESULT=FAIL"
+    Write-Log 'RESULT=FAIL'
     Write-Log "ERROR=$($_.Exception.Message)"
     Write-Host ''
     Write-Host "Bootstrap failed. Return this log: $LogPath" -ForegroundColor Red
-    Read-Host 'Press Enter to close'
+    if (-not $NoPause) { Read-Host 'Press Enter to close' }
     exit 1
 }
 
@@ -147,4 +166,4 @@ Write-Host "Evidence: $LogDir"
 if (-not $BuildSoulGold) {
     Write-Host 'Upstreams are pinned. Re-run with -BuildSoulGold when the WSL ARM toolchain is ready.'
 }
-Read-Host 'Press Enter to close'
+if (-not $NoPause) { Read-Host 'Press Enter to close' }
