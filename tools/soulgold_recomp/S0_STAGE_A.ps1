@@ -16,7 +16,8 @@ function Log([string]$s) {
 
 function WslPath([string]$p) {
     $resolved = (Resolve-Path $p).Path
-    $value = @(& wsl.exe wslpath -a $resolved 2>&1)
+    # Explicitly translate a Windows path to its WSL/Linux form.
+    $value = @(& wsl.exe wslpath -a -u $resolved 2>&1)
     if ($LASTEXITCODE -ne 0) { throw "wslpath failed for $resolved" }
     return ($value | Select-Object -Last 1).Trim()
 }
