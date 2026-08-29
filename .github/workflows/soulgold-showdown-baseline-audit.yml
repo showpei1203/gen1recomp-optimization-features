@@ -1,0 +1,91 @@
+name: SoulGold Showdown Baseline Audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/showdown-animated-battlers
+    paths:
+      - ".github/workflows/soulgold-showdown-baseline-audit.yml"
+
+env:
+  SOULGOLD_REV: b5122bdf188943862c13abe4938e88b7bb3c5c4a
+
+jobs:
+  clean-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi \
+            gcc-arm-none-eabi \
+            libnewlib-arm-none-eabi \
+            libpng-dev \
+            python3 \
+            curl \
+            unzip
+
+      - name: Build clean SoulGold baseline
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee CLEAN_BASELINE_BUILD.log
+
+      - name: Record clean baseline evidence
+        run: |
+          mkdir -p evidence
+          {
+            echo "SoulGold clean baseline audit"
+            echo "revision=${SOULGOLD_REV}"
+            git -C soulgold status --short
+            sha256sum soulgold/Soulgold_Beta_1.gba
+            python3 - <<'PY'
+          import zlib
+          p='soulgold/Soulgold_Beta_1.gba'
+          crc=0
+          with open(p,'rb') as f:
+              for chunk in iter(lambda:f.read(1024*1024), b''):
+                  crc=zlib.crc32(chunk,crc)
+          print(f'crc32={crc & 0xffffffff:08X}')
+          PY
+            find soulgold -maxdepth 2 -type f \( -name '*.map' -o -name '*.sym' -o -name '*.elf' \) -printf '%p\n' | sort
+          } | tee evidence/CLEAN_BASELINE_EVIDENCE.txt
+
+      - name: Upload clean baseline ROM
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-b512-Clean-Baseline-ROM
+          path: soulgold/Soulgold_Beta_1.gba
+
+      - name: Upload baseline symbols and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-b512-Clean-Baseline-Debug
+          if-no-files-found: warn
+          path: |
+            evidence/CLEAN_BASELINE_EVIDENCE.txt
+            soulgold/CLEAN_BASELINE_BUILD.log
+            soulgold/*.map
+            soulgold/*.sym
+            soulgold/*.elf
+            soulgold/build/emerald/*.map
+            soulgold/build/emerald/*.sym
+            soulgold/build/emerald/*.elf
