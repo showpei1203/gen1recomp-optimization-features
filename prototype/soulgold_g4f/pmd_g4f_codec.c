@@ -1,5 +1,6 @@
 #include "global.h"
 #include "decompress.h"
+#include "pmd_gba_runtime.h"
 #include "pmd_g4f_codec.h"
 #include <string.h>
 
