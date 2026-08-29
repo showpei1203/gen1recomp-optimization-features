@@ -46,9 +46,11 @@ jobs:
       - name: Locate build products
         run: |
           find soulgold -maxdepth 2 -type f \( -name '*.elf' -o -name '*.gba' \) -printf '%p %s bytes\n' | tee BUILD_PRODUCTS.txt
-          ELF="$(find soulgold -maxdepth 2 -type f -name '*.elf' | head -n1)"
-          ROM="$(find soulgold -maxdepth 2 -type f -name '*.gba' | head -n1)"
-          test -n "$ELF" && test -n "$ROM"
+          ELF="soulgold/Soulgold_Beta_1.elf"
+          ROM="soulgold/Soulgold_Beta_1.gba"
+          test -s "$ELF"
+          test -s "$ROM"
+          test "$(stat -c %s "$ROM")" -eq 33554432
           echo "ELF=$ELF" >> "$GITHUB_ENV"
           echo "ROM=$ROM" >> "$GITHUB_ENV"
       - name: Measure linked native front/back payload
@@ -63,6 +65,7 @@ jobs:
           python3 - <<'PY'
           import json
           p=json.load(open('evidence/SHOWDOWN_NATIVE_BODY_BUDGET.json'))
+          assert p['rom_bytes'] == 33554432, p['rom_bytes']
           assert p['linked_front_symbol_count'] > 900, p['linked_front_symbol_count']
           assert p['linked_back_symbol_count'] > 900, p['linked_back_symbol_count']
           assert p['linked_front_back_payload_bytes'] > 1000000, p['linked_front_back_payload_bytes']
