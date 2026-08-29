@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Install the SoulGold Showdown S1B deterministic runtime-test candidate.
+"""Install the SoulGold Showdown S1C natural first-battle candidate.
 
-S1B adds isolated showdown_*.c/.h, Sprigatito-back and Marill-front assets,
-plus a temporary overworld B-button test hook. The player's saved party is not
-modified; the harness creates only an in-memory Marill enemy party entry.
+S1C removes the temporary overworld B-button harness. The normal starter flow is
+used instead: the left starter option is Sprigatito, and CB2_GiveStarter replaces
+the pending first-battle enemy with a level-5 Marill immediately before the
+existing BATTLE_TYPE_FIRST_BATTLE path begins.
 """
 from __future__ import annotations
 
@@ -91,40 +92,66 @@ def patch_battle_main(path: Path) -> None:
     print("PATCH src/battle_main.c: Showdown include + init + software-tick hook")
 
 
-def patch_overworld(path: Path) -> None:
+def patch_starter_choose(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     original = text
-    text = ensure_include(text, '#include "battle_setup.h"\n')
-
     old = (
-        "void CB1_Overworld(void)\n"
+        "static const u16 sStarterMon[STARTER_MON_COUNT] =\n"
         "{\n"
-        "    if (gMain.callback2 == CB2_Overworld)\n"
-        "        DoCB1_Overworld(gMain.newKeys, gMain.heldKeys);\n"
-        "}\n"
+        "    SPECIES_TREECKO,\n"
+        "    SPECIES_TORCHIC,\n"
+        "    SPECIES_MUDKIP,\n"
+        "};"
     )
     new = (
-        "void CB1_Overworld(void)\n"
+        "static const u16 sStarterMon[STARTER_MON_COUNT] =\n"
         "{\n"
-        "    if (gMain.callback2 == CB2_Overworld)\n"
-        "    {\n"
-        "        // SHOWDOWN_S1B_TEMP_TEST_HARNESS: remove before formal release.\n"
-        "        if (ShowdownSoulGoldPrototype_TryStartTestBattle(gMain.newKeys))\n"
-        "            return;\n"
-        "        DoCB1_Overworld(gMain.newKeys, gMain.heldKeys);\n"
-        "    }\n"
-        "}\n"
+        "    SPECIES_SPRIGATITO, // SHOWDOWN_S1C_TEST_STARTER\n"
+        "    SPECIES_TORCHIC,\n"
+        "    SPECIES_MUDKIP,\n"
+        "};"
     )
-    if "SHOWDOWN_S1B_TEMP_TEST_HARNESS" not in text:
+    if "SHOWDOWN_S1C_TEST_STARTER" not in text:
         if old not in text:
-            raise SystemExit("CB1_Overworld exact anchor not found")
+            raise SystemExit("starter roster anchor not found")
         text = text.replace(old, new, 1)
 
     if text == original:
-        print("overworld.c already contains Showdown S1B B-button harness")
+        print("starter_choose.c already contains S1C Sprigatito starter")
         return
     path.write_text(text, encoding="utf-8")
-    print("PATCH src/overworld.c: temporary B-button deterministic battle harness")
+    print("PATCH src/starter_choose.c: left starter -> Sprigatito")
+
+
+def patch_first_battle(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+    original = text
+    old = (
+        "    starterMon = GetStarterPokemon(gSpecialVar_Result);\n"
+        "    ScriptGiveMon(starterMon, 5, ITEM_NONE, ITEM_NONE);\n"
+        "    Achievement_Unlock(ACH_RECEIVE_STARTER);"
+    )
+    new = (
+        "    starterMon = GetStarterPokemon(gSpecialVar_Result);\n"
+        "    ScriptGiveMon(starterMon, 5, ITEM_NONE, ITEM_NONE);\n"
+        "\n"
+        "    // SHOWDOWN_S1C_FIRST_BATTLE_MARILL: deterministic visual proof only.\n"
+        "    ZeroEnemyPartyMons();\n"
+        "    CreateRandomMon(&gEnemyParty[0], SPECIES_MARILL, 5);\n"
+        "    gEnemyPartyCount = 1;\n"
+        "\n"
+        "    Achievement_Unlock(ACH_RECEIVE_STARTER);"
+    )
+    if "SHOWDOWN_S1C_FIRST_BATTLE_MARILL" not in text:
+        if old not in text:
+            raise SystemExit("CB2_GiveStarter anchor not found")
+        text = text.replace(old, new, 1)
+
+    if text == original:
+        print("battle_setup.c already contains S1C Marill first-battle override")
+        return
+    path.write_text(text, encoding="utf-8")
+    print("PATCH src/battle_setup.c: normal first battle enemy -> Lv5 Marill")
 
 
 def main() -> int:
@@ -161,21 +188,23 @@ def main() -> int:
         print(f"COPY {src_graphics} -> {dst_graphics}")
 
     patch_battle_main(soulgold / "src" / "battle_main.c")
-    patch_overworld(soulgold / "src" / "overworld.c")
+    patch_starter_choose(soulgold / "src" / "starter_choose.c")
+    patch_first_battle(soulgold / "src" / "battle_setup.c")
 
     status = git(soulgold, "status", "--short")
     (soulgold / "SHOWDOWN_S1_INSTALL_STATUS.txt").write_text(
-        "SoulGold Showdown S1B deterministic runtime-test candidate installed.\n"
+        "SoulGold Showdown S1C natural first-battle candidate installed.\n"
         f"baseline={SOULGOLD_REV}\n"
         "player_target=Sprigatito back Showdown idle\n"
         "opponent_target=Marill front Showdown idle\n"
+        "starter_flow=normal starter chooser; left option replaced with Sprigatito\n"
+        "first_battle_flow=normal CB2_GiveStarter -> CB2_StartFirstBattle path\n"
+        "first_battle_enemy=Lv5 Marill\n"
         "ownership=move-selection-only\n"
         "palette=per-species existing SoulGold normal palette\n"
-        "test_harness=overworld new B press starts debug wild Marill battle\n"
-        "player_party_mutation=NONE\n"
-        "battle_stat_increment=NONE (DoStandardWildBattle_Debug)\n"
-        "host_files_modified=src/battle_main.c,src/overworld.c\n"
-        "formal_release_requirement=REMOVE_B_BUTTON_HARNESS\n"
+        "b_button_harness=REMOVED\n"
+        "overworld_patch=NONE\n"
+        "host_files_modified=src/battle_main.c,src/starter_choose.c,src/battle_setup.c\n"
         "PMD_RUNTIME_DEPENDENCY=NONE\n"
         "compile_status=PENDING\n"
         "runtime_status=PENDING\n\n"
@@ -183,7 +212,7 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    print("Showdown S1B install candidate prepared. Next gate: compile/link, then AYN THOR mGBA visual evidence.")
+    print("Showdown S1C install candidate prepared. Next gate: compile/link, then normal new-game starter/first-battle runtime evidence.")
     return 0
 
 
