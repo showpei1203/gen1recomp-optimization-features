@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Prepare Cyndaquil Showdown front/back idle assets for SoulGold S1.
+"""Prepare Sprigatito-back + Marill-front Showdown assets for SoulGold S1B.
 
-The official sprites.zip is the source authority. S1 remaps the converted GIF
-frames to SoulGold's existing Cyndaquil palette so the first runtime experiment
-changes body pixels/timing only and does not yet assume palette ownership.
+S1B is a deterministic runtime-test candidate. The player's saved lead remains
+untouched; only a temporary Marill enemy is created by the B-button harness.
+Each Showdown lane is remapped to that species' existing SoulGold palette.
 """
 from __future__ import annotations
 
@@ -15,6 +15,10 @@ import sys
 from pathlib import Path
 
 SOULGOLD_REV = "b5122bdf188943862c13abe4938e88b7bb3c5c4a"
+TARGETS = (
+    ("sprigatito", "back"),
+    ("marill", "front"),
+)
 
 
 def run(cmd: list[str]) -> None:
@@ -30,6 +34,15 @@ def require_revision(repo: Path) -> None:
     actual = git_head(repo)
     if actual != SOULGOLD_REV:
         raise SystemExit(f"SoulGold revision mismatch: expected {SOULGOLD_REV}, got {actual}")
+
+
+def copy_lane(ingest: Path, staging: Path, species: str, lane: str) -> None:
+    src_lane = ingest / species / lane
+    dst_lane = staging / "graphics" / "showdown" / species / lane
+    dst_lane.mkdir(parents=True, exist_ok=True)
+    for png in sorted(src_lane.glob("frame_*.png")):
+        shutil.copy2(png, dst_lane / png.name)
+    shutil.copy2(src_lane / "manifest.json", dst_lane / "manifest.json")
 
 
 def main() -> int:
@@ -48,51 +61,56 @@ def main() -> int:
     if not sprites_zip.is_file():
         raise SystemExit(f"Missing sprites.zip: {sprites_zip}")
 
-    host_palette = soulgold / "graphics" / "pokemon" / "cyndaquil" / "normal.pal"
-    if not host_palette.is_file():
-        raise SystemExit(f"Missing SoulGold Cyndaquil palette: {host_palette}")
-
     if out.exists():
         shutil.rmtree(out)
     ingest = out / "ingest"
     staging = out / "staging"
-    graphics = staging / "graphics" / "showdown" / "cyndaquil"
     src = staging / "src"
     src.mkdir(parents=True, exist_ok=True)
 
-    run([
-        sys.executable, str(framework / "tools" / "showdown_sprites_ingest.py"),
-        "--zip", str(sprites_zip),
-        "--output", str(ingest),
-        "--species", "cyndaquil",
-        "--lanes", "front", "back",
-        "--host-palette", str(host_palette),
-    ])
+    manifests: list[dict] = []
+    for index, (species, lane) in enumerate(TARGETS):
+        host_palette = soulgold / "graphics" / "pokemon" / species / "normal.pal"
+        if not host_palette.is_file():
+            raise SystemExit(f"Missing SoulGold {species} palette: {host_palette}")
 
-    for lane in ("front", "back"):
-        src_lane = ingest / "cyndaquil" / lane
-        dst_lane = graphics / lane
-        dst_lane.mkdir(parents=True, exist_ok=True)
-        for png in sorted(src_lane.glob("frame_*.png")):
-            shutil.copy2(png, dst_lane / png.name)
-        shutil.copy2(src_lane / "manifest.json", dst_lane / "manifest.json")
+        cmd = [
+            sys.executable, str(framework / "tools" / "showdown_sprites_ingest.py"),
+            "--zip", str(sprites_zip),
+            "--output", str(ingest),
+            "--species", species,
+            "--lanes", lane,
+            "--host-palette", str(host_palette),
+        ]
+        if index:
+            cmd.append("--force")
+        run(cmd)
+        copy_lane(ingest, staging, species, lane)
+        manifests.append(json.loads((ingest / species / lane / "manifest.json").read_text(encoding="utf-8")))
 
-    generated_c = src / "showdown_cyndaquil_idle.c"
-    run([
-        sys.executable, str(framework / "tools" / "emit_soulgold_showdown_s1_c.py"),
-        "--ingest-root", str(ingest),
-        "--species", "cyndaquil",
-        "--asset-root", "graphics/showdown/cyndaquil",
-        "--output", str(generated_c),
-    ])
+        generated_c = src / f"showdown_{species}_{lane}_idle.c"
+        run([
+            sys.executable, str(framework / "tools" / "emit_soulgold_showdown_s1_c.py"),
+            "--ingest-root", str(ingest),
+            "--species", species,
+            "--lanes", lane,
+            "--asset-root", f"graphics/showdown/{species}",
+            "--output", str(generated_c),
+        ])
 
-    summary = json.loads((ingest / "summary.json").read_text(encoding="utf-8"))
-    summary["soulgold_revision"] = SOULGOLD_REV
-    summary["species"] = "Cyndaquil"
-    summary["s1_palette_policy"] = "remap_to_existing_soulgold_cyndaquil_palette"
-    summary["runtime_scope"] = "front/back idle loop; move-selection ownership only"
+    summary = {
+        "format": "soulgold-showdown-s1b-runtime-test-v1",
+        "soulgold_revision": SOULGOLD_REV,
+        "targets": [
+            {"species": "Sprigatito", "side": "player", "lane": "back"},
+            {"species": "Marill", "side": "opponent", "lane": "front"},
+        ],
+        "palette_policy": "per-species existing SoulGold normal palette",
+        "runtime_scope": "move-selection idle ownership + temporary overworld B-button battle harness",
+        "animations": manifests,
+    }
     (out / "SHOWDOWN_S1_ASSET_SUMMARY.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    print(f"Prepared Showdown S1 staging bundle: {staging}")
+    print(f"Prepared Showdown S1B staging bundle: {staging}")
     return 0
 
 
