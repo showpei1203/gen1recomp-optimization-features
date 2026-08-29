@@ -6,9 +6,12 @@ S0/S1 goals:
 - preserve a stable whole-GIF coordinate system to avoid frame jitter
 - fit each animation into a 64x64 battler canvas without upscaling
 - use one shared 15-color + transparent palette per animation, or optionally
-  remap to an existing host 16-color JASC palette for conservative integration
+  remap to an existing host JASC palette with 2..16 entries
 - preserve GIF frame timing, quantized to 60 Hz GBA ticks
 - emit PNG previews, raw 4bpp tiles, BGR555 palette, and JSON manifest
+
+Short host palettes are padded to 16 entries only for GBA storage. Color
+matching uses only the entries actually declared by the source JASC palette.
 
 This tool does not patch SoulGold. Runtime integration belongs to S1.
 """
@@ -55,7 +58,7 @@ def parse_args() -> argparse.Namespace:
                    help="Showdown file stems, e.g. cyndaquil pikachu charizard-mega-x")
     p.add_argument("--lanes", nargs="+", choices=sorted(LANE_DIRS), default=["front", "back"])
     p.add_argument("--host-palette", type=Path,
-                   help="Optional 16-entry JASC palette. Visible pixels map to entries 1..15.")
+                   help="Optional 2..16-entry JASC palette. Entry 0 is transparent; remaining declared entries are visible colors.")
     p.add_argument("--force", action="store_true")
     return p.parse_args()
 
@@ -73,20 +76,26 @@ def download_zip(cache_dir: Path) -> Path:
     return dst
 
 
-def read_jasc_palette(path: Path) -> list[tuple[int, int, int]]:
+def read_jasc_palette(path: Path) -> tuple[list[tuple[int, int, int]], int]:
     lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     if len(lines) < 3 or lines[0] != "JASC-PAL" or lines[1] != "0100":
         raise ValueError(f"Not a JASC-PAL 0100 file: {path}")
     count = int(lines[2])
+    if count < 2 or count > 16:
+        raise ValueError(f"GBA host palette must declare 2..16 entries, got {count}")
+
     entries: list[tuple[int, int, int]] = []
     for line in lines[3:3 + count]:
         parts = [int(x) for x in line.split()]
         if len(parts) != 3 or any(x < 0 or x > 255 for x in parts):
             raise ValueError(f"Invalid palette row: {line}")
         entries.append(tuple(parts))
-    if count != 16 or len(entries) != 16:
-        raise ValueError(f"GBA host palette must contain exactly 16 entries, got {len(entries)}")
-    return entries
+    if len(entries) != count:
+        raise ValueError(f"JASC palette declares {count} entries but contains {len(entries)} rows")
+
+    source_count = len(entries)
+    entries.extend([(0, 0, 0)] * (16 - len(entries)))
+    return entries, source_count
 
 
 def find_zip_member(zf: zipfile.ZipFile, lane_dir: str, species: str) -> str:
@@ -269,6 +278,7 @@ def ingest_one(
     source_desc: str,
     host_palette: list[tuple[int, int, int]] | None,
     host_palette_desc: str | None,
+    host_palette_source_count: int | None,
 ) -> dict:
     raw_frames, source_size = read_gif(data)
     frames = transform_frames(raw_frames, source_size)
@@ -279,10 +289,15 @@ def ingest_one(
         palette_bytes = encode_generated_palette(visible_palette)
         palette_policy = "generated_shared_15_plus_transparent"
     else:
-        visible_palette = list(host_palette[1:16])
+        assert host_palette_source_count is not None
+        visible_palette = list(host_palette[1:host_palette_source_count])
         transparent_rgb = host_palette[0]
         palette_bytes = encode_full_palette(host_palette)
-        palette_policy = "host_jasc_entries_1_to_15"
+        palette_policy = (
+            "host_jasc_entries_1_to_15"
+            if host_palette_source_count == 16
+            else "host_jasc_entries_1_to_n_padded_to_16"
+        )
 
     indexed = [index_frame(f.image, visible_palette, transparent_rgb) for f in frames]
 
@@ -305,7 +320,7 @@ def ingest_one(
         })
 
     manifest = {
-        "format": "soulgold-showdown-s0-v2",
+        "format": "soulgold-showdown-s0-v3",
         "species": species,
         "lane": lane,
         "source": source_desc,
@@ -315,6 +330,7 @@ def ingest_one(
         "anchor": "bottom-center",
         "palette_policy": palette_policy,
         "host_palette": host_palette_desc,
+        "host_palette_source_entries": host_palette_source_count,
         "palette_entries_visible": len(visible_palette),
         "palette_entries_total": 16,
         "frame_count": len(frames),
@@ -332,9 +348,10 @@ def main() -> int:
     args.output.mkdir(parents=True, exist_ok=True)
 
     host_palette = None
+    host_palette_source_count = None
     host_palette_desc = None
     if args.host_palette:
-        host_palette = read_jasc_palette(args.host_palette)
+        host_palette, host_palette_source_count = read_jasc_palette(args.host_palette)
         host_palette_desc = str(args.host_palette)
 
     zip_path: Path | None = None
@@ -353,6 +370,7 @@ def main() -> int:
                     results.append(ingest_one(
                         zf.read(member), species, lane, args.output,
                         f"sprites.zip:{member}", host_palette, host_palette_desc,
+                        host_palette_source_count,
                     ))
     else:
         assert args.source_dir is not None
@@ -362,11 +380,11 @@ def main() -> int:
                 src = find_source_file(args.source_dir, lane_dir, species)
                 results.append(ingest_one(
                     src.read_bytes(), species, lane, args.output, str(src),
-                    host_palette, host_palette_desc,
+                    host_palette, host_palette_desc, host_palette_source_count,
                 ))
 
     summary = {
-        "format": "soulgold-showdown-s0-summary-v2",
+        "format": "soulgold-showdown-s0-summary-v3",
         "official_source": OFFICIAL_ZIP_URL,
         "animations": results,
     }
