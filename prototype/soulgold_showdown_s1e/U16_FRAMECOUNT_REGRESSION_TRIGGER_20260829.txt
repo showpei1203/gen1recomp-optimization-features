@@ -1,0 +1,2 @@
+Purpose: trigger the S1E v1.0.5 compile/link gate after ShowdownGbaAction.frameCount and runtime frameIndex were widened from u8 to u16 for Regieleki/Xurkitree long animations.
+Expected visual/runtime behavior: unchanged from the human-PASS S1E ownership candidate.
