@@ -1,0 +1,97 @@
+name: SoulGold Showdown Full Normal Front Back Migration
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/showdown-animated-battlers
+    paths:
+      - ".github/workflows/soulgold-showdown-bulk-all-normal.yml"
+
+env:
+  SOULGOLD_REV: 77ec3fc6275bb94dd703f4c1976f1457cc44a60b
+  SHOWDOWN_SPRITES_URL: https://www.pokemonshowdown.com/files/resources/sprites.zip
+  BATCH_SIZE: 256
+
+jobs:
+  convert:
+    strategy:
+      fail-fast: false
+      matrix:
+        batch_index: [0, 1, 2, 3]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+      - name: Checkout SoulGold v1.0.5 authority
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3 python3-pil curl unzip
+      - name: Download official Showdown sprites
+        run: |
+          mkdir -p source evidence
+          curl --fail --location --retry 3 --retry-delay 2 "$SHOWDOWN_SPRITES_URL" --output source/sprites.zip
+          test -s source/sprites.zip
+      - name: Generate authoritative catalog
+        run: |
+          python3 framework/tools/showdown_bulk_catalog.py \
+            --sprites-zip source/sprites.zip \
+            --soulgold soulgold \
+            --output-json evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG.json \
+            --output-csv evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG.csv \
+            > evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG_SUMMARY.txt
+      - name: Convert full migration partition
+        run: |
+          python3 framework/tools/prepare_soulgold_showdown_bulk_batch.py \
+            --framework-root framework \
+            --catalog evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG.json \
+            --sprites-zip source/sprites.zip \
+            --soulgold soulgold \
+            --output "bulk_batch_${{ matrix.batch_index }}" \
+            --batch-index "${{ matrix.batch_index }}" \
+            --batch-size "$BATCH_SIZE" \
+            | tee "evidence/SHOWDOWN_BULK_BATCH_${{ matrix.batch_index }}_CONVERT.log"
+      - name: Audit partition
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          idx=${{ matrix.batch_index }}
+          p=Path(f'bulk_batch_{idx}')/f'SHOWDOWN_BULK_BATCH_{idx:03d}_SUMMARY.json'
+          data=json.loads(p.read_text())
+          assert data['candidate_count'] >= 1000, data['candidate_count']
+          assert data['converted_count'] > 0
+          assert data['frame_count_storage'] == 'u16'
+          src=list((Path(f'bulk_batch_{idx}')/'staging'/'src').glob('showdown_*_idle.c'))
+          manifests=list((Path(f'bulk_batch_{idx}')/'staging'/'graphics'/'showdown').glob('*/*/manifest.json'))
+          assert len(src) == data['converted_count'], (len(src), data['converted_count'])
+          assert len(manifests) == data['converted_count'] * 2, (len(manifests), data['converted_count'])
+          print(json.dumps({
+              'batch_index':idx,
+              'candidate_count':data['candidate_count'],
+              'converted_count':data['converted_count'],
+              'first':data['converted'][0]['slug'],
+              'last':data['converted'][-1]['slug'],
+          }, indent=2))
+          PY
+          ! grep -R 'PmdSoulGold\|PmdGba\|pmd_' -n "bulk_batch_${{ matrix.batch_index }}/staging/src"
+      - name: Upload migration partition
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-Showdown-All-Normal-Batch-${{ matrix.batch_index }}
+          if-no-files-found: error
+          compression-level: 6
+          path: |
+            bulk_batch_${{ matrix.batch_index }}/staging
+            bulk_batch_${{ matrix.batch_index }}/SHOWDOWN_BULK_BATCH_*.json
+            evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG_SUMMARY.txt
+            evidence/SHOWDOWN_BULK_BATCH_${{ matrix.batch_index }}_CONVERT.log
