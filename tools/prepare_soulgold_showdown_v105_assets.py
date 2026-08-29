@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-SOULGOLD_REV = "b1ec11a30e8c11be8840801855a776bf58a64dc2"
+SOULGOLD_REV = "77ec3fc6275bb94dd703f4c1976f1457cc44a60b"
 TARGETS = (("sprigatito", "back"), ("marill", "front"))
 
 
