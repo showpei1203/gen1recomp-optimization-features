@@ -1,0 +1,23 @@
+{
+  "format": "soulgold-showdown-full-rom-budget-baseline-v1",
+  "source_run_id": 33235195473,
+  "source_artifact_id": 9709888711,
+  "source_artifact_digest": "sha256:0f44bba59e238cae8c8f6b83acc2c5390f73c4f501aca8649a01aa402ff9700a",
+  "soulgold_revision": "77ec3fc6275bb94dd703f4c1976f1457cc44a60b",
+  "rom_limit_bytes": 33554432,
+  "clean_used_bytes": 31979728,
+  "clean_trailing_ff_bytes": 1574704,
+  "showdown_frame0_bytes": 1542000,
+  "sampled_incremental_bytes": {
+    "2": 1628856,
+    "3": 4864680,
+    "4": 6328660,
+    "6": 8929236,
+    "8": 11294028
+  },
+  "registry_bytes": 8016,
+  "runtime_reserve_bytes": 65536,
+  "previous_name_guess_native_reclaim_bytes": 1091320,
+  "previous_name_guess_native_reclaim_species": 641,
+  "previous_native_unresolved_count": 361
+}
