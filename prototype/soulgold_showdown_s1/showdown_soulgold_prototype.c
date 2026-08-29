@@ -1,9 +1,6 @@
 #include "global.h"
 #include "battle.h"
-#include "battle_setup.h"
 #include "battle_util.h"
-#include "pokemon.h"
-#include "script.h"
 #include "sprite.h"
 #include "constants/species.h"
 #include "showdown_gba_runtime.h"
@@ -91,29 +88,4 @@ void ShowdownSoulGoldPrototype_Reset(void)
     for (battler = 0; battler < SHOWDOWN_GBA_MAX_BATTLERS; battler++)
         ClearBinding(battler);
     ShowdownSoulGold_Reset();
-}
-
-bool32 ShowdownSoulGoldPrototype_TryStartTestBattle(u16 newKeys)
-{
-    u16 leadSpecies;
-    u8 leadLevel;
-
-    if (!(newKeys & B_BUTTON))
-        return FALSE;
-    if (ArePlayerFieldControlsLocked() || ScriptContext_IsEnabled())
-        return FALSE;
-
-    leadSpecies = GetMonData(&gPlayerParty[0], MON_DATA_SPECIES);
-    if (leadSpecies != SPECIES_SPRIGATITO)
-        return FALSE;
-
-    leadLevel = GetMonData(&gPlayerParty[0], MON_DATA_LEVEL);
-    if (leadLevel == 0 || leadLevel > MAX_LEVEL)
-        leadLevel = 5;
-
-    ZeroEnemyPartyMons();
-    CreateRandomMon(&gEnemyParty[0], SPECIES_MARILL, leadLevel);
-    gEnemyPartyCount = 1;
-    DoStandardWildBattle_Debug();
-    return TRUE;
 }
