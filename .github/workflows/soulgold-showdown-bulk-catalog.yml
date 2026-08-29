@@ -1,0 +1,57 @@
+name: SoulGold Showdown Full Catalog and ROM Budget
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/showdown-animated-battlers
+    paths:
+      - "tools/showdown_bulk_catalog.py"
+      - ".github/workflows/soulgold-showdown-bulk-catalog.yml"
+
+env:
+  SOULGOLD_REV: 77ec3fc6275bb94dd703f4c1976f1457cc44a60b
+  SHOWDOWN_SPRITES_URL: https://www.pokemonshowdown.com/files/resources/sprites.zip
+
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+      - name: Checkout SoulGold v1.0.5 authority
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3 python3-pil curl unzip
+      - name: Download official Showdown sprites
+        run: |
+          mkdir -p source
+          curl --fail --location --retry 3 --retry-delay 2 "$SHOWDOWN_SPRITES_URL" --output source/sprites.zip
+          test -s source/sprites.zip
+      - name: Build complete coverage and frame budget catalog
+        run: |
+          mkdir -p evidence
+          python3 framework/tools/showdown_bulk_catalog.py \
+            --sprites-zip source/sprites.zip \
+            --soulgold soulgold \
+            --output-json evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG.json \
+            --output-csv evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG.csv \
+            | tee evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG_SUMMARY.txt
+      - name: Upload catalog authority
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoulGold-Showdown-Full-Catalog-ROM-Budget
+          if-no-files-found: error
+          path: |
+            evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG.json
+            evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG.csv
+            evidence/SHOWDOWN_SOULGOLD_FULL_CATALOG_SUMMARY.txt
