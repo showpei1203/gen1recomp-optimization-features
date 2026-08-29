@@ -4,6 +4,5 @@
 void ShowdownSoulGoldPrototype_Init(void);
 void ShowdownSoulGoldPrototype_Tick(void);
 void ShowdownSoulGoldPrototype_Reset(void);
-bool32 ShowdownSoulGoldPrototype_TryStartTestBattle(u16 newKeys);
 
 #endif // GUARD_SHOWDOWN_SOULGOLD_PROTOTYPE_H
