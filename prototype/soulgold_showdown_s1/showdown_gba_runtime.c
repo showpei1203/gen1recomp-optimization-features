@@ -4,7 +4,7 @@ struct ShowdownGbaBattlerState
 {
     const struct ShowdownGbaAction *action;
     u16 ticksLeft;
-    u8 frameIndex;
+    u16 frameIndex;
     u8 visibleSlot;
     bool8 active;
     bool8 started;
@@ -14,7 +14,7 @@ struct ShowdownGbaBattlerState
 static const struct ShowdownGbaHostOps *sHost;
 static struct ShowdownGbaBattlerState sBattlers[SHOWDOWN_GBA_MAX_BATTLERS];
 
-static bool32 StageAndPresent(u8 battler, u8 frameIndex, u8 slot)
+static bool32 StageAndPresent(u8 battler, u16 frameIndex, u8 slot)
 {
     struct ShowdownGbaBattlerState *state = &sBattlers[battler];
     const struct ShowdownGbaFrame *frame;
@@ -120,7 +120,7 @@ void ShowdownGbaRuntime_Tick(void)
     for (battler = 0; battler < SHOWDOWN_GBA_MAX_BATTLERS; battler++)
     {
         struct ShowdownGbaBattlerState *state = &sBattlers[battler];
-        u8 nextFrame;
+        u16 nextFrame;
         u8 nextSlot;
 
         if (!state->active || state->action == NULL)
