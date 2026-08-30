@@ -1,0 +1,11 @@
+# test
+#-------------------------------
+[Map001]
+Hello, Trainer!
+Hello, Trainer!
+1
+Pikachu used Thunderbolt!
+Pikachu used Thunderbolt!
+2
+You found a Potion! \c[1]{1}\c[0]
+You found a Potion! \c[1]{1}\c[0]
