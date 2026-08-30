@@ -55,6 +55,8 @@ jobs:
                       rec = by_id.setdefault(rid, {'id': rid, 'en': '', 'zh_hant': ''})
                       if lang == EN:
                           rec['en'] = r.get(name_col, '')
+                          if category == 'species':
+                              rec['genus_en'] = r.get('genus', '')
                       else:
                           rec['zh_hant'] = r.get(name_col, '')
                           if category == 'species':
@@ -72,13 +74,13 @@ jobs:
                   'zh_hant_present': sum(bool(r.get('zh_hant')) for r in rows),
                   'zh_hant_missing': sum(not bool(r.get('zh_hant')) for r in rows),
               }
-              fields = ['category','id','en','zh_hant'] + (['genus_zh_hant'] if category == 'species' else [])
+              fields = ['category','id','en','zh_hant'] + (['genus_en','genus_zh_hant'] if category == 'species' else [])
               with (out / f'{category}_zh_hant.csv').open('w', encoding='utf-8-sig', newline='') as f:
                   w = csv.DictWriter(f, fieldnames=fields, extrasaction='ignore')
                   w.writeheader(); w.writerows(rows)
 
           with (out / 'official_zh_hant_master.csv').open('w', encoding='utf-8-sig', newline='') as f:
-              w = csv.DictWriter(f, fieldnames=['category','id','en','zh_hant','genus_zh_hant'], extrasaction='ignore')
+              w = csv.DictWriter(f, fieldnames=['category','id','en','zh_hant','genus_en','genus_zh_hant'], extrasaction='ignore')
               w.writeheader(); w.writerows(all_rows)
           (out / 'stats.json').write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding='utf-8')
           (out / 'SOURCE.txt').write_text(
