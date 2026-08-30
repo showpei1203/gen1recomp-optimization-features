@@ -1,4 +1,4 @@
-# Pokémon SoulGold mGBA Enhancement Project — M1.3 Project Handoff
+# Pokémon SoulGold mGBA Enhancement Project — Corrected Handoff
 Date: 2026-08-30
 
 ## Product direction
@@ -18,33 +18,29 @@ gbarecomp is experimental only and must not become the gameplay baseline again.
 ## Milestones
 M0: FORMAL PASS — mGBA boots SoulGold and exposes host-accessible GBA memory maps.
 M1: FORMAL PASS — live EWRAM/IWRAM state correlation works.
-M1.1: REJECTED — multiple pacing authorities caused global slow motion.
+M1.1: REJECTED — wrong frontend audio timing plus blocking caused global slow motion.
 M1.2: gameplay/visual broadly PASS; audio synchronization REJECTED.
+M1.3: REJECTED — bounded audio-master queue control treated the symptom and still allowed the frontend to run too fast.
+M1.4: ACTIVE — exact mGBA/libretro core-clock pacing.
 
-## M1.2 audio evidence
-- observed FPS 63.4293
-- source audio 65536 Hz
-- device 48000 Hz
-- queue max 588556 bytes ≈ 3.065 s
-- user observed event/battle SFX several beats behind visuals
+## Proven audio root cause
+mGBA reports `59.727501 FPS` and produces audio corresponding to one emulated frame per `retro_run` call.
 
-Root cause: source rate is now correct, but queue growth is unbounded because the frontend advances faster than the 59.7275-Hz mGBA timeline.
+M1.2:
+- observed host FPS = 63.4293
+- queue max = 588556 bytes (~3.065 s)
+- predicted excess queue from the FPS mismatch = ~572953 bytes
+- prediction error ~2.7%
 
-## M1.3 active candidate
-Bounded audio-master latency control only. No emulator change and no second absolute frame scheduler.
-- startup prebuffer ~28 ms
-- queue target ~38 ms
-- correction threshold ~55 ms
-- emergency threshold 120 ms
-- normal correction 1 ms/frame when needed
-- emergency recovery capped at 12 ms/frame
-- never delete live audio samples
+M1.3:
+- observed host FPS = 62.4737
+- queue max = 386672 bytes (~2.014 s)
+- predicted excess queue = ~366690 bytes
+- prediction error ~5.4%
 
-Machine acceptance:
-- FPS 57..62
-- source rate 64..67 kHz
-- max queue latency <=140 ms
-- battle + move state still observed
+Two independent runs therefore reproduce the queue growth from the host overclock alone. Audio queue depth is not the root cause.
+
+M1.4 uses one pacing authority only: the FPS reported by mGBA/libretro. Renderer VSYNC and audio queue depth are not clocks.
 
 ## StateBridge
 Promoted:
@@ -54,16 +50,23 @@ Promoted:
 - gBattleControllerExecFlags 0x02002994
 - gCurrentMove 0x02002AB4
 - gChosenMove 0x02002B2E
+- gBattleMons base 0x02002B34
 
-Species is PROVISIONAL. Current raw reader produced 1289 for battler0, which is invalid. Fix species correlation before M2.
+## Species correction
+The previous statement that species 1289 was invalid is withdrawn.
+
+SoulGold source authority defines:
+- `SPECIES_SPRIGATITO = 1289`
+- `SPECIES_MARILL = 183`
+
+The observed battler pair 1289 / 183 is therefore consistent with Sprigatito / Marill and is positive evidence that the current species reader is valid.
 
 ## Next sequence
-1. Validate M1.3 audio/video sync and seal desktop-host baseline.
-2. Correct and formally validate player/enemy species state.
-3. M2: one external PMD animated sprite in real mGBA SoulGold battle.
-4. Generalize PMD provider, then Showdown provider.
-5. Add Traditional Chinese host text/font layer.
-6. Android ARM64 / AYN THOR frontend.
+1. Validate M1.4 core-clock audio/video sync and seal desktop host baseline.
+2. M2: use species + move state for one external PMD animated sprite proof, with Sprigatito as the natural first candidate.
+3. Generalize PMD provider, then Showdown provider.
+4. Add Traditional Chinese host text/font layer.
+5. Android ARM64 / AYN THOR frontend.
 
 ## Handoff discipline
-Every meaningful checkpoint ships a complete ZIP and evidence. A machine PASS may never override contradictory human-visible failure.
+Every meaningful checkpoint ships a complete ZIP and evidence. Human-visible failure overrides machine PASS.
