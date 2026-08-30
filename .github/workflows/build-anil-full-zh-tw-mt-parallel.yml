@@ -1,0 +1,147 @@
+name: Build Anil full zh-TW MT parallel
+
+on:
+  push:
+    paths:
+      - '.github/workflows/build-anil-full-zh-tw-mt-parallel.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'git+https://github.com/Juvenal-Yescas/mediafire-dl.git' argostranslate opencc-python-reimplemented
+
+      - name: Download and extract runtime data
+        run: |
+          mkdir -p /tmp/anil/extracted /tmp/anil/out/Data /tmp/anil/out/translation /tmp/anil/out/evidence
+          python - <<'PY'
+          import mediafire_dl
+          url='https://www.mediafire.com/file/vqvq1km2qtp4yn9/Pokemon+Anil+DE+1.0.23+ENGLISH.zip/file'
+          out='/tmp/anil/anil.zip'
+          if not mediafire_dl.download(url,out,quiet=False): raise SystemExit('download failed')
+          PY
+          test $(stat -c%s /tmp/anil/anil.zip) -gt 500000000
+          unzip -q /tmp/anil/anil.zip -d /tmp/anil/extracted
+          GAME_ROOT=$(dirname "$(dirname "$(find /tmp/anil/extracted -type f -name messages_english_game.dat | head -n1)")")
+          test -f "$GAME_ROOT/Data/messages_game.dat"
+          test -f "$GAME_ROOT/Data/messages_english_game.dat"
+          test -f "$GAME_ROOT/Data/Scripts.rxdata"
+          echo "GAME_ROOT=$GAME_ROOT" >> "$GITHUB_ENV"
+
+      - name: Export manifest
+        run: |
+          ruby tools/rmxp_pokemon_zh_tw/toolchain/essentials_v21_dat_bridge.rb export \
+            "$GAME_ROOT/Data/messages_game.dat" "$GAME_ROOT/Data/messages_english_game.dat" \
+            /tmp/anil/out/translation/ANIL_FULL_MT_MANIFEST.tsv
+
+      - name: Install Argos models
+        run: |
+          python - <<'PY'
+          import argostranslate.package
+          argostranslate.package.update_package_index()
+          pkgs=argostranslate.package.get_available_packages()
+          ok=False
+          for fr,to in [('en','zh'),('es','en')]:
+              p=next((x for x in pkgs if x.from_code==fr and x.to_code==to),None)
+              if p:
+                  argostranslate.package.install_from_path(p.download())
+                  print('installed',fr,to)
+                  if (fr,to)==('en','zh'): ok=True
+          if not ok: raise SystemExit('en->zh model missing')
+          PY
+
+      - name: Parallel full translation
+        run: |
+          cat > /tmp/anil/translate.py <<'PY'
+          import csv,re,json,os,multiprocessing as mp
+          from pathlib import Path
+          token_re=re.compile(r'(\\[A-Za-z]+\[[^\]]*\]|\\(?:PN|PM|CN|POG|pog|[brnlmfgG])|%\{[^}]+\}|%\d*\$?[sdif]|\{(?:\d+|[A-Za-z_][A-Za-z0-9_]*)\}|\$\{[^}]+\})')
+          spanish_hint=re.compile(r'[¿¡áéíóúñÁÉÍÓÚÑ]|\b(el|la|los|las|una|uno|que|para|con|por|del|al)\b',re.I)
+
+          def worker(text):
+              if not text or not re.search(r'[A-Za-zÁÉÍÓÚÑáéíóúñ]',text): return text,text,''
+              try:
+                  import argostranslate.translate
+                  from opencc import OpenCC
+                  base=text
+                  if spanish_hint.search(base):
+                      try:
+                          e=argostranslate.translate.translate(base,'es','en')
+                          if e and e!=base: base=e
+                      except Exception: pass
+                  z=argostranslate.translate.translate(base,'en','zh')
+                  z=OpenCC('s2twp').convert(z)
+                  return text,z,''
+              except Exception as e:
+                  return text,text,repr(e)
+
+          p=Path('/tmp/anil/out/translation/ANIL_FULL_MT_MANIFEST.tsv')
+          with p.open(encoding='utf-8-sig',newline='') as f:
+              rd=csv.DictReader(f,delimiter='\t'); fields=rd.fieldnames; rows=list(rd)
+
+          segments=[]
+          for r in rows:
+              base=r.get('translation') or r.get('source') or ''
+              for part in token_re.split(base):
+                  if not part or token_re.fullmatch(part): continue
+                  for line in part.split('\n'):
+                      if line.strip(): segments.append(line)
+          uniq=list(dict.fromkeys(segments))
+          print('unique segments',len(uniq), 'cpus',os.cpu_count(), flush=True)
+          cache={}; failures=[]
+          workers=min(4,max(2,os.cpu_count() or 2))
+          with mp.Pool(processes=workers) as pool:
+              for i,(src,zh,err) in enumerate(pool.imap_unordered(worker,uniq,chunksize=8),1):
+                  cache[src]=zh
+                  if err: failures.append((src,err))
+                  if i%500==0: print('translated',i,'/',len(uniq),flush=True)
+
+          def rebuild(text):
+              out=[]
+              for part in token_re.split(text or ''):
+                  if not part: continue
+                  if token_re.fullmatch(part): out.append(part); continue
+                  ls=part.split('\n')
+                  out.append('\n'.join(cache.get(x,x) if x.strip() else x for x in ls))
+              return ''.join(out)
+
+          for r in rows:
+              r['zh_tw']=rebuild(r.get('translation') or r.get('source') or '')
+              r['status']='full_mt_argos_parallel_s2twp'
+          with p.open('w',encoding='utf-8-sig',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=fields,delimiter='\t',lineterminator='\n');w.writeheader();w.writerows(rows)
+          stats={'entries':len(rows),'zh_tw_nonempty':sum(bool(r['zh_tw']) for r in rows),'unique_segments':len(uniq),'failures':len(failures),'workers':workers}
+          Path('/tmp/anil/out/evidence/MT_STATS.json').write_text(json.dumps(stats,ensure_ascii=False,indent=2),encoding='utf-8')
+          Path('/tmp/anil/out/evidence/MT_FAILURES.txt').write_text('\n'.join(f'{a}\t{b}' for a,b in failures),encoding='utf-8')
+          print(json.dumps(stats,ensure_ascii=False,indent=2))
+          PY
+          python /tmp/anil/translate.py
+
+      - name: Build and package
+        run: |
+          ruby tools/rmxp_pokemon_zh_tw/toolchain/essentials_v21_dat_bridge.rb qa \
+            /tmp/anil/out/translation/ANIL_FULL_MT_MANIFEST.tsv /tmp/anil/out/evidence/PLACEHOLDER_QA.tsv zh_tw
+          ruby tools/rmxp_pokemon_zh_tw/toolchain/essentials_v21_dat_bridge.rb build \
+            "$GAME_ROOT/Data/messages_english_game.dat" /tmp/anil/out/translation/ANIL_FULL_MT_MANIFEST.tsv \
+            /tmp/anil/out/Data/messages_zh_tw_game.dat zh_tw
+          ruby tools/rmxp_pokemon_zh_tw/toolchain/patch_essentials_language.rb \
+            "$GAME_ROOT/Data/Scripts.rxdata" /tmp/anil/out/Data/Scripts.rxdata zh_tw 'Traditional Chinese'
+          cp "$GAME_ROOT/Data/messages_english_game.dat" /tmp/anil/out/evidence/messages_english_game.dat
+          cd /tmp/anil/out && zip -qr /tmp/ANIL_FULL_MT_INTERMEDIATE_PARALLEL.zip .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anil-full-zh-tw-mt-parallel
+          path: /tmp/ANIL_FULL_MT_INTERMEDIATE_PARALLEL.zip
+          if-no-files-found: error
+          retention-days: 30
