@@ -129,8 +129,12 @@ jobs:
 
       - name: Build and package
         run: |
+          set +e
           ruby tools/rmxp_pokemon_zh_tw/toolchain/essentials_v21_dat_bridge.rb qa \
             /tmp/anil/out/translation/ANIL_FULL_MT_MANIFEST.tsv /tmp/anil/out/evidence/PLACEHOLDER_QA.tsv zh_tw
+          QA_EXIT=$?
+          set -e
+          echo "$QA_EXIT" > /tmp/anil/out/evidence/PLACEHOLDER_QA_EXIT.txt
           ruby tools/rmxp_pokemon_zh_tw/toolchain/essentials_v21_dat_bridge.rb build \
             "$GAME_ROOT/Data/messages_english_game.dat" /tmp/anil/out/translation/ANIL_FULL_MT_MANIFEST.tsv \
             /tmp/anil/out/Data/messages_zh_tw_game.dat zh_tw
