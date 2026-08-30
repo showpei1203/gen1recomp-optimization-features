@@ -1,0 +1,70 @@
+name: Extract Anil v4.0.2 summary reference
+
+on:
+  push:
+    paths:
+      - '.github/workflows/extract-anil-v402-summary-reference.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install downloader
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'git+https://github.com/Juvenal-Yescas/mediafire-dl.git'
+
+      - name: Download current English Anil 4.0.2
+        run: |
+          mkdir -p /tmp/anil_ref
+          python - <<'PY'
+          import mediafire_dl
+          url='https://www.mediafire.com/file/4ml2qb1ldlo5h6k/Pokemon_Indigo_4.0.2.zip/file'
+          out='/tmp/anil_ref/anil402.zip'
+          if not mediafire_dl.download(url,out,quiet=False):
+              raise SystemExit('download failed')
+          PY
+          test $(stat -c%s /tmp/anil_ref/anil402.zip) -gt 600000000
+
+      - name: Extract Summary references
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/anil_ref/out
+          unzip -l /tmp/anil_ref/anil402.zip | grep -Ei 'Graphics/(UI|Translations)/.*Summary|Data/(Scripts|PluginScripts)\.rxdata' > /tmp/anil_ref/out/ZIP_MATCHES.txt || true
+          python - <<'PY'
+          import zipfile, pathlib, re
+          z=zipfile.ZipFile('/tmp/anil_ref/anil402.zip')
+          out=pathlib.Path('/tmp/anil_ref/out')
+          pats=[
+              re.compile(r'Graphics/(?:UI|Translations)/.*Summary',re.I),
+              re.compile(r'Data/(?:Scripts|PluginScripts)\.rxdata$',re.I),
+          ]
+          chosen=[]
+          for n in z.namelist():
+              if any(p.search(n) for p in pats):
+                  chosen.append(n)
+                  z.extract(n,out)
+          (out/'EXTRACTED_FILES.txt').write_text('\n'.join(chosen),encoding='utf-8')
+          print('extracted',len(chosen))
+          PY
+          find /tmp/anil_ref/out -type f -maxdepth 12 -printf '%P\t%s\n' | sort > /tmp/anil_ref/out/EXTRACTED_SIZES.txt
+          grep -Ei 'bg_memo|summary' /tmp/anil_ref/out/EXTRACTED_SIZES.txt | head -200 || true
+
+      - name: Package reference
+        run: |
+          cd /tmp/anil_ref/out
+          zip -qr /tmp/ANIL_V402_SUMMARY_REFERENCE.zip .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anil-v402-summary-reference
+          path: /tmp/ANIL_V402_SUMMARY_REFERENCE.zip
+          if-no-files-found: error
+          retention-days: 7
