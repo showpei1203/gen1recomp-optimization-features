@@ -1,53 +1,55 @@
-# SoulGold M1.3 Audio Latency Authority
+# SoulGold M1.3 Audio Latency Authority — CORRECTED
 Date: 2026-08-30
 
-## Architecture
-- mGBA is the permanent GBA hardware correctness authority.
-- Gen1 enhancement layer owns SoulGold state observation, external PMD/Showdown assets, localization, and host UI.
-- gbarecomp is optional/experimental only and may not block the mainline.
+## Status
+M1.3 is REJECTED.
 
-## M1.2 result
-Gameplay/visual behavior was broadly accepted by the user, but audio synchronization was rejected: event and battle SFX lagged the picture by several beats.
+User-visible result:
+- gameplay/visuals broadly normal
+- event and battle SFX still clearly delayed behind the picture
 
-Evidence: `SOULGOLD_M1_2_AVCLOCK_FIX_EVIDENCE_20260830_173409.zip`
+Machine evidence:
+- observed FPS: 62.4737
+- mGBA target FPS: 59.727501
+- source audio rate: 65536 Hz
+- device rate: 48000 Hz
+- queue max: 386672 bytes = ~2014 ms
+- bounded pacing calls: 2564
+- nominal paced wait: 30658 ms
 
-Measured:
-- observed FPS: 63.4293
-- mGBA audio source rate: 65536 Hz
-- SDL device rate: 48000 Hz
-- queue min: 732 bytes
-- queue max: 588556 bytes
-- queue max at 48 kHz stereo S16: ~3065 ms
+## Correct root cause
+The queue is a symptom, not the authority.
 
-The M1.2 source-rate correction was successful, but its queue was unbounded. The host was running ~6.2% faster than the mGBA 59.7275-Hz timeline, so audio accumulated continuously and became seconds late.
+M1.2 ran `retro_run` at 63.4293 FPS while mGBA reports 59.727501 FPS. At 48 kHz stereo S16, that predicts about 572953 bytes of excess queued audio during the 48.1481-s run. Observed queue max was 588556 bytes, only ~2.7% different.
 
-## M1.3 repair
-Narrow frontend scheduling fix only:
-- mGBA unchanged
+M1.3 ran at 62.4737 FPS. The same calculation predicts about 366690 bytes of excess queue during the 41.5375-s run. Observed queue max was 386672 bytes, ~5.4% different.
+
+This two-run match proves the accumulating SE delay is caused by the frontend calling `retro_run` faster than mGBA's reported game clock. The bounded audio-master queue controller did not fix that root timing error and is retired.
+
+## M1.4 direction
+Use one clock only:
+- mGBA/libretro reported FPS is the frontend cadence authority
+- call `retro_run` once per 1/59.727501 s
+- renderer VSYNC is not a pacing authority
+- audio queue depth is telemetry only
+- no queue-based gameplay throttling
+- no audio sample deletion
 - dynamic 65536-Hz source-rate handling retained
-- no queue deletion
-- no second absolute video scheduler
-- audio queue is used as a bounded drift signal
-- startup prebuffer ~28 ms
-- target ~38 ms
-- normal correction begins above ~55 ms
-- emergency threshold 120 ms
-- normal correction waits at most 1 ms per emulated frame
-- emergency recovery waits at most 12 ms per frame
 
-Acceptance:
-- observed FPS 57..62
-- source rate 64..67 kHz
-- max queue latency <= 140 ms
-- battle and move state remain observable
+## StateBridge correction
+The earlier statement that species 1289 was invalid is REVOKED.
 
-## StateBridge authority
-Promoted read-only fields:
+SoulGold source authority defines:
+- `SPECIES_SPRIGATITO = 1289`
+- `SPECIES_MARILL = 183`
+
+Therefore the observed battler species pair 1289 / 183 is consistent with Sprigatito / Marill and supports the current species reader.
+
+Promoted read-only state:
 - gBattleTypeFlags = 0x0200271C
 - gBattlersCount = 0x02002720
 - gBattleStruct = 0x02002724
 - gBattleControllerExecFlags = 0x02002994
 - gCurrentMove = 0x02002AB4
 - gChosenMove = 0x02002B2E
-
-Species parsing is NOT promoted. The current reader produced `battler0_species_raw=1289`, which is invalid for this game. Species layout must be corrected before M2 PMD sprite selection.
+- gBattleMons base = 0x02002B34
