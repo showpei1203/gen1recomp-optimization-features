@@ -1,0 +1,166 @@
+name: Repair Anil full zh-TW v0.4 protected tokens
+
+on:
+  push:
+    paths:
+      - '.github/workflows/repair-anil-full-zh-tw-v04.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download successful full MT artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: anil-full-zh-tw-mt-intermediate
+          run-id: 33306812586
+          github-token: ${{ github.token }}
+          path: /tmp/input
+
+      - name: Extract artifact
+        run: |
+          mkdir -p /tmp/anil
+          unzip -q /tmp/input/ANIL_FULL_MT_INTERMEDIATE.zip -d /tmp/anil
+          test -f /tmp/anil/translation/ANIL_FULL_MT_MANIFEST.tsv
+          test -f /tmp/anil/evidence/messages_english_game.dat
+
+      - name: Install repair translator
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install argostranslate opencc-python-reimplemented
+          python - <<'PY'
+          import argostranslate.package
+          argostranslate.package.update_package_index()
+          p=next(x for x in argostranslate.package.get_available_packages() if x.from_code=='en' and x.to_code=='zh')
+          argostranslate.package.install_from_path(p.download())
+          print('installed en->zh')
+          PY
+
+      - name: Repair protected tokens and markup
+        run: |
+          cat > /tmp/repair.py <<'PY'
+          import csv,re,json,collections
+          from pathlib import Path
+          import argostranslate.translate
+          from opencc import OpenCC
+
+          path=Path('/tmp/anil/translation/ANIL_FULL_MT_MANIFEST.tsv')
+          with path.open(encoding='utf-8-sig',newline='') as f:
+              rd=csv.DictReader(f,delimiter='\t'); fields=rd.fieldnames; rows=list(rd)
+
+          # Protect Essentials controls, printf tokens, Ruby interpolation, HTML-like tags and control bytes.
+          token_re=re.compile(r'(\\[A-Za-z]+(?:\[[^\]]*\])?|\\(?:PN|PM|CN|POG|pog|[brnlmfgG])|%\{[^}]+\}|%\d*\$?[sdif]|#\{[^}]+\}|\{(?:\d+|[A-Za-z_][A-Za-z0-9_]*)\}|\$\{[^}]+\}|</?[A-Za-z]+(?:\s+[^>]*)?>|[\x01-\x08\x0b\x0c\x0e-\x1f])')
+          ass_re=re.compile(r'\{\\(?:fn|fs|bord|shad|[1234]?[ac]|fscx|fscy)[^}]*\}',re.I)
+          cc=OpenCC('s2twp')
+          cache={}
+
+          def toks(s): return collections.Counter(token_re.findall(s or ''))
+          def mt_visible(s):
+              if not s or not re.search(r'[A-Za-z]',s): return s
+              if s in cache: return cache[s]
+              z=cc.convert(argostranslate.translate.translate(s,'en','zh'))
+              z=ass_re.sub('',z)
+              cache[s]=z
+              return z
+          def translate_protected(s):
+              out=[]
+              for part in token_re.split(s or ''):
+                  if not part: continue
+                  if token_re.fullmatch(part): out.append(part)
+                  else: out.append('\n'.join(mt_visible(x) if x.strip() else x for x in part.split('\n')))
+              return ''.join(out)
+
+          bad=[]
+          for r in rows:
+              base=r.get('translation') or r.get('source') or ''
+              if toks(base)!=toks(r.get('zh_tw','')) or ass_re.search(r.get('zh_tw','')):
+                  bad.append(r)
+          print('repair candidates',len(bad),flush=True)
+
+          for i,r in enumerate(bad,1):
+              base=r.get('translation') or r.get('source') or ''
+              r['zh_tw']=translate_protected(base)
+              r['status']='v04_token_repair'
+              if i%100==0: print('repaired',i,'/',len(bad),flush=True)
+
+          # Curated fixes for known MT corruption / gameplay-facing strings.
+          fixes={
+          '276125fd131e9b4c': r'\c[1]<b>\v[12]</b>\c[0]：哈！你正好中了這一招，\PN！',
+          '70f1e2bbe11372f4': '啊，你來啦！我丈夫正在找你。',
+          '3cf27a95ffba936e': "蔥遊兵",
+          '3805b832219955af': '使用者蓄積能量，提高下一次使出的電屬性招式威力。也會提高特防。',
+          'e53adbca962d9ff5': '如同唱歌般噴出熊熊燃燒的火焰。會提高自己的特攻。',
+          'a7e7c5420df546e1': '出場時會讓天氣變為下雨，持續5回合。攜帶潮濕岩石時持續8回合。',
+          'fa321c35f6d7b278': '出場時會讓天氣變為大晴天，持續5回合。攜帶熾熱岩石時持續8回合。',
+          '119c2c4f4bcbccfb': '{1}擊中了要害，似乎想得到你的稱讚！',
+          '98c34a4913d709b1': '"HP上限<r>#{hp_sign}{1}\n攻擊<r>#{atk_sign}{2}\n防禦<r>#{def_sign}{3}\n特攻<r>#{spa_sign}{4}\n特防<r>#{spd_sign}{5}\n速度<r>#{spe_sign}{6}"',
+          '23f756c612f09e45': '{1}正散發著黑暗氣場！',
+          'ed77c780103bfab7': '{1}正散發著爆發般的氣場！',
+          '855350143966ad9b': '"HP上限<r>+{1}\n攻擊<r>+{2}\n防禦<r>+{3}\n特攻<r>+{4}\n特防<r>+{5}\n速度<r>+{6}"',
+          'a96698e00c50ebb7': '{1}正在啃食飄落的雪花。',
+          '594af4304f945bfe': '{1}正為了{2}格外努力！',
+          '5df376c208ae5ec0': "#{pokemon.name}的特性已隨機化。",
+          '796aff41fdcf8cf7': '嗯……！\x01',
+          '44e734fa027a4ca8': '{1}正在戳弄{2}腳邊的地面。',
+          '38563d637faef021': '<ac>#{title_text}</ac>',
+          '6ec13fe31dbeb2fb': "#{pokemon.name}的特性組合已隨機化！",
+          'cc9d452169f91803': '"HP上限<r>#{hp_sign}{1}\n攻擊<r>#{atk_sign}{2}\n防禦<r>#{def_sign}{3}\n特攻<r>#{spa_sign}{4}\n特防<r>#{spd_sign}{5}\n速度<r>#{spe_sign}{6}"',
+          '1ba8875bd13c3632': '用來回憶為生活增添光彩之清爽善舉的緞帶。'
+          }
+          byid={r['entry_id']:r for r in rows}
+          for k,v in fixes.items():
+              byid[k]['zh_tw']=v.encode('utf-8').decode('unicode_escape') if '\\x01' in v else v
+              byid[k]['status']='v04_curated_fix'
+
+          # Official battle command wording.
+          for r in rows:
+              if (r.get('translation') or '').strip()=='Run' and r['section_name']=='SCRIPT_TEXTS':
+                  if r['entry_id'] in ('ebf3e9996c0a97f0','093fea217b90f7f5','46aaae2e979ffae2'):
+                      r['zh_tw']='逃走'; r['status']='v04_official_ui_fix'
+
+          issues=[]
+          ass_left=[]
+          for r in rows:
+              base=r.get('translation') or r.get('source') or ''
+              if toks(base)!=toks(r.get('zh_tw','')):
+                  issues.append((r['entry_id'],r['section_name'],base,r.get('zh_tw','')))
+              if ass_re.search(r.get('zh_tw','')): ass_left.append(r['entry_id'])
+
+          with path.open('w',encoding='utf-8-sig',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=fields,delimiter='\t',lineterminator='\n'); w.writeheader(); w.writerows(rows)
+          Path('/tmp/anil/evidence/ROBUST_TOKEN_QA.tsv').write_text('entry_id\tsection\tbase\tzh_tw\n'+'\n'.join('\t'.join(str(x).replace('\t',' ') for x in q) for q in issues),encoding='utf-8')
+          stats={'entries':len(rows),'repair_candidates':len(bad),'robust_token_issues':len(issues),'ass_markup_left':len(ass_left),'cache':len(cache)}
+          Path('/tmp/anil/evidence/REPAIR_STATS.json').write_text(json.dumps(stats,ensure_ascii=False,indent=2),encoding='utf-8')
+          print(json.dumps(stats,ensure_ascii=False,indent=2))
+          if issues or ass_left: raise SystemExit(2)
+          PY
+          python /tmp/repair.py
+
+      - name: Rebuild DAT and old QA
+        run: |
+          ruby tools/rmxp_pokemon_zh_tw/toolchain/essentials_v21_dat_bridge.rb qa \
+            /tmp/anil/translation/ANIL_FULL_MT_MANIFEST.tsv /tmp/anil/evidence/PLACEHOLDER_QA_REPAIRED.tsv zh_tw
+          ruby tools/rmxp_pokemon_zh_tw/toolchain/essentials_v21_dat_bridge.rb build \
+            /tmp/anil/evidence/messages_english_game.dat /tmp/anil/translation/ANIL_FULL_MT_MANIFEST.tsv \
+            /tmp/anil/Data/messages_zh_tw_game.dat zh_tw
+          sha256sum /tmp/anil/Data/* /tmp/anil/translation/ANIL_FULL_MT_MANIFEST.tsv > /tmp/anil/evidence/SHA256SUMS_REPAIRED.txt
+
+      - name: Package repaired layer
+        run: |
+          cd /tmp/anil
+          zip -qr /tmp/ANIL_FULL_MT_TOKEN_REPAIRED_v04.zip .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anil-full-zh-tw-token-repaired-v04
+          path: /tmp/ANIL_FULL_MT_TOKEN_REPAIRED_v04.zip
+          if-no-files-found: error
+          retention-days: 30
