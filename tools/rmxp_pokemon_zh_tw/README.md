@@ -2,6 +2,9 @@
 
 目標：把 Pokémon Essentials / RPG Maker XP 同人作品的繁中化工作，從人工逐事件點擊改成可重複、可驗證、可更新的管線。
 
+## 正式策略：Essentials-first
+目前主要目標鎖定 **Pokémon Essentials v17-v21+**。一般作品優先使用 Essentials 原生的 Extract Text / Compile Text 機制。只有遇到非標準或高度魔改作品，才啟用 Ruby/PBS 掃描或新增 adapter。這比一開始就直接改 `MapXXX.rxdata` 穩定得多，也比較不像拿鏈鋸修手錶。
+
 ## v0.1.0
 - 偵測 Essentials 常見結構與新舊訊息格式線索。
 - 支援 Essentials Extract Text 產出的 `intl.txt` 與 `Text_*/*.txt`。
@@ -23,4 +26,4 @@
 7. 回 Essentials Debug 用 Compile Translated Text / Compile Text 生成語言 `.dat`。
 8. 實機驗收字型、對話框、戰鬥 UI、選單與存檔。
 
-v0.1.0 不直接改 `MapXXX.rxdata`。優先走 Essentials 自己的抽取/編譯機制，避免把二進位資料變成考古現場。
+v0.1.0 不直接改 `MapXXX.rxdata`。標準 Essentials 專案走原生翻譯管線；binary surgery 只當 fallback。
