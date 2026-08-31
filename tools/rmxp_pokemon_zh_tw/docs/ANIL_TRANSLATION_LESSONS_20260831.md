@@ -22,16 +22,25 @@
 - 任何實機新 bug 都應加入 reusable lint，而不是只修 Anil 單一 entry。
 
 ## v0.7.5 / Map 41–54 新增教訓
-1. **同一個錯誤 MT 值不代表同一個原句。** 小剛道館兩句不同台詞曾被機翻成完全相同的中文。若用 value-based replace，會把其中一句錯修成另一句。DAT 必須以 section/map/key 精確定位。
-2. **source 與 English edition translation 可能不同。** 玩家實際使用的 English edition `translation` 欄是主要語意與控制碼 authority；西文 source 只用來補充上下文。不可把兩個版本的 HTML tag 混在一起。
+1. **同一個錯誤 MT 值不代表同一個原句。** 不可 value-based global replace，DAT 必須以 section/map/key 精確定位。
+2. **source 與 English edition translation 可能不同。** 玩家實際使用的 English edition `translation` 欄是主要語意與控制碼 authority；西文 source 只用來補充上下文。
 3. **專名音譯漏網要資料化。** Cubone/Graveler/Sudowoodo/Clefairy/Spearow/Farfetch'd/Pidgeot 等錯音譯已加入 known-bad pattern table。
 4. **固定遊戲功能詞不可逐字機翻。** Technical Machine、Move Reminder、Trainer、Rock-type 應先套詞庫，再處理句子。
 5. **寄放屋、交換、道館提示適合建立固定句型模板。** 這些流程跨地圖重複，人工校訂後應復用一致中文。
 
-## v0.7.5 執行結果
-- Map 41–54：186 條 EVENT_TEXT 全部重新檢閱。
-- 152 條 EVENT_TEXT 實際改寫。
-- 額外跨 section 官方詞彙/音譯修復 20 條。
-- `full_mt_argos_s2twp` 狀態降至 9,900 條。
-- data-driven quality lint HARD issue = 0。
+## v0.7.7 / Map 56–61 新增教訓
+1. **高曝光劇情含大量英語軍事梗、雙關與慣用語。** 馬志士、小霞、聖安奴號與火箭隊事件若直接逐字 MT，會出現「蛋糕戰爭」「黨拉屎」「聰明的褲子」等結果。這類地圖必須整批人工 review。
+2. **抓到一個新錯譯時要立即全庫掃描。** 新增 Ariana/Archer、Starmie、Lugia 等 known-bad pattern 後，全 21,438 條 manifest 又抓出 17 筆散落在後期 Map、Pokédex、Item Description、Trainer Name 的同類殘留；同 checkpoint 已全部清零。
+3. **Pokémon 交換句型要模板化。** `trade` 曾被翻成「賣」，物種名又被音譯。固定使用「\PN用A交換到了B！」並優先套官方物種名。
+4. **官方角色名也屬於 proper noun authority。** Ariana 使用台灣官方「雅典娜」，Archer 使用「阿波羅」，不能保留英語音譯。
+5. **全庫 lint 的價值高於單區人工審稿。** Map 56–61 審完後，data-driven lint 仍能跨 section 找到舊污染，證明 EVENT_TEXTS、Pokédex、Item Description、Trainer Name 必須共用同一套 QA。
+
+## v0.7.7 執行結果
+- Map 56–61：233 條 EVENT_TEXT 全部人工檢閱。
+- Map 56–58：124 條 review，114 條實際改寫。
+- Map 59–61：109 條 review，106 條實際改寫。
+- 全庫 known-bad lint 額外抓出 17 條並全部修正。
+- 相較 v0.7.5，DAT 共有 237 個值改變。
+- `full_mt_argos_s2twp` 降至 9,775 條。
+- known-bad HARD issue = 0。
 - Marshal structure issue = 0。
