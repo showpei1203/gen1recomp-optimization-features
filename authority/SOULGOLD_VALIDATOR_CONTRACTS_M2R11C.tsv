@@ -1,0 +1,5 @@
+# regression_id	status	superseded_by	contract	validator_owner
+R-SD-024	superseded	R-SD-039	PLAYER_HEALTHBOX_OCCLUDER_ONLY_DURING_OPPONENT_DOWNWARD_FAINT_MOTION	none
+R-SD-039	active	-	PLAYER_HEALTHBOX_ALWAYS_ABOVE_OPPONENT_FRONT	validate_m2r11b_hud_priority.py
+R-SD-040	active	-	ACTIVE_VALIDATORS_MUST_TRACK_CURRENT_SEMANTICS_AND_SUPERSESSIONS	validate_validator_contracts.py
+R-SD-041	active	-	XS_BODY_SIZE_CLASS_BASE_SCALE_EQUALS_0_60	validate_m2r11_perceptual_scaling.py
