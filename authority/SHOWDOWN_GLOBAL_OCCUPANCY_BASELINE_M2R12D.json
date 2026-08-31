@@ -1,0 +1,16 @@
+{
+  "authority": "M2R12C_502_PROVIDER_RENDERED_FOOTPRINT_AUDIT",
+  "evidence": "SOULGOLD_M2R12C_FULL_GEN1_2_SCALEOUT_EVIDENCE_20260901_061234.zip",
+  "measurement_stage": "post_crop_post_M2R12C_display_footprint",
+  "safe_display_envelope_px": {"width": 100, "height": 88},
+  "safe_display_occupancy_vs_240x160": {"width_ratio": 0.4166666666666667, "height_ratio": 0.55},
+  "providers_scanned": 502,
+  "global_fit_scale": 0.8771929824561402,
+  "worst_providers": [
+    {"species": 226, "slug": "mantine", "side": "front", "display_w": 114.00000000000001, "display_h": 51.34351145038168},
+    {"species": 244, "slug": "entei", "side": "back", "display_w": 114.0, "display_h": 75.42857142857143},
+    {"species": 226, "slug": "mantine", "side": "back", "display_w": 113.99999999999999, "display_h": 58.367999999999995},
+    {"species": 249, "slug": "lugia", "side": "back", "display_w": 113.99999999999999, "display_h": 92.28571428571428}
+  ],
+  "rule": "Use the strongest shrink required by the existing displayed 502-provider set as one synchronized global shrink. Then apply class-relative multipliers <=1.0. Keep a final 100x88 emergency cap."
+}
