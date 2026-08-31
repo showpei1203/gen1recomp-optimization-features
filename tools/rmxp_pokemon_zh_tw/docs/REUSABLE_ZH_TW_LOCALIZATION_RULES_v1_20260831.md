@@ -1,80 +1,62 @@
-# RMXP / Pokémon Essentials 繁體中文化可重用規則 v1.2
+# RMXP / Pokémon Essentials 繁體中文化可重用規則 v1.6
 
 ## 核心原則
-繁中化不是把所有 String 交給翻譯器。先分類、保護機器字串與控制碼，再翻玩家可見內容，最後以靜態 QA + 實機截圖驗證。
+繁中化必須先分類字串，再翻譯玩家可見內容。任何機器路徑、內部 key、控制碼、品牌識別或 UI opaque label 都先保護。靜態 QA 只是一道門，實機畫面仍是最高優先級的驗證輸入。
 
-## 既有必守規則
-1. 玩家可見劇情/NPC/說明可翻；UI 短詞只走受控詞庫。
-2. `Graphics/`、`Audio/`、`Data/`、`Plugins/` 路徑、UI suffix/key 永不翻譯。
-3. `\v[]`、`\PN`、`\c[]`、`%s`、`{1}`、`{1:03d}`、`#{...}`、HTML tags 先保護再翻。
-4. Pokémon、人物、地名、招式、特性、道具名先套官方台灣詞庫，禁止 MT 自由音譯。
-5. CJK 換行在文字 formatter 處理，不逐句人工塞換行，也不以全域 Bitmap hook 破壞 UI。
-6. Map 名稱需查 exact-version `MapInfos.rxdata`；不能假設所有文字都在 messages DAT。
-7. 長工作先 checkpoint，再 QA；QA fail 不得把完整成果一起丟掉。
-8. 每個實機新錯誤都必須轉成：根因 → 規則 → lint/test → handoff。
+## 既有封版規則
+1. `Graphics/`、`Audio/`、`Data/`、`Plugins/` 資源路徑永不翻譯。
+2. Modular UI suffix/key，例如 `memo/info/moves/skills/ribbons/forms/area/data/egg/allstats` 永不翻譯。
+3. `\v[]`、`\PN`、`\c[]`、`%s`、`{1}`、`{1:03d}`、`#{...}`、HTML tags 必須先保護，翻譯後序列一致。
+4. Pokémon、人物、地名、招式、特性、道具名先套台灣官方用語，不允許 MT 自由音譯。
+5. CJK 換行在 formatter 層處理，不逐句手塞換行，也不使用全域 `Bitmap#draw_text` hook。
+6. Map 標題需檢查 exact-version `MapInfos.rxdata`。
+7. DAT patch 必須以 section/map/key 精確定位；禁止拿舊中文值做全域 replace。
+8. English edition `translation` 欄是主要語意與控制碼 authority；source 只補上下文。
 
-## 雙語 authority 規則
-Anil 的 runtime key 是西班牙文，但 English edition 的 `translation` 欄可能做過改寫，甚至刪減/變更 HTML tag。
-- 玩家實際要玩的 English edition 語意，以 `translation` 欄為主要語意 authority。
-- `source` 欄只用於補充上下文、人物語氣與歧義判讀。
-- 控制碼與 HTML tag 序列必須跟 target-edition 的 `translation` 保持一致。
-- 不可因為 source 裡多了一個 `<b>` 就把它擅自加回繁中。
+## v1.6：source-aware terminology contract
+只靠「壞中文黑名單」抓不到所有錯誤。當英文 authority 已明確包含某個 Pokémon 專用概念時，繁中必須滿足對應契約。
 
-## DAT patch 必須 key-based
-不可用「舊翻譯值 → 新翻譯值」做全域 replace。不同 source key 可能被 MT 翻成相同中文，但人工修正後需要不同句子。
-- EVENT_TEXTS：以 `(section_id=0, map_id, source/key)` 精確定位。
-- 其他 Hash section：以 `(section_id, key)` 精確定位。
-- Patch 後必跑 Marshal class/length/hash-key structure compare。
+目前自動檢查：
+- English 含 `critical hit` → zh-TW 必須使用「要害」語彙。
+- English 含 `Pokévial` / `Poké Vial` → 繁中保留自訂品牌 `Pokévial`。
+- English 含 `Coin Case` → 使用「代幣盒」。
+- English 含 `Abilities Expert` → 使用「特性專家」。
+- `<b>TRAINER TIP:</b>` → `<b>訓練家提示：</b>`。
+- English 正好為 `P0/P1/P2/P3` → target 必須完全相同，不得把 opaque UI label 機翻。
 
-## proper-noun transliteration regression
-任何 Pokémon 專名音譯污染都列為 HARD FAIL。已收錄案例包括：
-- Brock → 布洛克 → 小剛
-- Ariana → 阿里安納 → 雅典娜
-- Archer → 阿徹 → 阿波羅
-- Cubone → 庫邦 → 卡拉卡拉
-- Graveler → 格雷夫勒 → 隆隆石
-- Sudowoodo → 蘇杜多 → 樹才怪
-- Clefairy → 克蕾費 → 皮皮
-- Spearow → 斯皮洛 → 烈雀
-- Farfetch'd → 法菲奇 → 大蔥鴨
-- Pidgeot → 皮奇奧 → 大比鳥
-- Ninetales → 尼尼塔萊斯 → 九尾
-- Charmander → 查曼德 → 小火龍
-- Totodile → 託多迪爾 → 小鋸鱷
-- Starmie → 斯塔米 → 寶石海星
-- Bellossom → 貝爾洛瑟姆 → 美麗花
-- Rapidash → 拉皮塔什 → 烈焰馬
-- Cyndaquil → 辛達基爾 → 火球鼠
-- Bulbasaur → 布巴索爾 → 妙蛙種子
-- Lugia → 盧吉亞 → 洛奇亞
+`Mega Stone` → `超級石` 與 `寶可夢號` 類 suffix 污染也由 source-aware lint 掃描。v0.8.5 已清至 0。
 
-## phrase-level idiom regression
-英語笑點、慣用語不能逐字 MT。已證明的 HARD 案例：
-- `Smell ya!` / `Smell you later` → 不可「聞聞你／晚點聞聞」，依語境翻「先走啦／回頭見」。
-- `party pooper` → 不可「黨拉屎」，依語境翻「掃興鬼」。
-- `smarty-pants` → 不可「聰明的褲子」，依角色口吻翻「聰明人／自作聰明的傢伙」。
-- `Drats` → 不可音譯成「德拉特斯」。
-- `cakewalk` → 不可按 cake 逐字理解，應譯為「輕鬆／容易」。
+## opaque label / custom brand
+短字串不代表可自由翻譯。像 `P0/P1/P2/P3` 可能是 UI/樓層/狀態識別；未確認語意前必須保持 target-edition 原值。
 
-## 全庫回歸規則
-實機或人工審稿抓到一個新錯譯時，不只修單一 entry：
-1. 加入 `known_bad_patterns.tsv`。
-2. 立即重跑全 manifest。
-3. 同類錯誤即使出現在後期 Map、Pokédex、Item Description、Trainer Name，也要在同一 checkpoint 清乾淨。
-4. HARD issue 必須回到 0 才能封 checkpoint。
+自訂功能名稱也不能被 MT 音譯：
+- `Pokévial` 保留 `Pokévial`
+- `PokéRider` 保留 `PokéRider`
+若未來決定正式中文命名，必須透過受控 glossary 一次改，不可讓 MT 自行產生「波克維亞／波克瑞德」。
 
-## 固定功能詞模板
-寄放屋、交換、道館提示、Berry 狀態恢復、招式學習器等跨地圖重複流程應建立固定句型，不交給自由 MT。例如交換句型：`\PN用九尾交換到了小火龍！`。
+## source-aware 批次清理
+若 lint 能由 English source 精準判斷詞義，應採 source-aware 修正。例如 source 含 `Mega Stone` 時才把錯誤「巨石」修為「超級石」，不能全域替換所有「巨石」，否則會傷到真正的巨石、地形或物種分類。
 
-## 每批人工潤稿的封版條件
-- 該批 Map 的 EVENT_TEXTS 全部人工 review，不能只挑 `full_mt_argos_s2twp`。
-- placeholder/control token sequence = 0 mismatch。
-- Ruby interpolation/format spec = 0 mismatch。
-- HTML tag sequence = 0 mismatch。
-- resource path translated = 0。
-- protected suffix/key translated = 0。
-- known bad pattern HARD = 0。
-- Marshal section/type/key structure = unchanged。
-- Scripts count/targeted diff。
-- ZIP integrity PASS。
-- JoiPlay/AYN THOR：Battle HUD、Move menu、Summary、地名、長對話換行實機 regression。
+## 人工 Map review
+- 一個 batch 必須把指定 Map 的所有 EVENT_TEXT 都看過，不只挑 MT status。
+- 已人工確認但文字不需改，也要在 handover 記錄 review coverage。
+- 完成 Map review 後立刻跑全庫 lint，跨 section 清同類污染。
+
+## HANDOVER 強制規則
+每一次有實質修改的公開版或 INTERNAL checkpoint 都必須：
+1. 產生/刷新 `handoff/CURRENT_HANDOVER.md`。
+2. ZIP 內包含 handover、policy、必要 QA evidence。
+3. artifact 同步 Drive，handover/規則同步 GitHub。
+4. handover 明確寫出 baseline、完成內容、SEALED、不確定事項、下一個精確 Map/工作起點。
+5. 新工作階段先讀 CURRENT_HANDOVER 再改檔。
+
+## 每 checkpoint 封版條件
+- known-bad HARD = 0
+- source-aware HARD = 0
+- placeholder / Ruby interpolation / HTML / control token mismatch = 0
+- resource path translated = 0
+- protected suffix/key translated = 0
+- manifest → DAT = 0 mismatch
+- Marshal section/type/key structure = unchanged
+- ZIP integrity PASS
+- 公開候選版另需 AYN THOR + JoiPlay 實機 regression
