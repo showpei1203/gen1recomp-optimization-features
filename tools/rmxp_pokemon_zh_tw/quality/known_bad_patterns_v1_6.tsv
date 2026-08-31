@@ -1,0 +1,85 @@
+pattern	severity	category	preferred_fix	note
+佛德童子	HARD	MT_CORRUPTION	use official Berry/Poffin template	Observed in multiple berry descriptions
+晚點聞聞	HARD	IDIOM	回頭見/晚點見	Smell you later must not be literal
+聞聞你	HARD	IDIOM	先走啦/回頭見	Smell ya must not be literal
+喬瓦尼	HARD	PROPER_NOUN	坂木	Official Taiwan Pokémon name
+小組火箭	HARD	PROPER_NOUN	火箭隊	Official Taiwan Pokémon term
+撲克舞會	HARD	PROPER_NOUN	精靈球	Poké Ball corruption
+(韓語)	HARD	LANGUAGE_CONTAMINATION	manual review	MT contamination
+(簡體中文)	HARD	LANGUAGE_CONTAMINATION	manual review	MT contamination
+搖滾屬性	HARD	POKEMON_TERM	岩石屬性	Rock-type MT corruption
+技術機器	HARD	POKEMON_TERM	招式學習器	Technical Machine literal MT corruption
+培訓員	HARD	POKEMON_TERM	訓練家	Trainer must use Taiwan Pokémon terminology
+移動提醒器	HARD	POKEMON_TERM	招式回憶	Move Reminder literal MT corruption
+大球隊	HARD	POKEMON_TERM	超級球	Great Ball token split corruption
+格雷夫勒	HARD	PROPER_NOUN	隆隆石	Graveler transliteration leak
+蘇杜多	HARD	PROPER_NOUN	樹才怪	Sudowoodo transliteration leak
+庫邦	HARD	PROPER_NOUN	卡拉卡拉	Cubone transliteration leak
+克蕾費	HARD	PROPER_NOUN	皮皮	Clefairy transliteration leak
+斯皮洛	HARD	PROPER_NOUN	烈雀	Spearow transliteration leak
+法菲奇	HARD	PROPER_NOUN	大蔥鴨	Farfetch'd transliteration leak
+皮奇奧	HARD	PROPER_NOUN	大比鳥	Pidgeot transliteration leak
+布洛克	HARD	PROPER_NOUN	小剛	Brock transliteration leak; verify false positives if used outside name context
+黨拉屎	HARD	IDIOM	掃興鬼	Party pooper literal MT corruption
+聰明的褲子	HARD	IDIOM	聰明人/自作聰明的傢伙	Smarty-pants literal MT corruption
+德拉特斯	HARD	MT_CORRUPTION	可惡/糟糕	Drats transliteration leak
+阿里安納	HARD	PROPER_NOUN	雅典娜	Ariana official Taiwan Pokémon name
+阿徹	HARD	PROPER_NOUN	阿波羅	Archer official Taiwan Pokémon name
+尼尼塔萊斯	HARD	PROPER_NOUN	九尾	Ninetales transliteration leak
+查曼德	HARD	PROPER_NOUN	小火龍	Charmander transliteration leak
+託多迪爾	HARD	PROPER_NOUN	小鋸鱷	Totodile transliteration leak
+斯塔米	HARD	PROPER_NOUN	寶石海星	Starmie transliteration leak
+貝爾洛瑟姆	HARD	PROPER_NOUN	美麗花	Bellossom transliteration leak
+拉皮塔什	HARD	PROPER_NOUN	烈焰馬	Rapidash transliteration leak
+辛達基爾	HARD	PROPER_NOUN	火球鼠	Cyndaquil transliteration leak
+布巴索爾	HARD	PROPER_NOUN	妙蛙種子	Bulbasaur transliteration leak
+盧吉亞	HARD	PROPER_NOUN	洛奇亞	Lugia official Taiwan Pokémon name
+波克馬尼亞克語Name	HARD	MT_CORRUPTION	寶可夢迷	Pokémaniac token/name corruption
+精英四號	HARD	POKEMON_TERM	四天王	Elite Four MT corruption
+精英四俠	HARD	POKEMON_TERM	四天王	Elite Four MT corruption
+精英四強	HARD	POKEMON_TERM	四天王	Elite Four MT corruption
+精英四人隊	HARD	POKEMON_TERM	四天王	Elite Four MT corruption
+精英四人	HARD	POKEMON_TERM	四天王	Elite Four MT corruption
+精英四隊	HARD	POKEMON_TERM	四天王	Elite Four MT corruption
+羅蕾萊	HARD	PROPER_NOUN	科拿	Lorelei official Taiwan name
+阿加薩	HARD	PROPER_NOUN	菊子	Agatha official Taiwan name
+布魯諾	HARD	PROPER_NOUN	希巴	Bruno official Taiwan name
+蘭斯	HARD	PROPER_NOUN	渡	Lance official Taiwan name
+阿塞烏斯	HARD	PROPER_NOUN	阿爾宙斯	Arceus official Taiwan name
+薩姆森橡樹	HARD	PROPER_NOUN	成也・大木	Samson Oak official zh-TW/Japanese name
+香檳	HARD	MT_CORRUPTION	冠軍	Champion MT corruption
+富士先生(簽名)	HARD	MT_CORRUPTION	富士老人	Mr. Fuji signature/token corruption
+熊骨	HARD	PROPER_NOUN	卡拉卡拉	Cubone MT corruption
+馬羅瓦克	HARD	PROPER_NOUN	嘎啦嘎啦	Marowak transliteration leak
+阿爾法 Den	HARD	FEATURE_TERM	阿爾法巢穴	Alpha Den mixed-language corruption
+ Alpha Den	HARD	FEATURE_TERM	阿爾法巢穴	Alpha Den untranslated residue
+阿爾法丹	HARD	FEATURE_TERM	阿爾法巢穴	Alpha Dens transliteration leak
+阿爾法登	HARD	FEATURE_TERM	阿爾法巢穴	Alpha Den transliteration leak
+波克矇	HARD	POKEMON_TERM	寶可夢	Pokémon MT corruption
+神話般的寶可夢	HARD	POKEMON_TERM	幻之寶可夢	Mythical Pokémon must use Taiwan terminology
+加百列教授	HARD	PROPER_NOUN	成也・大木博士	Professor Samson recurring MT/name corruption
+西摩語Name	HARD	MT_CORRUPTION	西摩	Seymour name/token corruption
+Poké球	HARD	POKEMON_TERM	精靈球	Poké Ball mixed-language MT residue
+月球石	HARD	POKEMON_TERM	月之石	Moon Stone must use Taiwan terminology
+大聲喊一聲	HARD	IDIOM	再來找我	Give me a shout literal MT corruption
+這是在房子	HARD	IDIOM	免費招待	It's on the house literal MT corruption
+\\GWould	HARD	TOKEN_MIXED_LANGUAGE	保留\\G並完整翻譯後文	Control token followed by untranslated English
+\\GSplendid	HARD	TOKEN_MIXED_LANGUAGE	保留\\G並完整翻譯後文	Control token followed by untranslated English
+海峽客	HARD	PROPER_NOUN	祈禱師	Channeler trainer class MT corruption
+這麼異性戀的人	HARD	MT_CORRUPTION	有靈性/超凡脫俗	otherworldly semantic MT corruption
+命運之邦	HARD	POKEMON_TERM	同命	Destiny Bond literal/transliteration corruption
+爾時世尊	HARD	MT_CORRUPTION	manual review	catastrophic unrelated Buddhist-text hallucination
+吉拉法裡格	HARD	PROPER_NOUN	麒麟奇	Girafarig transliteration leak
+頓琌	HARD	ENCODING_CORRUPTION	你好	garbled greeting
+朗多姆模式	HARD	FEATURE_TERM	隨機模式	Random Mode transliteration leak
+塞拉東大樓	HARD	MAP_TERM	玉虹大樓	Celadon Building transliteration leak
+臨界命中	HARD	POKEMON_TERM	擊中要害	critical-hit terminology corruption
+波克維亞	HARD	FEATURE_TERM	Pokévial	custom feature brand should be preserved
+波克瑞德	HARD	FEATURE_TERM	PokéRider	custom feature brand should be preserved
+幸運錢特	HARD	POKEMON_TERM	幸運咒語	Lucky Chant transliteration leak
+波利烏希爾	HARD	PROPER_NOUN	蚊香君	Poliwhirl transliteration leak
+波利烏拉斯	HARD	PROPER_NOUN	蚊香泳士	Poliwrath transliteration leak
+火力衝鋒槍	HARD	POKEMON_TERM	火焰拳	Fire Punch MT corruption
+臨 1	HARD	OPAQUE_UI_LABEL	P1	P1 opaque label must remain unchanged
+臨2	HARD	OPAQUE_UI_LABEL	P2	P2 opaque label must remain unchanged
+臨3	HARD	OPAQUE_UI_LABEL	P3	P3 opaque label must remain unchanged
