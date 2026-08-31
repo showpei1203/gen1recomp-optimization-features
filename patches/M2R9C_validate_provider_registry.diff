@@ -1,0 +1,11 @@
+--- m2r9_pristine/tools/validate_m2r6_provider_registry.py	2026-08-31 06:11:56.000000000 +0000
++++ m2r9_work/tools/validate_m2r6_provider_registry.py	2026-08-31 09:40:30.057985914 +0000
+@@ -48,7 +48,7 @@
+  'safe_native_fallback_log':'safe_native_fallback=1' in host,
+  'registry_regression_id':'R-SD-025=1' in host or 'R-SD-026=1' in host,
+  'boot_sync_regression_id':'R-SD-026=1' in host,
+- 'dynamic_runtime_path':'/showdown/' in host and 'load_showdown_clip(proxy.species' in host,
++ 'dynamic_runtime_path':'/showdown/' in host and 'requested_species[battler]=sprite_lab_display_species' in host and 'load_showdown_clip(requested,side' in host and 'R-SD-036=1' in host,
+ })
+ for k,v in checks.items(): print(f'{k}={"PASS" if v else "FAIL"}')
+ ok=all(checks.values())
