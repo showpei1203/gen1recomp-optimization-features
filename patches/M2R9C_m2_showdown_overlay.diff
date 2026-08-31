@@ -1,0 +1,107 @@
+--- m2r9_pristine/src/m2_showdown_overlay.cpp	2026-08-31 06:11:56.000000000 +0000
++++ m2r9_work/src/m2_showdown_overlay.cpp	2026-08-31 09:43:08.744199701 +0000
+@@ -1423,17 +1423,6 @@
+     if (battle && !g_prev_battle) reset_all_proxy_presentations("battle_start");
+     if (!battle && g_prev_battle) {
+         g_teardown_bottom_ui_latched=g_last_bottom_ui_present;
+-        if (g_sprite_lab_enabled && (g_frame%30u)==0u) {
+-            std::cerr << "SPRITE_LAB_RUNTIME frame=" << g_frame
+-                      << " player_native=" << proxies[0].species
+-                      << " player_display=" << display_species[0]
+-                      << " opponent_native=" << proxies[1].species
+-                      << " opponent_display=" << display_species[1]
+-                      << " player_ready=" << (provider_ready[0]?1:0)
+-                      << " opponent_ready=" << (provider_ready[1]?1:0)
+-                      << " native_proxy_authority=1 save_mutation=0 party_mutation=0"
+-                      << " R-SD-035=1\n";
+-        }
+         for (uint8_t battler=0; battler<kExternalBattlers; ++battler) {
+             const auto& proxy=proxies[battler];
+             if (!proxy.valid) continue;
+@@ -1449,10 +1438,10 @@
+     }
+     g_prev_battle=battle;
+ 
+-    std::array<uint16_t,kExternalBattlers> display_species{};
++    std::array<uint16_t,kExternalBattlers> requested_species{};
+     for (uint8_t battler=0; battler<kExternalBattlers; ++battler) {
+         auto& proxy=proxies[battler];
+-        display_species[battler]=sprite_lab_display_species(battler,proxy.species);
++        requested_species[battler]=sprite_lab_display_species(battler,proxy.species);
+         const bool had_proxy_before = g_proxy_present[battler].had_proxy;
+         // Feed validity edges into the lifecycle on every frame. This matters
+         // for the opponent proof: a fainted wild battler can destroy its native
+@@ -1461,11 +1450,11 @@
+         update_proxy_lifecycle(battler,proxy);
+         if (proxy.valid) {
+             const char* side=(battler & 1u) ? "front" : "back";
+-            const uint16_t requested_species=display_species[battler];
+-            if (!load_showdown_clip(requested_species,side,&g_showdown_battlers[battler])) {
++            const uint16_t requested=requested_species[battler];
++            if (!load_showdown_clip(requested,side,&g_showdown_battlers[battler])) {
+                 // Sprite Lab is visual-only. A lab asset failure must never revoke
+                 // the real battler's production provider entry.
+-                if (!g_sprite_lab_enabled || requested_species==proxy.species) {
++                if (!g_sprite_lab_enabled || requested==proxy.species) {
+                     disable_provider_registry_entry(proxy.species,side,"runtime_clip_load_fail");
+                     std::cerr << "SHOWDOWN_PROVIDER_CONTRACT_BREACH frame=" << g_frame
+                               << " battler=" << static_cast<unsigned>(battler)
+@@ -1475,7 +1464,7 @@
+                     std::cerr << "SPRITE_LAB_PROVIDER_FAIL frame=" << g_frame
+                               << " battler=" << static_cast<unsigned>(battler)
+                               << " native_species=" << proxy.species
+-                              << " display_species=" << requested_species
++                              << " display_species=" << requested
+                               << " side=" << side
+                               << " production_registry_mutation=0 R-SD-035=1\n";
+                 }
+@@ -1491,7 +1480,7 @@
+     for (uint8_t battler=0; battler<kExternalBattlers; ++battler) {
+         provider_ready[battler]=proxies[battler].valid
+             && g_showdown_battlers[battler].ready
+-            && g_showdown_battlers[battler].species==display_species[battler];
++            && g_showdown_battlers[battler].species==requested_species[battler];
+         showdown_drawn[battler]=provider_ready[battler] && proxies[battler].visible();
+         if (g_sprite_lab_enabled && battler<2 && g_sprite_lab_epoch[battler])
+             render_present[battler].lifecycle_start_frame=g_sprite_lab_epoch[battler];
+@@ -1502,6 +1491,22 @@
+     const bool any_proxy_valid=std::any_of(proxies.begin(),proxies.end(),
+         [](const NativeBattlerProxy& p){return p.valid;});
+ 
++    // R-SD-036: Sprite Lab requested-species routing and telemetry depend on requested_species/provider_ready,
++    // so it must execute only after both per-battler arrays are materialized.
++    // Keeping this periodic also makes the lab state observable during the
++    // battle instead of accidentally tying it to the single teardown edge.
++    if (g_sprite_lab_enabled && (battle || any_proxy_valid) && (g_frame%30u)==0u) {
++        std::cerr << "SPRITE_LAB_RUNTIME frame=" << g_frame
++                  << " player_native=" << proxies[0].species
++                  << " player_display=" << requested_species[0]
++                  << " opponent_native=" << proxies[1].species
++                  << " opponent_display=" << requested_species[1]
++                  << " player_ready=" << (provider_ready[0]?1:0)
++                  << " opponent_ready=" << (provider_ready[1]?1:0)
++                  << " native_proxy_authority=1 save_mutation=0 party_mutation=0"
++                  << " R-SD-035=1 R-SD-036=1\n";
++    }
++
+     // Protect the current external-battler footprints while extracting native
+     // foreground effects.  The animation bridge works in raw GBA framebuffer
+     // coordinates, so compute the same Showdown geometry against a 1:1 output.
+@@ -1611,7 +1616,7 @@
+                       << " valid=" << (proxy.valid?1:0)
+                       << " sid=" << static_cast<unsigned>(proxy.sprite_id)
+                       << " species=" << proxy.species
+-                      << " display_species=" << display_species[battler]
++                      << " display_species=" << requested_species[battler]
+                       << " sprite_lab=" << ((g_sprite_lab_enabled && battler<2)?1:0)
+                       << " scratch_data2=" << proxy.scratch_data2
+                       << " native_oam_suppressed=" << (proxy.valid?1:0)
+@@ -2095,7 +2100,7 @@
+     try {
+         if (SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_GAMECONTROLLER)!=0)
+             throw std::runtime_error(std::string("SDL_Init: ")+SDL_GetError());
+-        g_window=SDL_CreateWindow("SoulGold M2R9 - Battle Sprite Lab | OFF",
++        g_window=SDL_CreateWindow("SoulGold M2R9C - Battle Sprite Lab | OFF",
+             SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,720,480,
+             SDL_WINDOW_SHOWN|SDL_WINDOW_RESIZABLE);
+         if (!g_window) throw std::runtime_error(std::string("SDL_CreateWindow: ")+SDL_GetError());
