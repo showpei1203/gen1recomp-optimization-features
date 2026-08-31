@@ -20,3 +20,18 @@ pattern	severity	category	preferred_fix	note
 法菲奇	HARD	PROPER_NOUN	大蔥鴨	Farfetch'd transliteration leak
 皮奇奧	HARD	PROPER_NOUN	大比鳥	Pidgeot transliteration leak
 布洛克	HARD	PROPER_NOUN	小剛	Brock transliteration leak; verify false positives if used outside name context
+黨拉屎	HARD	IDIOM	掃興鬼	Party pooper literal MT corruption
+聰明的褲子	HARD	IDIOM	聰明人/自作聰明的傢伙	Smarty-pants literal MT corruption
+德拉特斯	HARD	MT_CORRUPTION	可惡/糟糕	Drats transliteration leak
+阿里安納	HARD	PROPER_NOUN	雅典娜	Ariana official Taiwan Pokémon name
+阿徹	HARD	PROPER_NOUN	阿波羅	Archer official Taiwan Pokémon name
+尼尼塔萊斯	HARD	PROPER_NOUN	九尾	Ninetales transliteration leak
+查曼德	HARD	PROPER_NOUN	小火龍	Charmander transliteration leak
+託多迪爾	HARD	PROPER_NOUN	小鋸鱷	Totodile transliteration leak
+斯塔米	HARD	PROPER_NOUN	寶石海星	Starmie transliteration leak
+貝爾洛瑟姆	HARD	PROPER_NOUN	美麗花	Bellossom transliteration leak
+拉皮塔什	HARD	PROPER_NOUN	烈焰馬	Rapidash transliteration leak
+辛達基爾	HARD	PROPER_NOUN	火球鼠	Cyndaquil transliteration leak
+布巴索爾	HARD	PROPER_NOUN	妙蛙種子	Bulbasaur transliteration leak
+盧吉亞	HARD	PROPER_NOUN	洛奇亞	Lugia official Taiwan Pokémon name
+波克馬尼亞克語Name	HARD	MT_CORRUPTION	寶可夢迷	Pokémaniac token/name corruption
