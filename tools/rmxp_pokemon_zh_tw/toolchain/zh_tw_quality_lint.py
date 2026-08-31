@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# v1.7 adds source-aware Rocket/Silph/Super Secret Key/Hall of Fame contracts
 import argparse,csv,re,sys,json
 TOKEN_RE=re.compile(r'(\\[A-Za-z]+\[[^\]]*\]|\\(?:PN|PM|CN|POG|pog|[brnlmfgG]|sh)|%\{[^}]+\}|%\d*\$?[sdif]|\{(?:\d+(?::[^}]+)?|[A-Za-z_][A-Za-z0-9_]*)\}|\$\{[^}]+\}|#\{[^}]+\}|</?[A-Za-z][^>]*>)')
 RESOURCE_PREFIXES=('Graphics/','Audio/','Data/','Plugins/')
@@ -32,7 +33,12 @@ def main():
    if 'abilities expert' in low and z and '特性專家' not in z: issues.append((eid,'HARD','TERM_AUTHORITY:abilities_expert',sec,'Abilities Expert -> 特性專家',z))
    if '<b>trainer tip:</b>' in low and z and '<b>訓練家提示：</b>' not in z: issues.append((eid,'HARD','TERM_AUTHORITY:trainer_tip',sec,'TRAINER TIP -> 訓練家提示',z))
    if eng in {'P0','P1','P2','P3'} and z!=eng: issues.append((eid,'HARD','OPAQUE_UI_LABEL_CHANGED',sec,eng,z))
+   if re.fullmatch(r'[A-Z]', eng.strip()) and z!=eng: issues.append((eid,'HARD','OPAQUE_SINGLE_LETTER_CHANGED',sec,eng,z))
    if 'mega stone' in low and z and '超級石' not in z: issues.append((eid,'WARN','TERM_AUTHORITY:mega_stone',sec,'Mega Stone should use 超級石',z))
+   if 'silph scope' in low and z and '西爾佛檢視鏡' not in z: issues.append((eid,'HARD','TERM_AUTHORITY:silph_scope',sec,'Silph Scope -> 西爾佛檢視鏡',z))
+   if ('rocket grunt' in low) and z and not ('火箭隊' in z and '手下' in z): issues.append((eid,'HARD','TERM_AUTHORITY:rocket_grunt',sec,'Rocket Grunt(s) -> 火箭隊…手下（允許精英等修飾語）',z))
+   if 'super secret key' in low and z and '超級秘密鑰匙' not in z: issues.append((eid,'HARD','TERM_AUTHORITY:super_secret_key',sec,'Super Secret Key -> 超級秘密鑰匙',z))
+   if 'hall of fame' in low and z and '名人堂' not in z: issues.append((eid,'WARN','TERM_AUTHORITY:hall_of_fame',sec,'Hall of Fame should use 名人堂',z))
    if '寶可夢號' in z: issues.append((eid,'WARN','MT_SUFFIX_CORRUPTION:寶可夢號',sec,'Pokémon MT suffix corruption; human review recommended',z))
  with open(a.report,'w',encoding='utf-8-sig',newline='') as f:
   w=csv.writer(f,delimiter='\t',lineterminator='\n'); w.writerow(['entry_id','severity','issue','section','source_or_reason','zh_tw']); w.writerows(issues)
