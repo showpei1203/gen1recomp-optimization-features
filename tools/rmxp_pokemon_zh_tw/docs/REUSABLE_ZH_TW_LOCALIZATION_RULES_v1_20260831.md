@@ -1,62 +1,62 @@
-# RMXP / Pokémon Essentials 繁體中文化可重用規則 v1
+# RMXP / Pokémon Essentials 繁體中文化可重用規則 v1.1
 
-## 目的
-這份規則把 Pokémon Anil DE 1.0.23 實機繁中化遇到的失敗模式固定成後續專案的預設安全規則。未來不是「記得小心」，而是先分類、先保護、再翻譯、最後用 QA 阻擋回歸。
+## 核心原則
+繁中化不是把所有 String 交給翻譯器。先分類、保護機器字串與控制碼，再翻玩家可見內容，最後以靜態 QA + 實機截圖驗證。
 
-## A. 文字必須先分類，不能看到字串就翻
-1. **玩家可見內容**：劇情、NPC、道具/招式/特性說明，可翻譯。
-2. **受控 UI 詞彙**：Fight/Bag/Summary/Run 等只走短詞詞庫，不交給自由機翻。
-3. **機器內部字串**：檔名、Graphics/Data/Audio/Plugins 路徑、UI suffix、symbol/key、script id，永遠不得翻譯。
-4. **格式與控制碼**：`\v[]`、`\PN`、`\c[]`、`%s`、`{1}`、`{1:03d}`、`#{pokemon.name}`、HTML tags 等先 token 化保護，翻完再還原。
+## 既有必守規則
+1. 玩家可見劇情/NPC/說明可翻；UI 短詞只走受控詞庫。
+2. `Graphics/`、`Audio/`、`Data/`、`Plugins/` 路徑、UI suffix/key 永不翻譯。
+3. `\v[]`、`\PN`、`\c[]`、`%s`、`{1}`、`{1:03d}`、`#{...}`、HTML tags 先保護再翻。
+4. Pokémon、人物、地名、招式、特性、道具名先套官方台灣詞庫，禁止 MT 自由音譯。
+5. CJK 換行在文字 formatter 處理，不逐句人工塞換行，也不以全域 Bitmap hook 破壞 UI。
+6. Map 名稱需查 exact-version `MapInfos.rxdata`；不能假設所有文字都在 messages DAT。
+7. 長工作先 checkpoint，再 QA；QA fail 不得把完整成果一起丟掉。
+8. 每個實機新錯誤都必須轉成：根因 → 規則 → lint/test → handoff。
 
-## B. 官方詞彙優先
-寶可夢、招式、特性、道具、地名、角色名先套官方台灣用語，再處理一般句子。不得讓 MT 自由翻：Pokémon、Poké Ball、Giovanni、Team Rocket、Pidgey 等。
+## v1.1 新增：雙語 authority 規則
+Anil 的 runtime key 是西班牙文，但 English edition 的 `translation` 欄可能做過改寫，甚至刪減/變更 HTML tag。
 
-## C. 不信任「100% 已翻譯」這個數字
-`zh_tw` 非空只代表有字，不代表可用。已出現過：
-- `Smell ya!` → `聞聞你!`
-- `Smell you later` → `晚點聞聞...`
-- Berry/Poffin 說明 → `為佛德童子`
-- Giovanni → `喬瓦尼`
-- Team Rocket → `小組火箭`
-- Poké Ball → `撲克舞會`
-- `Sp. Atk`/性格資料 → `(韓語)`、`軟體`
-因此每版都要跑 known-bad-pattern lint。
+- **玩家實際要玩的 English edition 語意，以 `translation` 欄為主要語意 authority。**
+- `source` 欄只用於補充上下文、人物語氣與歧義判讀。
+- **控制碼與 HTML tag 序列必須跟 target-edition 的 `translation` 保持一致。**
+- 不可因為 source 裡多了一個 `<b>` 就把它擅自加回繁中，否則會破壞既有 formatter/QA 契約。
 
-## D. UI 與資源完整性
-翻譯層不得改變任何圖片/音效/資料檔路徑。Anil 曾把 `Graphics/Translations/English/databox_normal` 翻成中文，直接造成 HP HUD、Move 選單、Summary 背景消失。所有 resource path 必須逐筆比對且檔案存在性檢查。
+實例：Brock 的 TM 台詞，西文 source 有 `<b>Team Rocket</b>`，英文 edition 改成「help back in the museum」。繁中應跟英文 edition 的內容和 tag 結構，而不是把兩個版本混在一起。
 
-## E. 內部 suffix/key 必須原樣保留
-Anil Modular UI 的 `memo` 被翻成 `備忘`，程式因此去找 `bg_備忘` 而不是 `bg_memo`。未來 `memo/info/moves/skills/ribbons/forms/area/data/egg/allstats` 這類 suffix/key 一律列入 protected terms。
+## v1.1 新增：DAT patch 必須 key-based
+不可用「舊翻譯值 → 新翻譯值」做全域 replace。
 
-## F. CJK 換行要在引擎 formatter 解決
-英文靠空格找換行點，繁中沒有空格。不可人工替每句插換行，也不可用全域 `Bitmap#draw_text` hook。應在原 formatter 加入 CJK 字元邊界換行，並做長句、HTML tag、控制碼 regression test。
+原因：不同 source key 可能被 MT 翻成完全相同的錯誤中文，但人工修正後需要兩個不同句子。全域 value replace 會把其中一個錯修成另一個。
 
-## G. Map 名稱要查真正資料來源
-畫面上的 Pallet Town 即使 message DAT 已翻譯，仍可能來自 `Data/MapInfos.rxdata`。必須針對 exact game version 檢查 MapInfos、Scripts、PluginScripts、PBS/Data，不可假設所有文字都在 messages DAT。
+正式規則：
+- EVENT_TEXTS：以 `(section_id=0, map_id, source/key)` 精確定位。
+- 其他 Hash section：以 `(section_id, key)` 精確定位。
+- Patch 後必跑 Marshal class/length/hash-key structure compare。
 
-## H. Exact-version baseline
-修 UI/Script/MapInfos 時，優先取同一遊戲同一版本的原始檔做 authority。不同版本素材只能當診斷參考，不可直接視為正式修復基底。
+## v1.1 新增：proper-noun transliteration regression
+實機與 Map 41–54 人工潤稿又抓到一批「英文專名被 MT 音譯」的錯誤，例如：
+- Brock → 布洛克 → 小剛
+- Cubone → 庫邦 → 卡拉卡拉
+- Graveler → 格雷夫勒 → 隆隆石
+- Sudowoodo → 蘇杜多 → 樹才怪
+- Clefairy → 克蕾費 → 皮皮
+- Spearow → 斯皮洛 → 烈雀
+- Farfetch'd → 法菲奇 → 大蔥鴨
+- Pidgeot → 皮奇奧 → 大比鳥
+- Rock-type → 搖滾屬性 → 岩石屬性
+- Trainer → 培訓員 → 訓練家
+- Technical Machine → 技術機器 → 招式學習器
 
-## I. 機翻只當底稿
-Marian/NLLB/M2M100 實測都會破壞 Pokémon 專名、截句或產生不自然中文。策略固定為：
-`全量 MT 底稿 → 官方詞庫 → 系統錯譯規則 → 高曝光戰鬥/UI 人工校訂 → 劇情依地圖人工潤稿`。
+上述錯誤輸出已加入 data-driven `known_bad_patterns.tsv`。後續新專案可以只更新 TSV，不必每次改 lint 程式。
 
-## J. Checkpoint before QA
-超過 10 分鐘的生成/翻譯工作必須先保存 artifact/checkpoint，再跑 QA。QA fail 不得讓完整翻譯成果一起消失。
-
-## K. 每版必跑的硬 QA
-- Placeholder/control token 逐序列一致
-- Ruby interpolation / format spec 一致
-- HTML tags 一致
-- resource path 不得翻譯
-- internal suffix/key 不得翻譯
-- known bad patterns = 0
-- Marshal section/type/key structure 不變
-- Scripts count/targeted-diff 檢查
+## 每版硬 QA
+- placeholder/control token sequence = 0 mismatch
+- Ruby interpolation/format spec = 0 mismatch
+- HTML tag sequence = 0 mismatch
+- resource path translated = 0
+- protected suffix/key translated = 0
+- known bad pattern HARD = 0
+- Marshal section/type/key structure = unchanged
+- Scripts count/targeted diff
 - ZIP integrity
-- AYN THOR + JoiPlay 實機 regression：UI、Battle HUD、Move menu、Summary、長對話換行
-
-## L. 實機截圖是正式 QA 輸入
-玩家看到的錯誤優先級高於「靜態 QA 0 issues」。每一個實機錯誤都要轉成：
-1. 根因；2. 可重用規則；3. 自動 lint/test；4. handoff 紀錄。
+- JoiPlay/AYN THOR：Battle HUD、Move menu、Summary、地名、長對話換行實機 regression
