@@ -83,3 +83,10 @@ Poké球	HARD	POKEMON_TERM	精靈球	Poké Ball mixed-language MT residue
 臨 1	HARD	OPAQUE_UI_LABEL	P1	P1 opaque label must remain unchanged
 臨2	HARD	OPAQUE_UI_LABEL	P2	P2 opaque label must remain unchanged
 臨3	HARD	OPAQUE_UI_LABEL	P3	P3 opaque label must remain unchanged
+頁:1	HARD	FORMAT_CORRUPTION	restore exact semantic/format output	Argos corruption observed in UI counters, time units and script strings
+(法語)	HARD	LANGUAGE_CONTAMINATION	remove language-label contamination	Argos injected French marker into unrelated strings
+火箭榴彈	HARD	POKEMON_TERM	火箭隊手下	Rocket Grunts mistranslated as grenades
+走開的Scot	HARD	IDIOM	全身而退	scot-free literal/token corruption
+控制層	HARD	MT_CORRUPTION	掌控一切	Giovanni Control. mistranslation
+Rocket grunts	HARD	MIXED_LANGUAGE	火箭隊手下	Rocket Grunts untranslated mixed-language residue
+Rocket Grunts	HARD	MIXED_LANGUAGE	火箭隊手下	Rocket Grunts untranslated mixed-language residue
