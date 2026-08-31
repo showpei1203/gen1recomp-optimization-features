@@ -43,10 +43,31 @@
 7. `寶可夢號` 是可重複掃描的 MT suffix 污染。
 8. `爾時世尊...` 這種完全無關的幻譯證明 placeholder、CJK、Marshal 全 PASS 仍不代表語義安全。
 
-## v0.8.5 QA
+## v0.8.7 / Map 81–85 + QA v1.7
+- Map 81：35/35 EVENT_TEXT 人工 review，31 條改寫，另有 6 條 exact-English propagation。
+- Map 82–85：65/65 EVENT_TEXT 人工 review，58 條改寫。
+- 格式／語言／專名全庫 cleanup：49 條實際修改。
+- v1.7 source-aware lint 首輪抓出 4 條 Rocket Grunt / Hall of Fame 漏網，全部清零。
+- opaque single-letter contract 再抓出 16 條舊 Script Text 污染，全部清零。
+- 相較 v0.8.6 DAT：127 values changed；相較 v0.8.5：164。
+- `full_mt_argos_s2twp` 降至 9,186。
+
+### v0.8.7 新案例與規則
+1. `scot-free` → `走開的Scot`：慣用語被拆字，正確依語境譯為「全身而退」。
+2. `Rocket Grunts` → `火箭榴彈`：專名＋一般名詞需要 source-aware contract；使用「火箭隊手下」。
+3. `Control.` → `控制層`：極短高語意句不能字典式翻譯；坂木情境為「掌控一切」。
+4. `(法語)` 污染散落 EVENT_TEXTS 與 SCRIPT_TEXTS，語言標籤必須全庫 HARD lint。
+5. `頁:1` 是 machine-shaped corruption。38 個命中包含時間、數量、UI 計數器、單字母 label，不能因為「已經是中文字」就當作合格。
+6. English 正好為單一 ASCII 大寫字母時，未證明語意前 target 保持原值。這條規則一次抓出 16 條 C/D/E/F/G/K/L/M/N/O/Q/R/T/U/V/W 錯譯。
+7. source-aware contract 應檢查概念組件而非死字串。`Elite Rocket Grunt` 可譯「火箭隊精英手下」，仍符合火箭隊＋手下契約。
+8. `Silph Scope` 使用台灣官方「西爾佛檢視鏡」。
+9. `Super Secret Key` 為 Anil 受控自訂名稱，專案統一「超級秘密鑰匙」。
+
+## v0.8.7 QA
 - manifest: 21,438
 - non-empty zh_tw: 21,437
-- reusable/source-aware lint v1.6: HARD 0 / WARN 0
+- reusable/source-aware lint v1.7: HARD 0 / WARN 0
 - manifest → DAT: 21,437 checked / 0 mismatch
-- Marshal structure: 0 issue
-- 下一個人工 review 起點：Map 81
+- Marshal structure vs v0.8.6: changed 127 / issues 0
+- total DAT delta vs v0.8.5: 164
+- 下一個人工 review 起點：Map 86
