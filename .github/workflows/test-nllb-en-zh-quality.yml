@@ -1,0 +1,57 @@
+name: Test NLLB en-zh dialogue quality
+
+on:
+  push:
+    paths:
+      - '.github/workflows/test-nllb-en-zh-quality.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install model runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'transformers>=4.41,<5' sentencepiece torch opencc-python-reimplemented
+      - name: Translate quality samples
+        run: |
+          python - <<'PY'
+          from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+          from opencc import OpenCC
+          model_name='facebook/nllb-200-distilled-600M'
+          tok=AutoTokenizer.from_pretrained(model_name, src_lang='eng_Latn')
+          model=AutoModelForSeq2SeqLM.from_pretrained(model_name)
+          cc=OpenCC('s2twp')
+          samples=[
+            'A wild Pidgey appeared!',
+            'Where are you going, you reckless boy? Don\'t you know how dangerous it is to wander into tall grass without a Pokémon?',
+            'Just starting your Pokémon adventure? Don\'t forget to visit the shop!',
+            'You will find one inside every Pokémon Center. Here, let me give you a sample Potion!',
+            'The Pokémon you train are stronger than the ones you find in the wild, don\'t you think?',
+            'And to top it off, that guy is just... the worst. He kinda gets under my skin.',
+            'Would you like to see wild Pokémon in the overworld? You can change this setting at any time in the Options menu.',
+            'Some items are hidden out of sight.',
+            'Certain Pokémon love disguising themselves as Poké Balls to catch rookie Trainers off guard.'
+          ]
+          out=[]
+          for i in range(0,len(samples),4):
+            batch=samples[i:i+4]
+            inputs=tok(batch,return_tensors='pt',padding=True,truncation=True,max_length=256)
+            gen=model.generate(**inputs,forced_bos_token_id=tok.convert_tokens_to_ids('zho_Hans'),max_new_tokens=256,num_beams=4)
+            out += tok.batch_decode(gen,skip_special_tokens=True)
+          with open('/tmp/NLLB_SAMPLE.txt','w',encoding='utf-8') as f:
+            for s,z in zip(samples,out):
+              f.write('EN: '+s+'\nZH: '+cc.convert(z)+'\n\n')
+          print(open('/tmp/NLLB_SAMPLE.txt',encoding='utf-8').read())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nllb-en-zh-quality-sample
+          path: /tmp/NLLB_SAMPLE.txt
+          retention-days: 7
