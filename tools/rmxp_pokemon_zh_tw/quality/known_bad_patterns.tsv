@@ -65,3 +65,21 @@ Poké球	HARD	POKEMON_TERM	精靈球	Poké Ball mixed-language MT residue
 這是在房子	HARD	IDIOM	免費招待	It's on the house literal MT corruption
 \\GWould	HARD	TOKEN_MIXED_LANGUAGE	保留\\G並完整翻譯後文	Control token followed by untranslated English
 \\GSplendid	HARD	TOKEN_MIXED_LANGUAGE	保留\\G並完整翻譯後文	Control token followed by untranslated English
+海峽客	HARD	PROPER_NOUN	祈禱師	Channeler trainer class MT corruption
+這麼異性戀的人	HARD	MT_CORRUPTION	有靈性/超凡脫俗	otherworldly semantic MT corruption
+命運之邦	HARD	POKEMON_TERM	同命	Destiny Bond literal/transliteration corruption
+爾時世尊	HARD	MT_CORRUPTION	manual review	catastrophic unrelated Buddhist-text hallucination
+吉拉法裡格	HARD	PROPER_NOUN	麒麟奇	Girafarig transliteration leak
+頓琌	HARD	ENCODING_CORRUPTION	你好	garbled greeting
+朗多姆模式	HARD	FEATURE_TERM	隨機模式	Random Mode transliteration leak
+塞拉東大樓	HARD	MAP_TERM	玉虹大樓	Celadon Building transliteration leak
+臨界命中	HARD	POKEMON_TERM	擊中要害	critical-hit terminology corruption
+波克維亞	HARD	FEATURE_TERM	Pokévial	custom feature brand should be preserved
+波克瑞德	HARD	FEATURE_TERM	PokéRider	custom feature brand should be preserved
+幸運錢特	HARD	POKEMON_TERM	幸運咒語	Lucky Chant transliteration leak
+波利烏希爾	HARD	PROPER_NOUN	蚊香君	Poliwhirl transliteration leak
+波利烏拉斯	HARD	PROPER_NOUN	蚊香泳士	Poliwrath transliteration leak
+火力衝鋒槍	HARD	POKEMON_TERM	火焰拳	Fire Punch MT corruption
+臨 1	HARD	OPAQUE_UI_LABEL	P1	P1 opaque label must remain unchanged
+臨2	HARD	OPAQUE_UI_LABEL	P2	P2 opaque label must remain unchanged
+臨3	HARD	OPAQUE_UI_LABEL	P3	P3 opaque label must remain unchanged
