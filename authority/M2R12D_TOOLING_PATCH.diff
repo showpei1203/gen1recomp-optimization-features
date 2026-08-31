@@ -1,0 +1,37 @@
+--- tools/generate_gen1_2_size_classes.py
++++ tools/generate_gen1_2_size_classes.py
+@@
+-CLASS_RULES = ((xs,.60),(small,.72),(medium,.84),(large,.96),(huge,1.08),(colossal,1.20))
++CLASS_RULES = ((xs,.60),(small,.68),(medium,.76),(large,.84),(huge,.92),(colossal,1.00))
++
++# M2R12D applies synchronized global occupancy shrink before these class-relative multipliers.
++
+--- tools/generate_showdown_gen1_2_catalog.py
++++ tools/generate_showdown_gen1_2_catalog.py
+@@
+-# class-specific fit envelopes and direct class scale authority
++# one common 100x88 safe envelope
++# provider_base_scale = global_fit_scale * class_multiplier
++# class_multiplier must be <= 1.0
++# geometry exceptions may alter anchor/policy only, never fit or scale
++
+--- tools/audit_showdown_gen1_2_visual_sizes.py
++++ tools/audit_showdown_gen1_2_visual_sizes.py
+@@
+-# report base_scale only
++# report class_multiplier and provider_base_scale separately
++
+--- tools/validate_current_presentation_contract.py
++++ tools/validate_current_presentation_contract.py
+@@
+-validate_m2r11d_size_class_authority.py
++validate_m2r12d_global_occupancy_normalization.py
++
+--- tools/validate_validator_contracts.py
++++ tools/validate_validator_contracts.py
+@@
++# R-SD-043 superseded by R-SD-051
++# R-SD-051/052/053 active
++# validate synchronized global normalization and no post-global enlargement
++
+The complete executable implementation is preserved in the M2R12D Handoff ZIP on Google Drive. This compact patch authority records the intended source delta without storing binary assets in GitHub.
