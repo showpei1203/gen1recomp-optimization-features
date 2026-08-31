@@ -1,0 +1,25 @@
+# species	slug	base_scale	fit_w	fit_h	tier	notes
+16	pidgey	0.88	96	88	S	small bird slightly reduced versus default
+19	rattata	0.82	96	88	XS	tiny rodent should read clearly smaller than medium mons
+25	pikachu	0.92	96	88	S	compact mascot scale
+41	zubat	0.90	96	88	S	flying small body
+50	diglett	0.78	96	88	XS	subterranean tiny body
+74	geodude	0.95	96	88	M	chunky but not giant
+92	gastly	0.96	96	88	M	floating medium silhouette
+93	haunter	1.02	98	90	M+	slightly larger than gastly
+95	onix	1.22	116	104	XL	serpentine large body requires larger envelope
+130	gyarados	1.20	116	108	XL	long-body sea serpent
+143	snorlax	1.12	110	98	L	large bulky body
+152	chikorita	0.88	96	88	S	small starter
+161	sentret	0.88	96	88	S	small mammal
+163	hoothoot	0.90	96	88	S	small owl
+165	ledyba	0.82	96	88	XS	tiny bug
+167	spinarak	0.82	96	88	XS	tiny bug
+175	togepi	0.76	96	88	XS	very small baby mon
+183	marill	0.90	96	88	S	small round body; front legacy lock may override geometry
+194	wooper	0.90	96	88	S	small amphibian
+201	unown	0.92	96	88	S+	compact glyph body
+208	steelix	1.28	118	108	XXL	massive serpent larger than onix
+213	shuckle	0.80	96	88	XS	tiny defensive shell
+249	lugia	1.18	114	104	XL	legendary large frame
+250	hooh	1.18	114	104	XL	legendary large frame
