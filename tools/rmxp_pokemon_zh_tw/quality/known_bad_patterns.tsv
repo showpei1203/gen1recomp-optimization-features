@@ -1,0 +1,9 @@
+pattern	severity	category	preferred_fix	note
+佛德童子	HARD	MT_CORRUPTION	use official Berry/Poffin template	Observed in multiple berry descriptions
+晚點聞聞	HARD	IDIOM	回頭見/晚點見	Smell you later must not be literal
+聞聞你	HARD	IDIOM	先走啦/回頭見	Smell ya must not be literal
+喬瓦尼	HARD	PROPER_NOUN	坂木	Official Taiwan Pokémon name
+小組火箭	HARD	PROPER_NOUN	火箭隊	Official Taiwan Pokémon term
+撲克舞會	HARD	PROPER_NOUN	精靈球	Poké Ball corruption
+(韓語)	HARD	LANGUAGE_CONTAMINATION	manual review	MT contamination
+(簡體中文)	HARD	LANGUAGE_CONTAMINATION	manual review	MT contamination
