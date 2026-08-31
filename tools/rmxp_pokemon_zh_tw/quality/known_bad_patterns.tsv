@@ -7,3 +7,16 @@ pattern	severity	category	preferred_fix	note
 撲克舞會	HARD	PROPER_NOUN	精靈球	Poké Ball corruption
 (韓語)	HARD	LANGUAGE_CONTAMINATION	manual review	MT contamination
 (簡體中文)	HARD	LANGUAGE_CONTAMINATION	manual review	MT contamination
+搖滾屬性	HARD	POKEMON_TERM	岩石屬性	Rock-type MT corruption
+技術機器	HARD	POKEMON_TERM	招式學習器	Technical Machine literal MT corruption
+培訓員	HARD	POKEMON_TERM	訓練家	Trainer must use Taiwan Pokémon terminology
+移動提醒器	HARD	POKEMON_TERM	招式回憶	Move Reminder literal MT corruption
+大球隊	HARD	POKEMON_TERM	超級球	Great Ball token split corruption
+格雷夫勒	HARD	PROPER_NOUN	隆隆石	Graveler transliteration leak
+蘇杜多	HARD	PROPER_NOUN	樹才怪	Sudowoodo transliteration leak
+庫邦	HARD	PROPER_NOUN	卡拉卡拉	Cubone transliteration leak
+克蕾費	HARD	PROPER_NOUN	皮皮	Clefairy transliteration leak
+斯皮洛	HARD	PROPER_NOUN	烈雀	Spearow transliteration leak
+法菲奇	HARD	PROPER_NOUN	大蔥鴨	Farfetch'd transliteration leak
+皮奇奧	HARD	PROPER_NOUN	大比鳥	Pidgeot transliteration leak
+布洛克	HARD	PROPER_NOUN	小剛	Brock transliteration leak; verify false positives if used outside name context
