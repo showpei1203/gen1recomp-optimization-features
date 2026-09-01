@@ -1,0 +1,16 @@
+PASS | VoxelScene requires DayNight
+PASS | VoxelScene sky dress anchor
+PASS | VoxelScene DayNight applyRig anchor
+PASS | VoxelScene tint anchor
+PASS | VoxelScene ForestAtmos frame anchor
+PASS | VoxelScene ForestAtmos draw anchor
+PASS | VoxelScene cleanup anchor
+PASS | Voxel3D PixelCanvas require anchor
+PASS | Voxel3D vFog shader anchor
+PASS | Voxel3D depth begin anchor
+PASS | Voxel3D fog block anchor
+PASS | Voxel3D fog start anchor
+
+SUMMARY 12 PASS / 0 FAIL
+
+Sky.lua is intentionally left to the upstream bridge runtime source-anchor validator in Compat Probe I; failure must be fail-closed and must not modify Dramatic Shape on disk.

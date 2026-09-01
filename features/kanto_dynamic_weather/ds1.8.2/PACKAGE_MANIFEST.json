@@ -1,0 +1,24 @@
+{
+  "candidate": "Kanto Dynamic Weather x Dramatic Shape 1.8.2 Compatibility Probe I",
+  "upstream": {
+    "repository": "1-Camp0-1/Kanto-Dynamic-Weather",
+    "version": "1.0.3",
+    "license": "MIT"
+  },
+  "target": {
+    "dramatic_shape_version": "1.8.2",
+    "voxel3d_sha256": "923f0b827ce6f8834d1fa763861b96e1338a9f3ddfdb4ead78cd9eb688b9bc4f",
+    "voxelscene_sha256": "d273b3f94b6e0822710d4ce02b830762a46399f2a4385ab1b96919c25781b7ec"
+  },
+  "strategy": "manifest gate to >=1.8.2 <1.8.3 plus unchanged upstream fail-closed in-memory source-anchor bridge",
+  "source_anchor_precheck": "12 PASS / 0 FAIL",
+  "sky_static_status": "NOT_CLAIMED_RUNTIME_FAIL_CLOSED_VALIDATION_REQUIRED",
+  "zip_sha256": "f51648ec31b703f5f1f0a038166e6411e3335d46a4a64110ae35586afe79047b",
+  "drive": {
+    "test_folder": "1cg7vRQwDAwNrYW04wypNtL6Y0vGAq7_r",
+    "evidence_folder": "16THxuywxUk2B6GHmvFxsPm33wk68A5_4",
+    "zip": "1ZLG0Z8X1GT9Mtlogm321IXM_0WBNyyzK"
+  },
+  "sealed_ds_files_modified": false,
+  "status": "STATIC_SOURCE_ANCHOR_PRECHECK_PASS_THOR_PENDING"
+}
