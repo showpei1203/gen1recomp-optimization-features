@@ -1,0 +1,100 @@
+name: M6A1 THOR Smoke APK
+
+on:
+  push:
+    branches:
+      - feature/soulgold-showdown-m6a1
+    paths:
+      - 'android/m6a1/**'
+      - '.github/workflows/m6a1-thor-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-thor-smoke-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 35 SDK pieces
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          gradle -p android/m6a1 :app:assembleDebug --no-daemon
+
+      - name: Package THOR artifact
+        id: pkg
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p artifacts/m6a1
+          cp android/m6a1/app/build/outputs/apk/debug/app-debug.apk artifacts/m6a1/SOULGOLD_M6A1_THOR_DEVICE_SMOKE.apk
+          sha256sum artifacts/m6a1/SOULGOLD_M6A1_THOR_DEVICE_SMOKE.apk | tee artifacts/m6a1/SOULGOLD_M6A1_THOR_DEVICE_SMOKE.apk.sha256
+          stat -c '%s' artifacts/m6a1/SOULGOLD_M6A1_THOR_DEVICE_SMOKE.apk > artifacts/m6a1/SOULGOLD_M6A1_THOR_DEVICE_SMOKE.apk.bytes
+          base64 -w0 artifacts/m6a1/SOULGOLD_M6A1_THOR_DEVICE_SMOKE.apk > artifacts/m6a1/SOULGOLD_M6A1_THOR_DEVICE_SMOKE.apk.b64
+          python3 - <<'PY'
+          import json, hashlib
+          from pathlib import Path
+          apk=Path('artifacts/m6a1/SOULGOLD_M6A1_THOR_DEVICE_SMOKE.apk')
+          out={
+            'milestone':'M6A1',
+            'artifact':apk.name,
+            'bytes':apk.stat().st_size,
+            'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),
+            'purpose':'AYN THOR device smoke: display/FPS/gamepad/audio/app-scoped storage',
+            'gameplay_runtime':'NOT_INCLUDED_IN_M6A1_SMOKE_APK',
+            'next':'M6A2 native SoulGold/mGBA/Showdown runtime APK integration'
+          }
+          Path('artifacts/m6a1/M6A1_THOR_SMOKE_BUILD.json').write_text(json.dumps(out,indent=2)+'\n')
+          PY
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SOULGOLD_M6A1_THOR_DEVICE_SMOKE
+          path: |
+            artifacts/m6a1/SOULGOLD_M6A1_THOR_DEVICE_SMOKE.apk
+            artifacts/m6a1/SOULGOLD_M6A1_THOR_DEVICE_SMOKE.apk.sha256
+            artifacts/m6a1/M6A1_THOR_SMOKE_BUILD.json
+          if-no-files-found: error
+
+      - name: Persist compact APK transport to branch
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add artifacts/m6a1/SOULGOLD_M6A1_THOR_DEVICE_SMOKE.apk.b64 \
+                  artifacts/m6a1/SOULGOLD_M6A1_THOR_DEVICE_SMOKE.apk.sha256 \
+                  artifacts/m6a1/SOULGOLD_M6A1_THOR_DEVICE_SMOKE.apk.bytes \
+                  artifacts/m6a1/M6A1_THOR_SMOKE_BUILD.json
+          if git diff --cached --quiet; then
+            echo 'No artifact transport changes.'
+          else
+            git commit -m 'M6A1 persist THOR smoke APK transport'
+            git push origin HEAD:feature/soulgold-showdown-m6a1
+          fi
