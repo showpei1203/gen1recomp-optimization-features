@@ -1,0 +1,45 @@
+--- M5A2/src/m2_showdown_overlay.cpp
++++ M5A3/src/m2_showdown_overlay.cpp
+@@ -838,6 +838,11 @@
+ };
+ std::array<ActionPresentationObservation,kExternalBattlers> g_action_obs{};
+ 
++// M5A3: monotonic observation-only action context serial. It changes only when
++// SoulGold exposes a new canonical attacker/target context. It never drives
++// gameplay, clip selection, motion, timing, damage, effects, or sound.
++uint64_t g_action_context_serial=0;
++
+ // M5A2: SoulGold itself exposes canonical animation participants.  Use
+ // gBattleAnimAttacker/gBattleAnimTarget only to classify the action context;
+ // rendering still mirrors each native proxy and no extra choreography/timing is created.
+@@ -2188,13 +2193,15 @@
+             last_action_attacker=action_participants.attacker;
+             last_action_target=action_participants.target;
+             action_context_logged=true;
++            ++g_action_context_serial;
+             std::cerr << "SHOWDOWN_ACTION_CONTEXT frame=" << g_frame
++                      << " context_id=" << g_action_context_serial
+                       << " attacker=" << static_cast<unsigned>(action_participants.attacker)
+                       << " target=" << static_cast<unsigned>(action_participants.target)
+                       << " self_target=" << (action_participants.attacker==action_participants.target?1:0)
+                       << " participant_authority=soulgold_gBattleAnimAttackerTarget"
+                       << " clip_policy=preserve_current_clip second_gameplay_clock=0"
+-                      << " R-SD-114=1 R-SD-117=1\n";
++                      << " R-SD-114=1 R-SD-117=1 R-SD-120=1\n";
+         }
+     }
+@@ -2213,6 +2220,7 @@
+                 a.role = is_attacker && is_target ? 3 : (is_attacker ? 1 : (is_target ? 2 : 4));
+                 a.species=p.species; a.last_x=sx; a.last_y=sy; a.start_frame=g_frame;
+                 std::cerr << "SHOWDOWN_ACTION_BEGIN frame=" << g_frame
++                          << " context_id=" << g_action_context_serial
+                           << " battler=" << static_cast<unsigned>(battler)
+@@ -2225,6 +2233,7 @@
+                 if (native_motion && !a.native_motion_seen) {
+                     a.native_motion_seen=true; a.affine_seen=a.affine_seen||p.affine;
+                     std::cerr << "SHOWDOWN_ACTION_NATIVE_BODY_MOTION frame=" << g_frame
++                              << " context_id=" << g_action_context_serial
+@@ -2237,6 +2246,7 @@
+         } else if (a.active) {
+             std::cerr << "SHOWDOWN_ACTION_END frame=" << g_frame
++                      << " context_id=" << g_action_context_serial
