@@ -1,0 +1,116 @@
+--- /mnt/data/m5a3_work/src/m2_showdown_overlay.cpp	2026-09-02 13:29:33.630769953 +0000
++++ /mnt/data/m6a0_work/src/m2_showdown_overlay.cpp	2026-09-02 13:39:57.809700971 +0000
+@@ -111,6 +111,11 @@
+ SDL_Window* g_window = nullptr;
+ SDL_Renderer* g_renderer = nullptr;
+ SDL_Texture* g_texture = nullptr;
++// M6A0 platform input authority. Keyboard remains supported for desktop QA,
++// but production portable input is SDL_GameController so Android / AYN THOR
++// does not depend on synthetic keyboard events.
++SDL_GameController* g_controller = nullptr;
++SDL_JoystickID g_controller_instance = -1;
+ SDL_Texture* g_anim_foreground_texture = nullptr;
+ SDL_Texture* g_player_healthbox_overlay_texture = nullptr;
+ std::vector<uint32_t> g_anim_baseline_argb;
+@@ -2658,7 +2663,7 @@
+ void sprite_lab_update_title() {
+     if (!g_window) return;
+     std::ostringstream title;
+-    title << "SoulGold M3S6 - Original Double HUD Safe Guide";
++    title << "SoulGold M6A0 - Android ARM64 Readiness";
+@@ -2774,25 +2779,85 @@
++void close_controller(const char* reason) {
++    if (!g_controller) return;
++    const char* name = SDL_GameControllerName(g_controller);
++    std::cerr << "M6_CONTROLLER_CLOSE frame=" << g_frame
++              << " instance=" << g_controller_instance
++              << " name=" << (name ? name : "unknown")
++              << " reason=" << (reason ? reason : "unknown")
++              << " R-SD-127=1\n";
++    SDL_GameControllerClose(g_controller);
++    g_controller = nullptr;
++    g_controller_instance = -1;
++}
++
++void try_open_controller(int preferred_index, const char* reason) {
++    if (g_controller) return;
++    const int total = SDL_NumJoysticks();
++    auto attempt = [&](int i) -> bool {
++        if (i < 0 || i >= total || !SDL_IsGameController(i)) return false;
++        SDL_GameController* c = SDL_GameControllerOpen(i);
++        if (!c) return false;
++        g_controller = c;
++        SDL_Joystick* joy = SDL_GameControllerGetJoystick(c);
++        g_controller_instance = joy ? SDL_JoystickInstanceID(joy) : -1;
++        const char* name = SDL_GameControllerName(c);
++        std::cerr << "M6_CONTROLLER_OPEN frame=" << g_frame
++                  << " device_index=" << i
++                  << " instance=" << g_controller_instance
++                  << " name=" << (name ? name : "unknown")
++                  << " reason=" << (reason ? reason : "unknown")
++                  << " mapping=direct_ab_lr_start_select_plus_left_analog_dpad"
++                  << " R-SD-126=1 R-SD-128=1 R-SD-129=1\n";
++        return true;
++    };
++    if (preferred_index >= 0 && attempt(preferred_index)) return;
++    for (int i = 0; i < total; ++i) {
++        if (i == preferred_index) continue;
++        if (attempt(i)) return;
++    }
++}
++
++bool controller_button(SDL_GameControllerButton button) {
++    return g_controller && SDL_GameControllerGetButton(g_controller, button) != 0;
++}
++
+ void update_keys() {
+     const Uint8* k = SDL_GetKeyboardState(nullptr);
++    const Sint16 ax = g_controller ? SDL_GameControllerGetAxis(g_controller, SDL_CONTROLLER_AXIS_LEFTX) : 0;
++    const Sint16 ay = g_controller ? SDL_GameControllerGetAxis(g_controller, SDL_CONTROLLER_AXIS_LEFTY) : 0;
++    static constexpr Sint16 kAxisThreshold = 16000;
+     g_joy.fill(0);
+-    g_joy[RETRO_DEVICE_ID_JOYPAD_UP] = k[SDL_SCANCODE_UP];
+-    g_joy[RETRO_DEVICE_ID_JOYPAD_DOWN] = k[SDL_SCANCODE_DOWN];
+-    g_joy[RETRO_DEVICE_ID_JOYPAD_LEFT] = k[SDL_SCANCODE_LEFT];
+-    g_joy[RETRO_DEVICE_ID_JOYPAD_RIGHT] = k[SDL_SCANCODE_RIGHT];
+-    g_joy[RETRO_DEVICE_ID_JOYPAD_A] = k[SDL_SCANCODE_Z];
+-    g_joy[RETRO_DEVICE_ID_JOYPAD_B] = k[SDL_SCANCODE_X];
+-    g_joy[RETRO_DEVICE_ID_JOYPAD_L] = k[SDL_SCANCODE_A];
+-    g_joy[RETRO_DEVICE_ID_JOYPAD_R] = k[SDL_SCANCODE_S];
+-    g_joy[RETRO_DEVICE_ID_JOYPAD_START] = k[SDL_SCANCODE_RETURN];
+-    g_joy[RETRO_DEVICE_ID_JOYPAD_SELECT] = k[SDL_SCANCODE_BACKSPACE];
++    g_joy[RETRO_DEVICE_ID_JOYPAD_UP] = k[SDL_SCANCODE_UP] || controller_button(SDL_CONTROLLER_BUTTON_DPAD_UP) || ay < -kAxisThreshold;
++    g_joy[RETRO_DEVICE_ID_JOYPAD_DOWN] = k[SDL_SCANCODE_DOWN] || controller_button(SDL_CONTROLLER_BUTTON_DPAD_DOWN) || ay > kAxisThreshold;
++    g_joy[RETRO_DEVICE_ID_JOYPAD_LEFT] = k[SDL_SCANCODE_LEFT] || controller_button(SDL_CONTROLLER_BUTTON_DPAD_LEFT) || ax < -kAxisThreshold;
++    g_joy[RETRO_DEVICE_ID_JOYPAD_RIGHT] = k[SDL_SCANCODE_RIGHT] || controller_button(SDL_CONTROLLER_BUTTON_DPAD_RIGHT) || ax > kAxisThreshold;
++    g_joy[RETRO_DEVICE_ID_JOYPAD_A] = k[SDL_SCANCODE_Z] || controller_button(SDL_CONTROLLER_BUTTON_A);
++    g_joy[RETRO_DEVICE_ID_JOYPAD_B] = k[SDL_SCANCODE_X] || controller_button(SDL_CONTROLLER_BUTTON_B);
++    g_joy[RETRO_DEVICE_ID_JOYPAD_L] = k[SDL_SCANCODE_A] || controller_button(SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
++    g_joy[RETRO_DEVICE_ID_JOYPAD_R] = k[SDL_SCANCODE_S] || controller_button(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
++    g_joy[RETRO_DEVICE_ID_JOYPAD_START] = k[SDL_SCANCODE_RETURN] || controller_button(SDL_CONTROLLER_BUTTON_START);
++    g_joy[RETRO_DEVICE_ID_JOYPAD_SELECT] = k[SDL_SCANCODE_BACKSPACE] || controller_button(SDL_CONTROLLER_BUTTON_BACK);
+ }
+@@ -2802,6 +2867,14 @@
+         if (e.type == SDL_QUIT) g_quit=true;
++        if (e.type == SDL_CONTROLLERDEVICEADDED) {
++            try_open_controller(e.cdevice.which, "device_added");
++        } else if (e.type == SDL_CONTROLLERDEVICEREMOVED) {
++            if (g_controller && e.cdevice.which == g_controller_instance) {
++                close_controller("device_removed");
++                try_open_controller(-1, "hotplug_failover");
++            }
++        }
+@@ -2908,7 +2981,11 @@
+         if (SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_GAMECONTROLLER)!=0)
+             throw std::runtime_error(std::string("SDL_Init: ")+SDL_GetError());
+-        g_window=SDL_CreateWindow("SoulGold M3S2 - Withdraw Send-Out Presentation | OFF",
++        SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
++        try_open_controller(-1, "startup");
++        std::cerr << "M6_INPUT_AUTHORITY SDL_GameController=1 keyboard_fallback=1"
++                  << " direct_ab=1 analog_dpad_fallback=1 R-SD-126=1 R-SD-128=1 R-SD-129=1\n";
++        g_window=SDL_CreateWindow("SoulGold M6A0 - Android ARM64 Readiness | OFF",
+@@ -3055,6 +3132,7 @@
+         if (g_audio_stream) SDL_FreeAudioStream(g_audio_stream);
+         if (g_texture) SDL_DestroyTexture(g_texture);
++        close_controller("normal_shutdown");
+         SDL_DestroyRenderer(g_renderer);
