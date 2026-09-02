@@ -1,0 +1,9 @@
+{
+  "milestone": "M6A1",
+  "artifact": "SOULGOLD_M6A1_THOR_DEVICE_SMOKE.apk",
+  "bytes": 14169,
+  "sha256": "49ce96bbb47c2f726f65b795c8c7b2ff2a4cb806b7fdfd4e2c09baf934513aea",
+  "purpose": "AYN THOR device smoke: display/FPS/gamepad/audio/app-scoped storage",
+  "gameplay_runtime": "NOT_INCLUDED_IN_M6A1_SMOKE_APK",
+  "next": "M6A2 native SoulGold/mGBA/Showdown runtime APK integration"
+}
