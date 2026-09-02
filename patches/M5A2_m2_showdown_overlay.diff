@@ -1,0 +1,84 @@
+--- m5a1_exec_work/src/m2_showdown_overlay.cpp	2026-09-02 12:45:31.878509977 +0000
++++ m5a2_work/src/m2_showdown_overlay.cpp	2026-09-02 13:14:24.329763921 +0000
+@@ -477,7 +477,8 @@
+         "gExternalShowdownStatAnimActive", "gExternalShowdownStatAnimBattler",
+         "gExternalShowdownStatAnimDecrease", "gExternalShowdownStatAnimPal",
+         "gExternalShowdownStatAnimSharp", "gExternalShowdownStatAnimBlend",
+-        "gExternalShowdownStatAnimScroll", "gAnimScriptActive"
++        "gExternalShowdownStatAnimScroll", "gAnimScriptActive",
++        "gBattleAnimAttacker", "gBattleAnimTarget"
+     };
+@@ -819,14 +820,17 @@
+-// M5A1 Original-First Action Mirror. This is observation-only state.
++// M5A2: original-first action participant authority. This is observation-only state.
+ struct ActionPresentationObservation {
+     bool active = false;
++    bool canonical_participant = false;
++    bool auxiliary_motion_only = false;
+     bool native_motion_seen = false;
+     bool affine_seen = false;
++    uint8_t role = 0; // 1=attacker, 2=target, 3=self attacker+target, 4=aux native motion
+@@ -834,6 +838,24 @@
+ std::array<ActionPresentationObservation,kExternalBattlers> g_action_obs{};
++
++struct ActionParticipantAuthority {
++    uint8_t attacker = 0xFF;
++    uint8_t target = 0xFF;
++    bool valid = false;
++};
++
++ActionParticipantAuthority read_action_participant_authority(bool anim_script_active) {
++    ActionParticipantAuthority out{};
++    if (!anim_script_active) return out;
++    read_gba(sym_addr("gBattleAnimAttacker"), &out.attacker);
++    read_gba(sym_addr("gBattleAnimTarget"), &out.target);
++    out.valid = out.attacker < kExternalBattlers && out.target < kExternalBattlers;
++    return out;
++}
+@@ -2146,35 +2168,70 @@
+-    // M5A1: original-first native action mirror. Global gAnimScriptActive marks
+-    // the observation window; native proxy x/y/x2/y2/affine/visibility remains
+-    // the only body-motion authority. Preserve the current Showdown clip and
+-    // lifecycle_start_frame; do not restart the animation epoch or force an attack clip.
++    // M5A2: original-first action participant authority. gAnimScriptActive remains
++    // the SoulGold animation-window authority, while gBattleAnimAttacker/Target
++    // identifies canonical participants. Non-participants are never labelled as
++    // attacker/target merely because a global animation is active.
++    const auto action_participants=read_action_participant_authority(anim_script_active);
++    static uint8_t last_action_attacker=0xFF, last_action_target=0xFF;
++    static bool action_context_logged=false;
++    if (!anim_script_active) {
++        action_context_logged=false;
++        last_action_attacker=0xFF;
++        last_action_target=0xFF;
++    }
++    if (anim_script_active && action_participants.valid) {
++        if (!action_context_logged || last_action_attacker!=action_participants.attacker || last_action_target!=action_participants.target) {
++            last_action_attacker=action_participants.attacker;
++            last_action_target=action_participants.target;
++            action_context_logged=true;
++            std::cerr << "SHOWDOWN_ACTION_CONTEXT frame=" << g_frame
++                      << " attacker=" << static_cast<unsigned>(action_participants.attacker)
++                      << " target=" << static_cast<unsigned>(action_participants.target)
++                      << " self_target=" << (action_participants.attacker==action_participants.target?1:0)
++                      << " participant_authority=soulgold_gBattleAnimAttackerTarget"
++                      << " clip_policy=preserve_current_clip second_gameplay_clock=0"
++                      << " R-SD-114=1 R-SD-117=1\n";
++        }
++    }
+     for (uint8_t battler=0; battler<kExternalBattlers; ++battler) {
+         const auto& p=proxies[battler];
+         auto& a=g_action_obs[battler];
++        const bool is_attacker=action_participants.valid && battler==action_participants.attacker;
++        const bool is_target=action_participants.valid && battler==action_participants.target;
++        const bool canonical=is_attacker || is_target;
+         if (anim_script_active && p.valid && p.visible()) {
+             const double sx=p.screen_x(), sy=p.screen_y();
+-            if (!a.active) {
+-                a.active=true; a.native_motion_seen=false; a.affine_seen=p.affine;
++            const double step=a.active ? std::hypot(sx-a.last_x,sy-a.last_y) : 0.0;
++            const bool native_motion=(step>0.50 || p.affine);
++            if (!a.active && (canonical || native_motion)) {
++                a.active=true; a.canonical_participant=canonical; a.auxiliary_motion_only=!canonical;
++                a.native_motion_seen=native_motion; a.affine_seen=p.affine;
++                a.role = is_attacker && is_target ? 3 : (is_attacker ? 1 : (is_target ? 2 : 4));
