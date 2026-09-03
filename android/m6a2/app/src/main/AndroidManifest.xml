@@ -3,7 +3,7 @@
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />
     <application android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"
         android:label="SoulGold M6A2 Runtime Boot"
-        android:allowBackup="false" android:supportsRtl="true">
+        android:allowBackup="false" android:supportsRtl="true" android:extractNativeLibs="true">
         <activity android:name=".MainActivity" android:screenOrientation="landscape"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode"
             android:exported="true">
