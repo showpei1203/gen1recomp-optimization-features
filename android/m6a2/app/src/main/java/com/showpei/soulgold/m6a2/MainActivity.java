@@ -7,12 +7,14 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Process;
 import android.os.SystemClock;
 import android.provider.OpenableColumns;
 import android.database.Cursor;
@@ -36,6 +38,8 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class MainActivity extends Activity {
     static { System.loadLibrary("soulgold_m6a2"); }
@@ -49,6 +53,10 @@ public final class MainActivity extends Activity {
     static native void nativeRunFrame();
     static native int nativeCopyFrame(int[] outPixels);
     static native int nativeDrainAudio(short[] outSamples);
+    static native int nativeAudioQueueSamples();
+    static native long nativeAudioGeneratedSamples();
+    static native long nativeAudioDrainedSamples();
+    static native long nativeAudioDroppedSamples();
     static native void nativeSetInputMask(int mask);
     static native double nativeFps();
     static native int nativeSampleRate();
@@ -97,16 +105,16 @@ public final class MainActivity extends Activity {
 
         boolean ok=nativeInit(getApplicationInfo().nativeLibraryDir,getFilesDir().getAbsolutePath());
         if(!ok) {
-            status.setText("M6A2 native/mGBA 初始化失敗："+nativeLastError());
+            status.setText("M6A2 FIX2 native/mGBA 初始化失敗："+nativeLastError());
             pickButton.setEnabled(false);
         } else {
-            status.setText("SoulGold M6A2 ARM64 Runtime Boot\nAYN THOR 已驗證平台層。請選擇你自己的 .gba 備份。\nROM 不包含在 APK。M6A2 目標：真實 mGBA runtime boot。 ");
+            status.setText("SoulGold M6A2 FIX2 · Timing/Audio/Presentation Preservation\n請選擇你自己的 .gba 備份。\n核心時鐘與 Android 顯示刷新率已解耦；ROM 不包含在 APK。");
         }
     }
 
-    @Override protected void onResume(){ super.onResume(); enterImmersive(); gameView.resumeLoop(); }
-    @Override protected void onPause(){ gameView.pauseLoop(); saveNow(); super.onPause(); }
-    @Override protected void onDestroy(){ gameView.closeAudio(); nativeShutdown(); super.onDestroy(); }
+    @Override protected void onResume(){ super.onResume(); enterImmersive(); gameView.resumeRuntime(); }
+    @Override protected void onPause(){ gameView.pauseRuntime(); saveNow(); super.onPause(); }
+    @Override protected void onDestroy(){ gameView.shutdownRuntime(); nativeShutdown(); super.onDestroy(); }
     @Override public void onWindowFocusChanged(boolean focus){ super.onWindowFocusChanged(focus); if(focus) enterImmersive(); }
 
     private void enterImmersive(){
@@ -128,7 +136,7 @@ public final class MainActivity extends Activity {
         try {
             String display=queryName(uri);
             if(display!=null && !display.toLowerCase(Locale.ROOT).endsWith(".gba")) {
-                status.setText("拒絕：M6A2 Runtime Boot 目前只接受 .gba。選到："+display); return;
+                status.setText("拒絕：M6A2 FIX2 目前只接受 .gba。選到："+display); return;
             }
             File romDir=new File(getFilesDir(),"roms"); romDir.mkdirs();
             File out=new File(romDir,"soulgold_user.gba");
@@ -144,7 +152,7 @@ public final class MainActivity extends Activity {
             if(!nativeLoadRom(out.getAbsolutePath(),saveFile.getAbsolutePath())) throw new Exception(nativeLastError());
             gameView.startRuntime(); pickButton.setVisibility(View.GONE);
             status.setText(String.format(Locale.US,
-                "M6A2 RUNTIME ACTIVE · mGBA %.3f FPS · audio %d Hz\n%s · %d bytes\n實體按鍵：A/B/L1/R1/Start/Select/D-pad；左類比→D-pad。L+R+Start=Reset。",
+                "M6A2 FIX2 RUNTIME ACTIVE · core %.4f FPS · audio %d Hz\n%s · %d bytes\nCore/audio 已獨立於 display VSYNC；Start+Select 寫入 timing report。",
                 nativeFps(),nativeSampleRate(),romName,romBytes));
             status.postDelayed(() -> status.setVisibility(View.GONE),7000);
         } catch(Exception ex){ status.setVisibility(View.VISIBLE); status.setText("ROM boot 失敗："+ex.getMessage()); }
@@ -196,35 +204,118 @@ public final class MainActivity extends Activity {
     private void saveNow(){ if(gameView.loaded) nativeSaveSram(saveFile.getAbsolutePath()); }
     private void writeReport(String reason){
         try{
-            JSONObject j=new JSONObject(); j.put("milestone","M6A2"); j.put("probe","SOULGOLD_ANDROID_ARM64_RUNTIME_BOOT"); j.put("reason",reason);
+            JSONObject j=new JSONObject(); j.put("milestone","M6A2_FIX2"); j.put("probe","TIMING_AUDIO_NATIVE_PRESENTATION_PRESERVATION"); j.put("reason",reason);
             j.put("manufacturer",Build.MANUFACTURER); j.put("model",Build.MODEL); j.put("sdk",Build.VERSION.SDK_INT);
             JSONArray a=new JSONArray(); for(String abi:Build.SUPPORTED_ABIS)a.put(abi); j.put("abis",a);
-            j.put("rom_name",romName); j.put("rom_bytes",romBytes); j.put("rom_sha256",romSha256); j.put("frames",gameView.frames);
-            j.put("core_fps",nativeFps()); j.put("audio_rate",nativeSampleRate()); j.put("sram_path",saveFile.getAbsolutePath());
-            j.put("runtime_boot_observed",gameView.frames>60); j.put("showdown_overlay_in_apk",false);
-            j.put("rules",new JSONArray().put("R-SD-139").put("R-SD-140").put("R-SD-141").put("R-SD-142").put("R-SD-143"));
-            File base=getExternalFilesDir(null); if(base==null)base=getFilesDir(); File out=new File(base,"M6A2_THOR_RUNTIME_BOOT_REPORT.json");
+            j.put("rom_name",romName); j.put("rom_bytes",romBytes); j.put("rom_sha256",romSha256);
+            j.put("core_reported_fps",nativeFps()); j.put("audio_rate",nativeSampleRate());
+            j.put("emu_frames",gameView.emuFrames.get()); j.put("display_callbacks",gameView.displayCallbacks.get());
+            j.put("display_fps",gameView.renderFps); j.put("audio_generated_samples",nativeAudioGeneratedSamples());
+            j.put("audio_drained_samples",nativeAudioDrainedSamples()); j.put("audio_dropped_samples",nativeAudioDroppedSamples());
+            j.put("audio_written_samples",gameView.audioWrittenSamples.get()); j.put("audio_partial_writes",gameView.audioPartialWrites.get());
+            j.put("audio_write_errors",gameView.audioWriteErrors.get()); j.put("audio_queue_samples",nativeAudioQueueSamples());
+            j.put("core_clock_decoupled_from_vsync",true); j.put("audio_blocking_consumer",true);
+            j.put("native_ui_animation_preservation_required",true); j.put("showdown_overlay_in_apk",false);
+            j.put("rules",new JSONArray().put("R-SD-144").put("R-SD-145").put("R-SD-146").put("R-SD-147").put("R-SD-148"));
+            File base=getExternalFilesDir(null); if(base==null)base=getFilesDir(); File out=new File(base,"M6A2_FIX2_TIMING_AUDIO_REPORT.json");
             try(FileOutputStream f=new FileOutputStream(out)){f.write(j.toString(2).getBytes(StandardCharsets.UTF_8));}
         }catch(Exception ignored){}
     }
 
     final class RuntimeView extends View implements Choreographer.FrameCallback {
         final Paint p=new Paint(); final Paint bootPaint=new Paint(Paint.ANTI_ALIAS_FLAG);
-        final int[] pixels=new int[256*224]; final short[] audioBuf=new short[8192]; Bitmap bmp;
-        AudioTrack audio; boolean loop, loaded; long frames; long lastSave; long lastFpsNs; int fpsFrames; float renderFps;
+        final int[] pixels=new int[256*224]; Bitmap bmp;
+        final AtomicBoolean running=new AtomicBoolean(false), audioRunning=new AtomicBoolean(false);
+        final AtomicLong emuFrames=new AtomicLong(), displayCallbacks=new AtomicLong();
+        final AtomicLong audioWrittenSamples=new AtomicLong(), audioPartialWrites=new AtomicLong(), audioWriteErrors=new AtomicLong();
+        volatile boolean loaded; volatile float renderFps;
+        volatile Thread emuThread,audioThread; volatile AudioTrack audio;
+        long lastSaveMs; long lastDisplayNs; int displayFrames;
+
         RuntimeView(){ super(MainActivity.this); p.setFilterBitmap(false); bootPaint.setColor(Color.rgb(120,230,170)); bootPaint.setTextSize(30f); setBackgroundColor(Color.BLACK); }
-        void resumeLoop(){ if(!loop){loop=true;Choreographer.getInstance().postFrameCallback(this);} }
-        void pauseLoop(){loop=false;}
-        void startRuntime(){loaded=true; frames=0; lastSave=SystemClock.elapsedRealtime(); initAudio(); invalidate();}
-        void initAudio(){ closeAudio(); int sr=nativeSampleRate(); if(sr<8000)sr=32768; int min=AudioTrack.getMinBufferSize(sr,AudioFormat.CHANNEL_OUT_STEREO,AudioFormat.ENCODING_PCM_16BIT); audio=new AudioTrack(AudioManager.STREAM_MUSIC,sr,AudioFormat.CHANNEL_OUT_STEREO,AudioFormat.ENCODING_PCM_16BIT,Math.max(min*4,32768),AudioTrack.MODE_STREAM); audio.play(); }
-        void closeAudio(){ if(audio!=null){try{audio.pause();audio.flush();audio.release();}catch(Exception ignored){} audio=null;} }
+
+        void startRuntime(){
+            loaded=true; emuFrames.set(0); displayCallbacks.set(0); audioWrittenSamples.set(0); audioPartialWrites.set(0); audioWriteErrors.set(0);
+            lastSaveMs=SystemClock.elapsedRealtime(); startWorkers(); resumeDisplay(); invalidate();
+        }
+        void resumeRuntime(){ if(loaded) startWorkers(); resumeDisplay(); }
+        void pauseRuntime(){ stopWorkers(); pauseDisplay(); }
+        void shutdownRuntime(){ stopWorkers(); pauseDisplay(); closeAudio(); }
+
+        void startWorkers(){
+            if(!loaded || running.getAndSet(true)) return;
+            startAudio();
+            emuThread=new Thread(() -> {
+                Process.setThreadPriority(Process.THREAD_PRIORITY_DISPLAY);
+                final double fps=Math.max(1.0,nativeFps());
+                final long step=(long)(1_000_000_000.0/fps);
+                long next=System.nanoTime();
+                while(running.get()){
+                    long now=System.nanoTime();
+                    long wait=next-now;
+                    if(wait>2_000_000L){
+                        try{ long sleepNs=wait-1_000_000L; long ms=sleepNs/1_000_000L; int nsPart=(int)(sleepNs%1_000_000L); Thread.sleep(ms,nsPart); }catch(InterruptedException ignored){}
+                        continue;
+                    }
+                    if(wait>0){ Thread.yield(); continue; }
+                    nativeRunFrame(); emuFrames.incrementAndGet();
+                    next+=step;
+                    if(now-next>step*4) next=now+step;
+                    long ms=SystemClock.elapsedRealtime();
+                    if(ms-lastSaveMs>5000){ nativeSaveSram(saveFile.getAbsolutePath()); lastSaveMs=ms; }
+                }
+            },"SoulGold-M6A2-Emu");
+            emuThread.start();
+        }
+        void stopWorkers(){
+            if(!running.getAndSet(false)) return;
+            audioRunning.set(false);
+            Thread e=emuThread,a=audioThread; emuThread=null; audioThread=null;
+            if(e!=null)e.interrupt(); if(a!=null)a.interrupt();
+            try{ if(e!=null)e.join(500); }catch(InterruptedException ignored){}
+            try{ if(a!=null)a.join(500); }catch(InterruptedException ignored){}
+            if(audio!=null){ try{audio.pause();audio.flush();}catch(Exception ignored){} }
+        }
+        void startAudio(){
+            closeAudio();
+            int sr=nativeSampleRate(); if(sr<8000)sr=32768;
+            int min=AudioTrack.getMinBufferSize(sr,AudioFormat.CHANNEL_OUT_STEREO,AudioFormat.ENCODING_PCM_16BIT);
+            AudioAttributes attrs=new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build();
+            AudioFormat fmt=new AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(sr).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).build();
+            int bytes=Math.max(min*4,32768);
+            audio=new AudioTrack(attrs,fmt,bytes,AudioTrack.MODE_STREAM,AudioManager.AUDIO_SESSION_ID_GENERATE);
+            audio.play(); audioRunning.set(true);
+            final short[] buf=new short[8192];
+            audioThread=new Thread(() -> {
+                Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO);
+                while(audioRunning.get()){
+                    int n=nativeDrainAudio(buf);
+                    if(n<=0){ try{Thread.sleep(1);}catch(InterruptedException ignored){} continue; }
+                    int off=0;
+                    while(off<n && audioRunning.get()){
+                        int remain=n-off;
+                        int wrote=audio.write(buf,off,remain,AudioTrack.WRITE_BLOCKING);
+                        if(wrote>0){ if(wrote<remain)audioPartialWrites.incrementAndGet(); off+=wrote; audioWrittenSamples.addAndGet(wrote); }
+                        else { audioWriteErrors.incrementAndGet(); if(wrote<0) break; }
+                    }
+                }
+            },"SoulGold-M6A2-Audio");
+            audioThread.start();
+        }
+        void closeAudio(){ AudioTrack a=audio; audio=null; if(a!=null){try{a.pause();a.flush();a.release();}catch(Exception ignored){}} }
+
+        void resumeDisplay(){ Choreographer.getInstance().removeFrameCallback(this); Choreographer.getInstance().postFrameCallback(this); }
+        void pauseDisplay(){ Choreographer.getInstance().removeFrameCallback(this); }
         @Override public void doFrame(long ns){
-            if(!loop)return;
-            if(lastFpsNs==0)lastFpsNs=ns; fpsFrames++; if(ns-lastFpsNs>=1_000_000_000L){renderFps=(float)(fpsFrames*1e9/(ns-lastFpsNs));fpsFrames=0;lastFpsNs=ns;}
-            if(loaded){ nativeRunFrame(); frames++; int info=nativeCopyFrame(pixels); if(info>0){int w=(info>>>16)&0xffff,h=info&0xffff;if(w>0&&h>0){if(bmp==null||bmp.getWidth()!=w||bmp.getHeight()!=h)bmp=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);bmp.setPixels(pixels,0,w,0,0,w,h);}}
-                if(audio!=null){int n=nativeDrainAudio(audioBuf); if(n>0)audio.write(audioBuf,0,n,AudioTrack.WRITE_NON_BLOCKING);} long now=SystemClock.elapsedRealtime(); if(now-lastSave>5000){nativeSaveSram(saveFile.getAbsolutePath());lastSave=now;} invalidate(); }
+            displayCallbacks.incrementAndGet();
+            if(lastDisplayNs==0)lastDisplayNs=ns; displayFrames++;
+            if(ns-lastDisplayNs>=1_000_000_000L){renderFps=(float)(displayFrames*1e9/(ns-lastDisplayNs));displayFrames=0;lastDisplayNs=ns;}
+            if(loaded){
+                int info=nativeCopyFrame(pixels);
+                if(info>0){ int w=(info>>>16)&0xffff,h=info&0xffff; if(w>0&&h>0){ if(bmp==null||bmp.getWidth()!=w||bmp.getHeight()!=h)bmp=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888); bmp.setPixels(pixels,0,w,0,0,w,h); invalidate(); } }
+            }
             Choreographer.getInstance().postFrameCallback(this);
         }
-        @Override protected void onDraw(Canvas c){ super.onDraw(c); if(bmp!=null){float sx=getWidth()/(float)bmp.getWidth(),sy=getHeight()/(float)bmp.getHeight(),s=Math.min(sx,sy);int dw=Math.round(bmp.getWidth()*s),dh=Math.round(bmp.getHeight()*s),l=(getWidth()-dw)/2,t=(getHeight()-dh)/2;c.drawBitmap(bmp,null,new Rect(l,t,l+dw,t+dh),p);} else {c.drawText("M6A2 · mGBA ARM64 Runtime Boot",42,110,bootPaint);c.drawText("請選擇你自己的 SoulGold / GBA ROM",42,150,bootPaint);} }
+        @Override protected void onDraw(Canvas c){ super.onDraw(c); if(bmp!=null){float sx=getWidth()/(float)bmp.getWidth(),sy=getHeight()/(float)bmp.getHeight(),s=Math.min(sx,sy);int dw=Math.round(bmp.getWidth()*s),dh=Math.round(bmp.getHeight()*s),l=(getWidth()-dw)/2,t=(getHeight()-dh)/2;c.drawBitmap(bmp,null,new Rect(l,t,l+dw,t+dh),p);} else {c.drawText("M6A2 FIX2 · mGBA ARM64 Runtime",42,110,bootPaint);c.drawText("core/audio timing decoupled from display VSYNC",42,150,bootPaint);} }
     }
 }
