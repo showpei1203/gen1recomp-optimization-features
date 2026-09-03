@@ -1,0 +1,13 @@
+{
+  "milestone": "M6A2",
+  "artifact": "SOULGOLD_M6A2_THOR_RUNTIME_BOOT.apk",
+  "bytes": 3716739,
+  "sha256": "d2faa4ecb157d82ff4ae989c4551d99a822eb5982b0ede39a903bd1291a03922",
+  "abi": "arm64-v8a",
+  "mgba_pinned_commit": "507061afd70489a0c2ffc8ba26d8f9b53d6cf7d6",
+  "contains_mgba_libretro": true,
+  "contains_runtime_bridge": true,
+  "rom_included": false,
+  "purpose": "AYN THOR real GBA/mGBA runtime boot using user-supplied ROM; Showdown overlay integration remains later milestone",
+  "runtime_device_pass": "PENDING_USER_THOR_TEST"
+}
