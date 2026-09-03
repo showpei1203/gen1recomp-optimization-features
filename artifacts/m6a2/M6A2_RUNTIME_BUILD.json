@@ -1,13 +1,14 @@
 {
-  "milestone": "M6A2",
-  "artifact": "SOULGOLD_M6A2_THOR_RUNTIME_BOOT.apk",
-  "bytes": 3716739,
-  "sha256": "d2faa4ecb157d82ff4ae989c4551d99a822eb5982b0ede39a903bd1291a03922",
+  "milestone": "M6A2_FIX1",
+  "artifact": "SOULGOLD_M6A2_FIX1_THOR_RUNTIME_BOOT.apk",
+  "bytes": 746239,
+  "sha256": "66ffce246e021ed7fbb292f1d5108498db3f5853aa816c2591c37a73b2d7d62d",
   "abi": "arm64-v8a",
   "mgba_pinned_commit": "507061afd70489a0c2ffc8ba26d8f9b53d6cf7d6",
   "contains_mgba_libretro": true,
   "contains_runtime_bridge": true,
+  "native_extraction_fix": true,
   "rom_included": false,
-  "purpose": "AYN THOR real GBA/mGBA runtime boot using user-supplied ROM; Showdown overlay integration remains later milestone",
+  "purpose": "AYN THOR real GBA/mGBA runtime boot FIX1: force extracted JNI libraries so nativeLibraryDir/dlopen can resolve mGBA",
   "runtime_device_pass": "PENDING_USER_THOR_TEST"
 }
