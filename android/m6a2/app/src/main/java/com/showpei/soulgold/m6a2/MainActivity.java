@@ -39,6 +39,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Locale;
+import java.util.concurrent.locks.LockSupport;
 
 public final class MainActivity extends Activity {
     static { System.loadLibrary("soulgold_m6a2"); }
@@ -78,7 +79,8 @@ public final class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         enterImmersive();
 
-        File saves=new File(getFilesDir(),"saves"); saves.mkdirs();
+        File saves=new File(getFilesDir(),"saves");
+        saves.mkdirs();
         saveFile=new File(saves,"soulgold_runtime.sav");
 
         FrameLayout root=new FrameLayout(this);
@@ -90,7 +92,8 @@ public final class MainActivity extends Activity {
         pickButton.setTextSize(18f);
         pickButton.setOnClickListener(v->chooseRom());
         FrameLayout.LayoutParams bp=new FrameLayout.LayoutParams(-2,-2);
-        bp.leftMargin=42; bp.topMargin=170;
+        bp.leftMargin=42;
+        bp.topMargin=170;
         root.addView(pickButton,bp);
 
         status=new TextView(this);
@@ -99,17 +102,18 @@ public final class MainActivity extends Activity {
         status.setBackgroundColor(0xAA101418);
         status.setPadding(16,10,16,10);
         FrameLayout.LayoutParams sp=new FrameLayout.LayoutParams(-2,-2);
-        sp.leftMargin=18; sp.topMargin=18;
+        sp.leftMargin=18;
+        sp.topMargin=18;
         root.addView(status,sp);
         setContentView(root);
 
         boolean ok=nativeInit(getApplicationInfo().nativeLibraryDir,getFilesDir().getAbsolutePath());
         if(!ok){
-            status.setText("M6A2 FIX4A native/mGBA 初始化失敗："+nativeLastError());
+            status.setText("M6A2 FIX4B native/mGBA 初始化失敗："+nativeLastError());
             pickButton.setEnabled(false);
         } else {
-            status.setText("SoulGold M6A2 FIX4A · Audio Clock Master\n"
-                    +"mGBA 每幀音訊 → 明確重採樣 → Android 原生輸出時鐘。");
+            status.setText("SoulGold M6A2 FIX4B · Decoupled Core + Audio DRC\n"
+                    +"mGBA monotonic core clock；audio sink 只做 bounded feedback。");
         }
     }
 
@@ -133,7 +137,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onWindowFocusChanged(boolean focus){
         super.onWindowFocusChanged(focus);
-        if(focus) enterImmersive();
+        if(focus)enterImmersive();
     }
 
     private void enterImmersive(){
@@ -188,7 +192,7 @@ public final class MainActivity extends Activity {
             romBytes=total;
             romSha256=hex(sha.digest());
 
-            gameView.stopWorker();
+            gameView.stopWorkers();
             if(!nativeLoadRom(out.getAbsolutePath(),saveFile.getAbsolutePath()))
                 throw new Exception(nativeLastError());
 
@@ -196,8 +200,8 @@ public final class MainActivity extends Activity {
             pickButton.setVisibility(View.GONE);
             status.setVisibility(View.VISIBLE);
             status.setText(String.format(Locale.US,
-                    "M6A2 FIX4A ACTIVE · core %.4f FPS · source %d Hz → device %d Hz\n"
-                    +"Audio sink backpressure = emulation clock；VSYNC 只呈現畫面。",
+                    "M6A2 FIX4B ACTIVE · core %.4f FPS · source %d Hz → device %d Hz\n"
+                    +"Core/audio threads decoupled；DRC ±0.5%%；VSYNC 只呈現畫面。",
                     nativeFps(),nativeSampleRate(),gameView.nativeOutputRate));
             status.postDelayed(()->status.setVisibility(View.GONE),7000);
         }catch(Exception ex){
@@ -254,13 +258,13 @@ public final class MainActivity extends Activity {
                 else if(e.getAction()==KeyEvent.ACTION_UP)inputMask&=~(1<<id);
                 nativeSetInputMask(inputMask);
 
-                if((inputMask&(1<<RID_L))!=0 &&
-                   (inputMask&(1<<RID_R))!=0 &&
+                if((inputMask&(1<<RID_L))!=0&&
+                   (inputMask&(1<<RID_R))!=0&&
                    (inputMask&(1<<RID_START))!=0){
                     gameView.requestReset();
                 }
 
-                if((inputMask&(1<<RID_START))!=0 &&
+                if((inputMask&(1<<RID_START))!=0&&
                    (inputMask&(1<<RID_SELECT))!=0){
                     writeReport("start_select");
                 }
@@ -294,7 +298,7 @@ public final class MainActivity extends Activity {
     private void writeReport(String reason){
         try{
             JSONObject j=new JSONObject();
-            j.put("milestone","M6A2_FIX4A");
+            j.put("milestone","M6A2_FIX4B");
             j.put("reason",reason);
             j.put("manufacturer",Build.MANUFACTURER);
             j.put("model",Build.MODEL);
@@ -307,37 +311,38 @@ public final class MainActivity extends Activity {
             j.put("rom_bytes",romBytes);
             j.put("rom_sha256",romSha256);
 
-            long frames=gameView.frames;
-            long gen=nativeAudioGeneratedSamples();
-            double fps=nativeFps();
-            double effective=(frames>0)?(gen/2.0)*fps/frames:0.0;
-
             long playbackHead=gameView.playbackHeadFrames();
             long writtenFrames=gameView.audioWrittenSamples/2L;
             long queuedFrames=Math.max(0L,writtenFrames-playbackHead);
             double queuedMs=gameView.audioTrackRate>0
                     ?1000.0*queuedFrames/gameView.audioTrackRate:0.0;
 
-            j.put("core_reported_fps",fps);
+            j.put("core_reported_fps",nativeFps());
             j.put("source_reported_rate",nativeSampleRate());
-            j.put("effective_generated_source_rate",effective);
             j.put("native_output_rate",gameView.nativeOutputRate);
             j.put("audio_track_rate",gameView.audioTrackRate);
             j.put("audio_track_buffer_bytes",gameView.audioBufferBytes);
             j.put("audio_track_buffer_frames",gameView.audioBufferFrames);
-
-            j.put("emu_frames",frames);
+            j.put("emu_frames",gameView.frames);
             j.put("display_callbacks",gameView.displayCallbacks);
-            j.put("audio_generated_source_samples",gen);
+            j.put("core_deadline_rebases",gameView.coreDeadlineRebases);
+            j.put("core_max_late_ms",gameView.coreMaxLateNs/1_000_000.0);
+            j.put("audio_generated_source_samples",nativeAudioGeneratedSamples());
             j.put("audio_drained_source_samples",nativeAudioDrainedSamples());
             j.put("audio_dropped_source_samples",nativeAudioDroppedSamples());
-            j.put("discarded_source_samples",gameView.discardedSourceSamples);
+            j.put("latency_recovery_dropped_source_samples",gameView.latencyRecoveryDroppedSourceSamples);
             j.put("audio_written_output_samples",gameView.audioWrittenSamples);
             j.put("audio_write_errors",gameView.audioWriteErrors);
+            j.put("native_audio_queue_samples",nativeAudioQueueSamples());
+            j.put("source_queue_peak_samples",gameView.sourceQueuePeak);
+            j.put("source_queue_target_samples",gameView.sourceQueueTargetShorts);
+            j.put("source_queue_hard_samples",gameView.sourceQueueHardShorts);
+            j.put("drc_rate_adjust_current",gameView.drcCurrent);
+            j.put("drc_rate_adjust_min",gameView.drcMin);
+            j.put("drc_rate_adjust_max",gameView.drcMax);
             j.put("playback_head_output_frames",playbackHead);
             j.put("estimated_sink_queued_frames",queuedFrames);
             j.put("estimated_sink_latency_ms",queuedMs);
-            j.put("native_audio_queue_samples",nativeAudioQueueSamples());
             j.put("audio_underrun_count",gameView.underrunCount());
 
             AudioTimestamp ts=gameView.audioTimestamp();
@@ -346,23 +351,21 @@ public final class MainActivity extends Activity {
                 j.put("audio_timestamp_nano_time",ts.nanoTime);
             }
 
-            j.put("audio_clock_master",true);
-            j.put("explicit_frontend_resampler","linear_continuous_phase");
+            j.put("core_clock_master","mgba_monotonic_fps");
+            j.put("audio_feedback_drc",true);
+            j.put("drc_limit_fraction",0.005);
+            j.put("audio_sink_blocks_core",false);
             j.put("choreographer_advances_emulation",false);
-            j.put("large_java_pending_queue",false);
-            j.put("async_native_audio_queue_growth",false);
-            j.put("fix2_audio_worker_rejected",true);
-            j.put("fix3_choreographer_master_rejected",true);
+            j.put("fix4a_hard_audio_clock_rejected",true);
             j.put("showdown_overlay_in_apk",false);
 
             j.put("rules",new JSONArray()
-                    .put("R-SD-155").put("R-SD-156").put("R-SD-157")
-                    .put("R-SD-158").put("R-SD-159").put("R-SD-160")
-                    .put("R-SD-161").put("R-SD-162"));
+                    .put("R-SD-163").put("R-SD-164").put("R-SD-165").put("R-SD-166")
+                    .put("R-SD-167").put("R-SD-168").put("R-SD-169").put("R-SD-170"));
 
             File base=getExternalFilesDir(null);
             if(base==null)base=getFilesDir();
-            File out=new File(base,"M6A2_FIX4A_AUDIO_CLOCK_REPORT.json");
+            File out=new File(base,"M6A2_FIX4B_DECOUPLED_DRC_REPORT.json");
             try(FileOutputStream f=new FileOutputStream(out)){
                 f.write(j.toString(2).getBytes(StandardCharsets.UTF_8));
             }
@@ -373,29 +376,42 @@ public final class MainActivity extends Activity {
         final Paint p=new Paint();
         final Paint bootPaint=new Paint(Paint.ANTI_ALIAS_FLAG);
         final int[] pixels=new int[256*224];
-        final short[] sourceBuf=new short[4096];
+        final short[] sourceBuf=new short[2048];
         final short[] outputBuf=new short[8192];
         final LinearResampler resampler=new LinearResampler();
 
         Bitmap bmp;
         AudioTrack audio;
+
         volatile boolean loop;
         volatile boolean loaded;
-        volatile boolean workerRun;
+        volatile boolean coreRun;
+        volatile boolean audioRun;
         volatile boolean resetRequested;
+
         volatile long frames;
         volatile long displayCallbacks;
         volatile long audioWrittenSamples;
         volatile long audioWriteErrors;
-        volatile long discardedSourceSamples;
+        volatile long latencyRecoveryDroppedSourceSamples;
+        volatile long coreDeadlineRebases;
+        volatile long coreMaxLateNs;
 
-        Thread worker;
+        volatile int sourceQueuePeak;
+        volatile double drcCurrent=1.0;
+        volatile double drcMin=1.0;
+        volatile double drcMax=1.0;
+
+        Thread coreWorker;
+        Thread audioWorker;
+
         int nativeOutputRate;
         int audioTrackRate;
         int audioBufferBytes;
         int audioBufferFrames;
-        int prefillOutputShorts;
-        long audioSessionWrittenSamples;
+        int sourceQueueTargetShorts;
+        int sourceQueueHighShorts;
+        int sourceQueueHardShorts;
         long lastSave;
 
         RuntimeView(){
@@ -411,13 +427,13 @@ public final class MainActivity extends Activity {
                 loop=true;
                 Choreographer.getInstance().postFrameCallback(this);
             }
-            if(loaded)startWorker();
+            if(loaded)startWorkers();
         }
 
         void pauseLoop(){
             loop=false;
-            stopWorker();
-            discardNativeAudio();
+            stopWorkers();
+            discardNativeAudioTo(0);
         }
 
         void startRuntime(){
@@ -426,21 +442,34 @@ public final class MainActivity extends Activity {
             displayCallbacks=0;
             audioWrittenSamples=0;
             audioWriteErrors=0;
-            discardedSourceSamples=0;
+            latencyRecoveryDroppedSourceSamples=0;
+            coreDeadlineRebases=0;
+            coreMaxLateNs=0;
+            sourceQueuePeak=0;
+            drcCurrent=drcMin=drcMax=1.0;
             resetRequested=false;
             lastSave=SystemClock.elapsedRealtime();
-            discardNativeAudio();
+
+            discardNativeAudioTo(0);
             initAudio();
-            resampler.reset(nativeSampleRate(),nativeOutputRate);
-            startWorker();
+
+            int src=nativeSampleRate();
+            double fps=Math.max(1.0,nativeFps());
+            int oneFrameSourceShorts=(int)Math.ceil(src/fps)*2;
+            sourceQueueTargetShorts=Math.max(oneFrameSourceShorts*2,1024);
+            sourceQueueHighShorts=Math.max(sourceQueueTargetShorts*2,3072);
+            sourceQueueHardShorts=Math.max(sourceQueueTargetShorts*3,6144);
+
+            resampler.reset(src,audioTrackRate);
+            startWorkers();
             resumeLoop();
             invalidate();
         }
 
         void shutdownRuntime(){
             loop=false;
-            stopWorker();
-            discardNativeAudio();
+            stopWorkers();
+            discardNativeAudioTo(0);
             closeAudio();
             loaded=false;
         }
@@ -452,9 +481,6 @@ public final class MainActivity extends Activity {
         void initAudio(){
             closeAudio();
 
-            int src=nativeSampleRate();
-            if(src<8000)src=32768;
-
             nativeOutputRate=AudioTrack.getNativeOutputSampleRate(AudioManager.STREAM_MUSIC);
             if(nativeOutputRate<8000)nativeOutputRate=48000;
 
@@ -464,10 +490,8 @@ public final class MainActivity extends Activity {
                     AudioFormat.ENCODING_PCM_16BIT);
             if(min<0)min=4096;
 
-            double fps=Math.max(1.0,nativeFps());
-            int oneFrameShorts=(int)Math.ceil(nativeOutputRate/fps)*2;
-            prefillOutputShorts=Math.max(256,oneFrameShorts);
-            audioBufferBytes=Math.max(min,prefillOutputShorts*2);
+            int targetFrames=(int)Math.ceil(nativeOutputRate*0.032);
+            audioBufferBytes=Math.max(min,targetFrames*4);
 
             AudioAttributes attrs=new AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_GAME)
@@ -486,138 +510,189 @@ public final class MainActivity extends Activity {
                     .setTransferMode(AudioTrack.MODE_STREAM)
                     .setBufferSizeInBytes(audioBufferBytes);
 
-            if(Build.VERSION.SDK_INT>=26){
+            if(Build.VERSION.SDK_INT>=26)
                 b.setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY);
-            }
 
             audio=b.build();
             audioTrackRate=audio.getSampleRate();
             audioBufferFrames=audio.getBufferSizeInFrames();
-            audioSessionWrittenSamples=0;
         }
 
         void closeAudio(){
-            if(audio!=null){
+            AudioTrack a=audio;
+            audio=null;
+            if(a!=null){
                 try{
-                    audio.pause();
-                    audio.flush();
-                    audio.release();
+                    a.pause();
+                    a.flush();
+                    a.release();
                 }catch(Exception ignored){}
-                audio=null;
             }
         }
 
-        void startWorker(){
-            if(!loaded||workerRun||audio==null)return;
-            discardNativeAudio();
+        synchronized void startWorkers(){
+            if(!loaded||audio==null)return;
+            if(coreRun||audioRun)return;
+
+            discardNativeAudioTo(0);
             resampler.reset(nativeSampleRate(),audioTrackRate);
-            audioSessionWrittenSamples=0;
-            workerRun=true;
-            worker=new Thread(this::audioClockLoop,"SoulGold-M6A2-AudioClock");
-            worker.start();
+
+            audioRun=true;
+            coreRun=true;
+
+            audioWorker=new Thread(this::audioLoop,"SoulGold-M6A2-AudioSink");
+            coreWorker=new Thread(this::coreLoop,"SoulGold-M6A2-CoreClock");
+
+            audioWorker.start();
+            coreWorker.start();
         }
 
-        void stopWorker(){
-            workerRun=false;
-            if(audio!=null){
+        synchronized void stopWorkers(){
+            coreRun=false;
+            audioRun=false;
+
+            AudioTrack a=audio;
+            if(a!=null){
                 try{
-                    audio.pause();
-                    audio.flush();
+                    a.pause();
+                    a.flush();
                 }catch(Exception ignored){}
             }
-            Thread w=worker;
-            worker=null;
-            if(w!=null&&w!=Thread.currentThread()){
-                try{w.join(1500);}catch(InterruptedException ignored){
+
+            Thread c=coreWorker;
+            Thread s=audioWorker;
+            coreWorker=null;
+            audioWorker=null;
+
+            if(c!=null&&c!=Thread.currentThread()){
+                try{c.join(1500);}catch(InterruptedException ignored){
                     Thread.currentThread().interrupt();
                 }
             }
-            audioSessionWrittenSamples=0;
+            if(s!=null&&s!=Thread.currentThread()){
+                try{s.join(1500);}catch(InterruptedException ignored){
+                    Thread.currentThread().interrupt();
+                }
+            }
         }
 
-        void audioClockLoop(){
-            Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO);
-            boolean playing=false;
+        void coreLoop(){
+            Process.setThreadPriority(Process.THREAD_PRIORITY_DISPLAY);
+            double fps=Math.max(1.0,nativeFps());
+            long periodNs=Math.max(1L,(long)(1_000_000_000.0/fps));
+            long nextNs=System.nanoTime();
 
-            while(workerRun&&loaded){
+            while(coreRun&&loaded){
                 if(resetRequested){
                     resetRequested=false;
-                    try{
-                        if(audio!=null){
-                            audio.pause();
-                            audio.flush();
-                        }
-                    }catch(Exception ignored){}
-                    playing=false;
-                    audioSessionWrittenSamples=0;
-                    discardNativeAudio();
-                    resampler.reset(nativeSampleRate(),audioTrackRate);
                     nativeReset();
+                    discardNativeAudioTo(0);
+                    resampler.reset(nativeSampleRate(),audioTrackRate);
+                    nextNs=System.nanoTime()+periodNs;
+                }
+
+                long now=System.nanoTime();
+                long waitNs=nextNs-now;
+                if(waitNs>0){
+                    LockSupport.parkNanos(waitNs);
+                    if(!coreRun)break;
+                    now=System.nanoTime();
+                }else{
+                    long late=-waitNs;
+                    if(late>coreMaxLateNs)coreMaxLateNs=late;
+                    if(late>periodNs*3){
+                        coreDeadlineRebases++;
+                        nextNs=now;
+                    }
                 }
 
                 nativeRunFrame();
                 frames++;
+                nextNs+=periodNs;
 
-                int produced=drainAndWrite();
-                if(produced<0)break;
-
-                if(!playing &&
-                   audio!=null &&
-                   audioSessionWrittenSamples>=prefillOutputShorts){
-                    try{
-                        audio.play();
-                        playing=true;
-                    }catch(Exception ex){
-                        audioWriteErrors++;
-                        break;
-                    }
-                }
-
-                long now=SystemClock.elapsedRealtime();
-                if(now-lastSave>5000){
+                long t=SystemClock.elapsedRealtime();
+                if(t-lastSave>5000){
                     nativeSaveSram(saveFile.getAbsolutePath());
-                    lastSave=now;
+                    lastSave=t;
                 }
             }
         }
 
-        int drainAndWrite(){
-            int totalOutput=0;
-            while(workerRun){
+        void audioLoop(){
+            Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO);
+            AudioTrack a=audio;
+            if(a==null)return;
+
+            try{
+                a.play();
+            }catch(Exception ex){
+                audioWriteErrors++;
+                return;
+            }
+
+            while(audioRun&&loaded){
+                int queued=nativeAudioQueueSamples();
+                if(queued>sourceQueuePeak)sourceQueuePeak=queued;
+
+                if(queued>sourceQueueHardShorts){
+                    latencyRecoveryDroppedSourceSamples+=discardNativeAudioTo(sourceQueueTargetShorts);
+                    queued=nativeAudioQueueSamples();
+                }
+
+                if(queued<=0){
+                    LockSupport.parkNanos(500_000L);
+                    continue;
+                }
+
+                double direction=(sourceQueueTargetShorts-queued)/
+                        (double)Math.max(1,sourceQueueTargetShorts);
+                if(direction>1.0)direction=1.0;
+                if(direction<-1.0)direction=-1.0;
+                double adjust=1.0+0.005*direction;
+
+                drcCurrent=adjust;
+                if(adjust<drcMin)drcMin=adjust;
+                if(adjust>drcMax)drcMax=adjust;
+
                 int n=nativeDrainAudio(sourceBuf);
-                if(n<=0)break;
-                int out=resampler.process(sourceBuf,n,outputBuf);
+                if(n<=0){
+                    LockSupport.parkNanos(250_000L);
+                    continue;
+                }
+
+                int out=resampler.process(sourceBuf,n,outputBuf,adjust);
                 if(out<=0)continue;
 
                 int off=0;
-                while(workerRun&&off<out){
+                while(audioRun&&off<out){
                     int w;
                     try{
-                        w=audio.write(outputBuf,off,out-off,AudioTrack.WRITE_BLOCKING);
+                        w=a.write(outputBuf,off,out-off,AudioTrack.WRITE_BLOCKING);
                     }catch(Exception ex){
                         audioWriteErrors++;
-                        return -1;
+                        audioRun=false;
+                        break;
                     }
                     if(w>0){
                         off+=w;
                         audioWrittenSamples+=w;
-                        audioSessionWrittenSamples+=w;
-                        totalOutput+=w;
                     }else{
                         audioWriteErrors++;
-                        return -1;
+                        audioRun=false;
+                        break;
                     }
                 }
             }
-            return totalOutput;
         }
 
-        void discardNativeAudio(){
-            int n;
-            do{
-                n=nativeDrainAudio(sourceBuf);
-                if(n>0)discardedSourceSamples+=n;
-            }while(n>0);
+        long discardNativeAudioTo(int targetShorts){
+            long dropped=0;
+            while(nativeAudioQueueSamples()>targetShorts){
+                int n=nativeDrainAudio(sourceBuf);
+                if(n<=0)break;
+                dropped+=n;
+            }
+            return dropped;
         }
 
         void copyLatestFrame(){
@@ -673,8 +748,8 @@ public final class MainActivity extends Activity {
                 int t=(getHeight()-dh)/2;
                 c.drawBitmap(bmp,null,new Rect(l,t,l+dw,t+dh),p);
             }else{
-                c.drawText("M6A2 FIX4A · mGBA ARM64 Runtime",42,110,bootPaint);
-                c.drawText("audio-clock master / explicit resampler",42,150,bootPaint);
+                c.drawText("M6A2 FIX4B · mGBA ARM64 Runtime",42,110,bootPaint);
+                c.drawText("decoupled core clock + bounded audio DRC",42,150,bootPaint);
             }
         }
     }
@@ -682,7 +757,6 @@ public final class MainActivity extends Activity {
     static final class LinearResampler {
         private int srcRate=32768;
         private int dstRate=48000;
-        private double step=32768.0/48000.0;
         private double pos=0.0;
         private short prevL,prevR;
         private boolean havePrev;
@@ -690,15 +764,17 @@ public final class MainActivity extends Activity {
         void reset(int src,int dst){
             srcRate=src>0?src:32768;
             dstRate=dst>0?dst:48000;
-            step=srcRate/(double)dstRate;
             pos=0.0;
             havePrev=false;
             prevL=prevR=0;
         }
 
-        int process(short[] in,int shorts,short[] out){
+        int process(short[] in,int shorts,short[] out,double rateAdjust){
             int frames=shorts/2;
             if(frames<=0)return 0;
+
+            double adj=Math.max(0.995,Math.min(1.005,rateAdjust));
+            double step=srcRate/(dstRate*adj);
 
             if(!havePrev){
                 prevL=in[0];
@@ -707,7 +783,7 @@ public final class MainActivity extends Activity {
             }
 
             int o=0;
-            while(pos<frames && o+1<out.length){
+            while(pos<frames&&o+1<out.length){
                 int base=(int)Math.floor(pos);
                 double frac=pos-base;
 
