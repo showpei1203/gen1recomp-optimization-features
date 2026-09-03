@@ -1,4 +1,4 @@
-name: M6A2 FIX3 THOR Audio Pacing APK
+name: M6A2 FIX4A THOR Audio-Clock Master APK
 
 on:
   push:
@@ -77,24 +77,30 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Validate FIX3 conservative audio contract
+      - name: Validate FIX4A audio-clock contract
         shell: bash
         run: |
           set -euxo pipefail
+          JAVA=android/m6a2/app/src/main/java/com/showpei/soulgold/m6a2/MainActivity.java
           grep -q 'android:extractNativeLibs="true"' android/m6a2/app/src/main/AndroidManifest.xml
           grep -q 'useLegacyPackaging true' android/m6a2/app/build.gradle
-          grep -q "versionName 'M6A2-FIX3'" android/m6a2/app/build.gradle
-          grep -q 'frameBudget+=dt\*coreFps' android/m6a2/app/src/main/java/com/showpei/soulgold/m6a2/MainActivity.java
-          grep -q 'AudioTrack.WRITE_NON_BLOCKING' android/m6a2/app/src/main/java/com/showpei/soulgold/m6a2/MainActivity.java
-          grep -q 'prefillShorts' android/m6a2/app/src/main/java/com/showpei/soulgold/m6a2/MainActivity.java
-          grep -q 'pendingSize' android/m6a2/app/src/main/java/com/showpei/soulgold/m6a2/MainActivity.java
-          grep -q 'effective_generated_source_rate' android/m6a2/app/src/main/java/com/showpei/soulgold/m6a2/MainActivity.java
-          grep -q 'menu_presentation_changed_by_fix3' android/m6a2/app/src/main/java/com/showpei/soulgold/m6a2/MainActivity.java
-          grep -q 'nativeAudioDroppedSamples' android/m6a2/app/src/main/cpp/native_bridge.cpp
-          ! grep -q 'SoulGold-M6A2-Emu' android/m6a2/app/src/main/java/com/showpei/soulgold/m6a2/MainActivity.java
-          ! grep -q 'AudioTrack.WRITE_BLOCKING' android/m6a2/app/src/main/java/com/showpei/soulgold/m6a2/MainActivity.java
+          grep -q "versionName 'M6A2-FIX4A'" android/m6a2/app/build.gradle
+          grep -q 'SoulGold-M6A2-AudioClock' "$JAVA"
+          grep -q 'AudioTrack.WRITE_BLOCKING' "$JAVA"
+          grep -q 'PERFORMANCE_MODE_LOW_LATENCY' "$JAVA"
+          grep -q 'AudioTrack.getNativeOutputSampleRate' "$JAVA"
+          grep -q 'LinearResampler' "$JAVA"
+          grep -q 'playbackHeadFrames' "$JAVA"
+          grep -q 'estimated_sink_latency_ms' "$JAVA"
+          grep -q 'audio_clock_master' "$JAVA"
+          grep -q 'choreographer_advances_emulation' "$JAVA"
+          grep -q 'discardNativeAudio' "$JAVA"
+          ! grep -q 'frameBudget' "$JAVA"
+          ! grep -q 'AudioTrack.WRITE_NON_BLOCKING' "$JAVA"
+          ! grep -q 'pendingSize' "$JAVA"
+          ! grep -q 'prefillShorts' "$JAVA"
 
-      - name: Build M6A2 FIX3 debug APK
+      - name: Build M6A2 FIX4A debug APK
         shell: bash
         run: |
           set -euxo pipefail
@@ -110,12 +116,12 @@ jobs:
           grep -q 'lib/arm64-v8a/libmgba_libretro.so' /tmp/apk-list.txt
           grep -q 'lib/arm64-v8a/libsoulgold_m6a2.so' /tmp/apk-list.txt
 
-      - name: Package THOR FIX3 runtime artifact
+      - name: Package THOR FIX4A runtime artifact
         shell: bash
         run: |
           set -euxo pipefail
           mkdir -p artifacts/m6a2
-          APK=artifacts/m6a2/SOULGOLD_M6A2_FIX3_THOR_AUDIO_PACING.apk
+          APK=artifacts/m6a2/SOULGOLD_M6A2_FIX4A_THOR_AUDIO_CLOCK.apk
           cp android/m6a2/app/build/outputs/apk/debug/app-debug.apk "$APK"
           sha256sum "$APK" | tee "$APK.sha256"
           stat -c '%s' "$APK" > "$APK.bytes"
@@ -123,11 +129,11 @@ jobs:
           python3 - <<'PY'
           import hashlib,json,zipfile
           from pathlib import Path
-          apk=Path('artifacts/m6a2/SOULGOLD_M6A2_FIX3_THOR_AUDIO_PACING.apk')
+          apk=Path('artifacts/m6a2/SOULGOLD_M6A2_FIX4A_THOR_AUDIO_CLOCK.apk')
           with zipfile.ZipFile(apk) as z:
               names=set(z.namelist())
           out={
-            'milestone':'M6A2_FIX3',
+            'milestone':'M6A2_FIX4A',
             'artifact':apk.name,
             'bytes':apk.stat().st_size,
             'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),
@@ -135,10 +141,13 @@ jobs:
             'mgba_pinned_commit':'507061afd70489a0c2ffc8ba26d8f9b53d6cf7d6',
             'contains_mgba_libretro':'lib/arm64-v8a/libmgba_libretro.so' in names,
             'contains_runtime_bridge':'lib/arm64-v8a/libsoulgold_m6a2.so' in names,
-            'fix2_audio_worker_rejected':True,
-            'choreographer_timestamp_accumulator':True,
-            'partial_audio_write_retention':True,
-            'audio_prefill':True,
+            'audio_clock_master':True,
+            'explicit_frontend_resampler':'linear_continuous_phase',
+            'android_sink_rate_contract':'native_output_rate',
+            'choreographer_advances_emulation':False,
+            'large_java_pending_queue':False,
+            'fix2_rejected':True,
+            'fix3_rejected':True,
             'menu_presentation_changes':False,
             'rom_included':False,
             'runtime_device_pass':'PENDING_USER_THOR_TEST'
@@ -149,10 +158,10 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SOULGOLD_M6A2_FIX3_THOR_AUDIO_PACING
+          name: SOULGOLD_M6A2_FIX4A_THOR_AUDIO_CLOCK
           path: |
-            artifacts/m6a2/SOULGOLD_M6A2_FIX3_THOR_AUDIO_PACING.apk
-            artifacts/m6a2/SOULGOLD_M6A2_FIX3_THOR_AUDIO_PACING.apk.sha256
+            artifacts/m6a2/SOULGOLD_M6A2_FIX4A_THOR_AUDIO_CLOCK.apk
+            artifacts/m6a2/SOULGOLD_M6A2_FIX4A_THOR_AUDIO_CLOCK.apk.sha256
             artifacts/m6a2/M6A2_RUNTIME_BUILD.json
           if-no-files-found: error
 
@@ -162,12 +171,12 @@ jobs:
           set -euxo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add artifacts/m6a2/SOULGOLD_M6A2_FIX3_THOR_AUDIO_PACING.apk.b64 \
-                  artifacts/m6a2/SOULGOLD_M6A2_FIX3_THOR_AUDIO_PACING.apk.sha256 \
-                  artifacts/m6a2/SOULGOLD_M6A2_FIX3_THOR_AUDIO_PACING.apk.bytes \
+          git add artifacts/m6a2/SOULGOLD_M6A2_FIX4A_THOR_AUDIO_CLOCK.apk.b64 \
+                  artifacts/m6a2/SOULGOLD_M6A2_FIX4A_THOR_AUDIO_CLOCK.apk.sha256 \
+                  artifacts/m6a2/SOULGOLD_M6A2_FIX4A_THOR_AUDIO_CLOCK.apk.bytes \
                   artifacts/m6a2/M6A2_RUNTIME_BUILD.json
           if ! git diff --cached --quiet; then
-            git commit -m 'M6A2 FIX3 persist THOR audio pacing APK transport'
+            git commit -m 'M6A2 FIX4A persist THOR audio-clock APK transport'
             git fetch origin feature/soulgold-showdown-m6a2
             git rebase origin/feature/soulgold-showdown-m6a2
             git push origin HEAD:feature/soulgold-showdown-m6a2
