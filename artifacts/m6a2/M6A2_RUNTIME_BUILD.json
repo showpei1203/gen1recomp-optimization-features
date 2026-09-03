@@ -1,14 +1,17 @@
 {
-  "milestone": "M6A2_FIX1",
-  "artifact": "SOULGOLD_M6A2_FIX1_THOR_RUNTIME_BOOT.apk",
-  "bytes": 746335,
-  "sha256": "2bbcf308463351e6acac1a05b1272b0cb9f6e71e6682a77dbd90c79e69dec1ef",
+  "milestone": "M6A2_FIX3",
+  "artifact": "SOULGOLD_M6A2_FIX3_THOR_AUDIO_PACING.apk",
+  "bytes": 747479,
+  "sha256": "02947c37183e32bc058fb8d94b9d8b73e0316e097f550705d31eef6359b57af6",
   "abi": "arm64-v8a",
   "mgba_pinned_commit": "507061afd70489a0c2ffc8ba26d8f9b53d6cf7d6",
   "contains_mgba_libretro": true,
   "contains_runtime_bridge": true,
-  "native_extraction_fix": true,
+  "fix2_audio_worker_rejected": true,
+  "choreographer_timestamp_accumulator": true,
+  "partial_audio_write_retention": true,
+  "audio_prefill": true,
+  "menu_presentation_changes": false,
   "rom_included": false,
-  "purpose": "AYN THOR real GBA/mGBA runtime boot FIX1: force extracted JNI libraries so nativeLibraryDir/dlopen can resolve mGBA",
   "runtime_device_pass": "PENDING_USER_THOR_TEST"
 }
