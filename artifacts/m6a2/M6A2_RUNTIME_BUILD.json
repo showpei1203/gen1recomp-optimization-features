@@ -1,8 +1,8 @@
 {
   "milestone": "M6A2_FIX1",
   "artifact": "SOULGOLD_M6A2_FIX1_THOR_RUNTIME_BOOT.apk",
-  "bytes": 746239,
-  "sha256": "66ffce246e021ed7fbb292f1d5108498db3f5853aa816c2591c37a73b2d7d62d",
+  "bytes": 746335,
+  "sha256": "2bbcf308463351e6acac1a05b1272b0cb9f6e71e6682a77dbd90c79e69dec1ef",
   "abi": "arm64-v8a",
   "mgba_pinned_commit": "507061afd70489a0c2ffc8ba26d8f9b53d6cf7d6",
   "contains_mgba_libretro": true,
