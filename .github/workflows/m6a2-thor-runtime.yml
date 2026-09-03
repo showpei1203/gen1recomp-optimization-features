@@ -1,4 +1,4 @@
-name: M6A2 THOR Runtime Boot APK
+name: M6A2 FIX1 THOR Runtime Boot APK
 
 on:
   push:
@@ -73,7 +73,15 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Build M6A2 debug APK
+      - name: Validate FIX1 native extraction contract
+        shell: bash
+        run: |
+          set -euxo pipefail
+          grep -q 'android:extractNativeLibs="true"' android/m6a2/app/src/main/AndroidManifest.xml
+          grep -q 'useLegacyPackaging true' android/m6a2/app/build.gradle
+          grep -q "versionName 'M6A2-FIX1'" android/m6a2/app/build.gradle
+
+      - name: Build M6A2 FIX1 debug APK
         shell: bash
         run: |
           set -euxo pipefail
@@ -94,16 +102,19 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p artifacts/m6a2
-          cp android/m6a2/app/build/outputs/apk/debug/app-debug.apk artifacts/m6a2/SOULGOLD_M6A2_THOR_RUNTIME_BOOT.apk
-          sha256sum artifacts/m6a2/SOULGOLD_M6A2_THOR_RUNTIME_BOOT.apk | tee artifacts/m6a2/SOULGOLD_M6A2_THOR_RUNTIME_BOOT.apk.sha256
+          APK=artifacts/m6a2/SOULGOLD_M6A2_FIX1_THOR_RUNTIME_BOOT.apk
+          cp android/m6a2/app/build/outputs/apk/debug/app-debug.apk "$APK"
+          sha256sum "$APK" | tee "$APK.sha256"
+          stat -c '%s' "$APK" > "$APK.bytes"
+          base64 -w0 "$APK" > "$APK.b64"
           python3 - <<'PY'
           import hashlib,json,zipfile
           from pathlib import Path
-          apk=Path('artifacts/m6a2/SOULGOLD_M6A2_THOR_RUNTIME_BOOT.apk')
+          apk=Path('artifacts/m6a2/SOULGOLD_M6A2_FIX1_THOR_RUNTIME_BOOT.apk')
           with zipfile.ZipFile(apk) as z:
               names=set(z.namelist())
           out={
-            'milestone':'M6A2',
+            'milestone':'M6A2_FIX1',
             'artifact':apk.name,
             'bytes':apk.stat().st_size,
             'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),
@@ -111,8 +122,9 @@ jobs:
             'mgba_pinned_commit':'507061afd70489a0c2ffc8ba26d8f9b53d6cf7d6',
             'contains_mgba_libretro':'lib/arm64-v8a/libmgba_libretro.so' in names,
             'contains_runtime_bridge':'lib/arm64-v8a/libsoulgold_m6a2.so' in names,
+            'native_extraction_fix':True,
             'rom_included':False,
-            'purpose':'AYN THOR real GBA/mGBA runtime boot using user-supplied ROM; Showdown overlay integration remains later milestone',
+            'purpose':'AYN THOR real GBA/mGBA runtime boot FIX1: force extracted JNI libraries so nativeLibraryDir/dlopen can resolve mGBA',
             'runtime_device_pass':'PENDING_USER_THOR_TEST'
           }
           Path('artifacts/m6a2/M6A2_RUNTIME_BUILD.json').write_text(json.dumps(out,indent=2)+'\n')
@@ -121,21 +133,24 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SOULGOLD_M6A2_THOR_RUNTIME_BOOT
+          name: SOULGOLD_M6A2_FIX1_THOR_RUNTIME_BOOT
           path: |
-            artifacts/m6a2/SOULGOLD_M6A2_THOR_RUNTIME_BOOT.apk
-            artifacts/m6a2/SOULGOLD_M6A2_THOR_RUNTIME_BOOT.apk.sha256
+            artifacts/m6a2/SOULGOLD_M6A2_FIX1_THOR_RUNTIME_BOOT.apk
+            artifacts/m6a2/SOULGOLD_M6A2_FIX1_THOR_RUNTIME_BOOT.apk.sha256
             artifacts/m6a2/M6A2_RUNTIME_BUILD.json
           if-no-files-found: error
 
-      - name: Persist compact build evidence
+      - name: Persist compact APK transport and build evidence
         shell: bash
         run: |
           set -euxo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add artifacts/m6a2/SOULGOLD_M6A2_THOR_RUNTIME_BOOT.apk.sha256 artifacts/m6a2/M6A2_RUNTIME_BUILD.json
+          git add artifacts/m6a2/SOULGOLD_M6A2_FIX1_THOR_RUNTIME_BOOT.apk.b64 \
+                  artifacts/m6a2/SOULGOLD_M6A2_FIX1_THOR_RUNTIME_BOOT.apk.sha256 \
+                  artifacts/m6a2/SOULGOLD_M6A2_FIX1_THOR_RUNTIME_BOOT.apk.bytes \
+                  artifacts/m6a2/M6A2_RUNTIME_BUILD.json
           if ! git diff --cached --quiet; then
-            git commit -m 'M6A2 persist THOR runtime build evidence'
+            git commit -m 'M6A2 FIX1 persist THOR runtime APK transport'
             git push origin HEAD:feature/soulgold-showdown-m6a2
           fi
