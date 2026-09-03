@@ -69,6 +69,9 @@ static std::deque<int16_t> g_audio;
 static std::atomic<uint32_t> g_input{0};
 static std::atomic<bool> g_loaded{false};
 static double g_fps=59.7275, g_sampleRate=32768.0;
+static std::atomic<uint64_t> g_audioGeneratedSamples{0};
+static std::atomic<uint64_t> g_audioDrainedSamples{0};
+static std::atomic<uint64_t> g_audioDroppedSamples{0};
 
 static bool env_cb(unsigned cmd, void* data) {
   switch (cmd) {
@@ -113,13 +116,15 @@ static void video_cb(const void* data, unsigned w, unsigned h, size_t pitch) {
   }
 }
 static void audio_one(int16_t l,int16_t r) {
-  std::lock_guard<std::mutex> lk(g_audioMu); g_audio.push_back(l); g_audio.push_back(r);
+  std::lock_guard<std::mutex> lk(g_audioMu);
+  g_audio.push_back(l); g_audio.push_back(r); g_audioGeneratedSamples.fetch_add(2,std::memory_order_relaxed);
 }
 static size_t audio_batch(const int16_t* p,size_t frames) {
   std::lock_guard<std::mutex> lk(g_audioMu);
   size_t samples=frames*2, maxSamples=131072;
   for(size_t i=0;i<samples;i++) g_audio.push_back(p[i]);
-  while(g_audio.size()>maxSamples) g_audio.pop_front();
+  g_audioGeneratedSamples.fetch_add(samples,std::memory_order_relaxed);
+  while(g_audio.size()>maxSamples) { g_audio.pop_front(); g_audioDroppedSamples.fetch_add(1,std::memory_order_relaxed); }
   return frames;
 }
 static void input_poll() {}
@@ -183,7 +188,9 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_showpei_soulgold_m6a2_MainActivit
   retro_game_info info{r.c_str(),g_rom.data(),g_rom.size(),nullptr};
   if(!g.load_game(&info)){ g_lastError="mGBA retro_load_game failed"; return JNI_FALSE; }
   g_loaded=true; retro_system_av_info av{}; g.get_system_av_info(&av); g_fps=av.timing.fps; g_sampleRate=av.timing.sample_rate;
-  load_sram(s); LOGI("ROM loaded bytes=%zu fps=%.3f audio=%.1f",g_rom.size(),g_fps,g_sampleRate); return JNI_TRUE;
+  g_audioGeneratedSamples=0; g_audioDrainedSamples=0; g_audioDroppedSamples=0;
+  { std::lock_guard<std::mutex> lk(g_audioMu); g_audio.clear(); }
+  load_sram(s); LOGI("ROM loaded bytes=%zu fps=%.6f audio=%.1f",g_rom.size(),g_fps,g_sampleRate); return JNI_TRUE;
 }
 extern "C" JNIEXPORT void JNICALL Java_com_showpei_soulgold_m6a2_MainActivity_nativeRunFrame(JNIEnv*,jclass){ if(g_loaded && g.run) g.run(); }
 extern "C" JNIEXPORT jint JNICALL Java_com_showpei_soulgold_m6a2_MainActivity_nativeCopyFrame(JNIEnv* e,jclass,jintArray arr){
@@ -192,8 +199,12 @@ extern "C" JNIEXPORT jint JNICALL Java_com_showpei_soulgold_m6a2_MainActivity_na
 }
 extern "C" JNIEXPORT jint JNICALL Java_com_showpei_soulgold_m6a2_MainActivity_nativeDrainAudio(JNIEnv* e,jclass,jshortArray arr){
   std::lock_guard<std::mutex> lk(g_audioMu); jsize cap=e->GetArrayLength(arr); int n=(int)std::min<size_t>((size_t)cap,g_audio.size());
-  if(!n) return 0; std::vector<jshort> tmp(n); for(int i=0;i<n;i++){tmp[i]=g_audio.front();g_audio.pop_front();} e->SetShortArrayRegion(arr,0,n,tmp.data()); return n;
+  if(!n) return 0; std::vector<jshort> tmp(n); for(int i=0;i<n;i++){tmp[i]=g_audio.front();g_audio.pop_front();} e->SetShortArrayRegion(arr,0,n,tmp.data()); g_audioDrainedSamples.fetch_add((uint64_t)n,std::memory_order_relaxed); return n;
 }
+extern "C" JNIEXPORT jint JNICALL Java_com_showpei_soulgold_m6a2_MainActivity_nativeAudioQueueSamples(JNIEnv*,jclass){ std::lock_guard<std::mutex> lk(g_audioMu); return (jint)g_audio.size(); }
+extern "C" JNIEXPORT jlong JNICALL Java_com_showpei_soulgold_m6a2_MainActivity_nativeAudioGeneratedSamples(JNIEnv*,jclass){ return (jlong)g_audioGeneratedSamples.load(); }
+extern "C" JNIEXPORT jlong JNICALL Java_com_showpei_soulgold_m6a2_MainActivity_nativeAudioDrainedSamples(JNIEnv*,jclass){ return (jlong)g_audioDrainedSamples.load(); }
+extern "C" JNIEXPORT jlong JNICALL Java_com_showpei_soulgold_m6a2_MainActivity_nativeAudioDroppedSamples(JNIEnv*,jclass){ return (jlong)g_audioDroppedSamples.load(); }
 extern "C" JNIEXPORT void JNICALL Java_com_showpei_soulgold_m6a2_MainActivity_nativeSetInputMask(JNIEnv*,jclass,jint m){ g_input=(uint32_t)m; }
 extern "C" JNIEXPORT jdouble JNICALL Java_com_showpei_soulgold_m6a2_MainActivity_nativeFps(JNIEnv*,jclass){ return g_fps; }
 extern "C" JNIEXPORT jint JNICALL Java_com_showpei_soulgold_m6a2_MainActivity_nativeSampleRate(JNIEnv*,jclass){ return (jint)(g_sampleRate+0.5); }
