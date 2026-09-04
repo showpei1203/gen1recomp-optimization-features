@@ -1,0 +1,7 @@
+M6X1_LIBRETRO_SYSTEM_RAM_PATCH=PASS
+retro_memory_id=RETRO_MEMORY_SYSTEM_RAM
+gba_region=EWRAM
+gba_base=0x02000000
+gba_bytes=262144
+core_clock_changes=NONE
+audio_core_changes=NONE
