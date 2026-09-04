@@ -64,30 +64,14 @@ def main():
         p.write_text(text)
 
     out = p.read_text()
-    required = [
-        MARKER,
-        "case RETRO_MEMORY_SYSTEM_RAM:",
-        "return ((struct GBA*) core->board)->memory.wram;",
-        "return GBA_SIZE_EWRAM;",
-    ]
+    required = [MARKER,"case RETRO_MEMORY_SYSTEM_RAM:","return ((struct GBA*) core->board)->memory.wram;","return GBA_SIZE_EWRAM;"]
     missing = [x for x in required if x not in out]
     if missing:
         raise SystemExit("M6X1 system RAM patch verification failed: " + repr(missing))
 
+    # Android source patch does not require Pillow. Native SoulGold stat assets
+    # are generated later by the ROM-bridge install step, after python3-pil exists.
     framework = Path(__file__).resolve().parents[1]
-
-    # R3 stat fidelity: generate Android textures directly from the exact pinned
-    # SoulGold stat-change source assets already checked out by CI. Nothing is
-    # hand-redrawn and nothing is downloaded at runtime.
-    soulgold = Path.cwd() / 'soulgold'
-    stat_prep = Path(__file__).with_name('prepare_m6x1_native_stat_assets.py')
-    subprocess.run([
-        sys.executable,str(stat_prep),'--soulgold',str(soulgold),
-        '--android-root',str(framework/'android'/'m6x1')
-    ],check=True)
-
-    # Android presentation patch is attached to this already-mandatory workflow
-    # step so a transport-only build cannot bypass the final Showdown authority.
     android_patch = Path(__file__).with_name('apply_m6x1_android_presentation_v2.py')
     subprocess.run([sys.executable,str(android_patch),'--root',str(framework/'android'/'m6x1')],check=True)
 
@@ -107,7 +91,6 @@ def main():
         "stat_mask=SHOWDOWN_FRAME_ALPHA\n"
     )
     print("M6X1_LIBRETRO_SYSTEM_RAM_PATCH=PASS")
-
 
 if __name__ == "__main__":
     main()
