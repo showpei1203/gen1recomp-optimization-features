@@ -1,0 +1,49 @@
+{
+  "milestone": "M6X1_REGISTRY_AUDIO_FIX",
+  "status": "BUILD_STATIC_PASS_RUNTIME_PENDING",
+  "branch": "feature/soulgold-showdown-m6x1",
+  "canonical_run_id": 33850743516,
+  "canonical_build_head": "3ed6973e6461ef385e139c2bac0b6adefa548c78",
+  "soulgold_revision": "671b62f421b2356961274fcb6f199d6843017f16",
+  "mgba_revision": "507061afd70489a0c2ffc8ba26d8f9b53d6cf7d6",
+  "mgba_libretro_system_ram_patch": "M6X1_LIBRETRO_SYSTEM_RAM_EWRAM_V1",
+  "mgba_system_ram_region": "GBA_EWRAM",
+  "mgba_system_ram_base": "0x02000000",
+  "mgba_system_ram_bytes": 262144,
+  "mgba_clock_changes": false,
+  "mgba_audio_core_changes": false,
+  "bridge_address": "0x02002ac8",
+  "bridge_symbol": "gM6X1ExternalBridge",
+  "rom": {
+    "file": "Soulgold_M6X1_ExternalPack.gba",
+    "bytes": 33554432,
+    "sha256": "6de15ec859049a509d81e1291ee98d71669bfaee820fe15cf4d30f36a9d02cf8"
+  },
+  "pack": {
+    "file": "SOULGOLD_M6X1_STARTERS_BACK.sgxp",
+    "bytes": 606276,
+    "sha256": "57959d41b44103106147a32b9aa1b0a009aba6e88561c5c1807d59a7dfad31a7"
+  },
+  "apk": {
+    "file": "SOULGOLD_M6X1_ANDROID_ARM64_DEBUG.apk",
+    "bytes": 759027,
+    "sha256": "6b5aa5e0844264d42acf801d4b9ca3582780dbfb1398d9f38c75091d544e8ad1"
+  },
+  "rom_exact_32_mib": true,
+  "m6x0_status": "REJECTED_DIAGNOSTIC_BASELINE_ONLY",
+  "m1_4_audio_authority": "SEALED_SINGLE_CLOCK",
+  "first_device_gate": "SPRIGATITO_PLAYER_BACK_ONLY",
+  "front_rollout": "BLOCKED",
+  "roster_expansion_901": "BLOCKED",
+  "audio_batch_argument_unit": "stereo_frames",
+  "native_audio_queue_unit": "interleaved_int16_samples",
+  "audio_reported_rate_expected": 32768,
+  "audio_effective_rate_expected": 65536,
+  "source_observed_rate_expected_approx": 65536,
+  "live_latency_sample_deletion": false,
+  "registry_sync_order": "retro_run_then_syncBridge_each_core_frame",
+  "runtime_gate": "AYN_THOR_REQUIRED",
+  "runtime_report_filename": "M6X1_REGISTRY_AUDIO_REPORT.json",
+  "artifact_uploads": "PASS",
+  "automated_authority_persist": "FAILED_AFTER_ARTIFACT_UPLOAD_MANUALLY_RECOVERED"
+}
