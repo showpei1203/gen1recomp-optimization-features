@@ -1,0 +1,9 @@
+M6X1 PACKAGE INTEGRITY NOTE
+source_ci_run=33850743516
+source_ci_head=3ed6973e6461ef385e139c2bac0b6adefa548c78
+binary_payload_changes=NONE
+packaging_repairs=SHA256SUMS paths normalized to ZIP-root basenames; START_HERE Unicode filename normalized
+runtime_status=BUILD_STATIC_PASS_RUNTIME_PENDING
+first_device_gate=SPRIGATITO_PLAYER_BACK_ONLY
+front_rollout=BLOCKED
+roster_expansion_901=BLOCKED
