@@ -113,7 +113,7 @@ def patch_stat(root:Path):
 // masks a native 64x64 battler copy into BG1. For provider-owned external
 // battlers, export the timing/state and let Android apply it to Showdown.
 EWRAM_DATA u8 gExternalShowdownStatAnimActive = FALSE;
-EWRAM_DATA u8 gExternalShowdownStatAnimBattler = 0xFF;
+EWRAM_DATA u8 gExternalShowdownStatAnimBattler = 0;
 EWRAM_DATA u8 gExternalShowdownStatAnimDecrease = FALSE;
 EWRAM_DATA u8 gExternalShowdownStatAnimPal = 0;
 EWRAM_DATA u8 gExternalShowdownStatAnimSharp = FALSE;
