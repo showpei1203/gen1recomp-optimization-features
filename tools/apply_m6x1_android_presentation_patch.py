@@ -2,7 +2,7 @@
 from pathlib import Path
 import argparse
 
-JAVA_MARKER='M6X1_R2_FINAL_SHOWDOWN_PRESENTATION_AUTHORITY'
+JAVA_MARKER='M6X1_R3_NATIVE_SOULGOLD_STAT_FIDELITY'
 
 
 def patch_java(path:Path):
@@ -11,7 +11,12 @@ def patch_java(path:Path):
 
     import_anchor='import android.graphics.Paint;\n'
     if import_anchor not in text:raise SystemExit('Java Paint import anchor missing')
-    text=text.replace(import_anchor,import_anchor+'import android.graphics.PorterDuff;\nimport android.graphics.PorterDuffColorFilter;\n',1)
+    text=text.replace(import_anchor,import_anchor+
+        'import android.graphics.BitmapShader;\n'
+        'import android.graphics.Matrix;\n'
+        'import android.graphics.PorterDuff;\n'
+        'import android.graphics.PorterDuffXfermode;\n'
+        'import android.graphics.Shader;\n',1)
 
     native_anchor='    static native int nativeGetPlayerProxy(int[] out);\n'
     if native_anchor not in text:raise SystemExit('Java nativeGetPlayerProxy declaration missing')
@@ -19,18 +24,21 @@ def patch_java(path:Path):
 
     report_anchor='j.put("showdown_compositor_in_apk",true);j.put("showdown_assets_in_apk",false);j.put("external_pack_required",true);'
     report_repl=(report_anchor+
-        'j.put("presentation_semantics","M6X1_R2_M2R5D_M2R11E_M2R12G_M3S1_FINAL_PORT");'
+        'j.put("presentation_semantics","M6X1_R3_NATIVE_SOULGOLD_STAT_FIDELITY");'
         'j.put("provider_animation_clock","rom_frame");j.put("bridge_snapshot_policy","last_known_good_atomic_swap");'
         'j.put("hud_bounce_mon_decoupled",true);j.put("proxy_generation_changes",gameView.proxyGenerationChanges);'
         'j.put("proxy_release_events",gameView.proxyReleaseEvents);j.put("proxy_presentation_hidden_edges",gameView.proxyHiddenEdges);'
         'j.put("proxy_monbg_visible_frames",gameView.proxyMonBgVisibleFrames);j.put("stat_native_composite_frames",gameView.statOverlayFrames);'
+        'j.put("stat_render_mode","soulgold_bg1_tilemap_palette_scroll_showdown_alpha_mask");'
+        'j.put("stat_native_pattern_frames",gameView.statNativePatternFrames);j.put("stat_asset_failures",gameView.statAssetFailures);'
         'j.put("bottom_ui_native_composite_frames",gameView.bottomUiRestoreFrames);')
     if report_anchor not in text:raise SystemExit('Java report anchor missing')
     text=text.replace(report_anchor,report_repl,1)
 
     fields_anchor='final Paint paint=new Paint();final Paint bootPaint=new Paint(Paint.ANTI_ALIAS_FLAG);final int[]pixels=new int[256*224];final int[]proxy=new int[10];final short[]sourceBuf=new short[4096];'
-    fields_repl=('final Paint paint=new Paint();final Paint statPaint=new Paint();final Paint bootPaint=new Paint(Paint.ANTI_ALIAS_FLAG);'
-                 'final int[]pixels=new int[256*224];final int[]proxy=new int[14];final int[]presentation=new int[7];final short[]sourceBuf=new short[4096];')
+    fields_repl=('final Paint paint=new Paint();final Paint statPaint=new Paint();final Paint statMaskPaint=new Paint();final Paint bootPaint=new Paint(Paint.ANTI_ALIAS_FLAG);'
+                 'final int[]pixels=new int[256*224];final int[]proxy=new int[14];final int[]presentation=new int[7];final short[]sourceBuf=new short[4096];'
+                 'final Bitmap[][]statPatterns=new Bitmap[2][8];')
     if fields_anchor not in text:raise SystemExit('RuntimeView field anchor missing')
     text=text.replace(fields_anchor,fields_repl,1)
 
@@ -40,7 +48,7 @@ def patch_java(path:Path):
     text=text.replace(bitmap_anchor,bitmap_repl,1)
 
     counter_anchor='sourceQueueOverHardEvents,overlayFrames,overlayFailures;volatile int sourceQueuePeak,activeSpecies;'
-    counter_repl=('sourceQueueOverHardEvents,overlayFrames,overlayFailures,bottomUiRestoreFrames,statOverlayFrames,'
+    counter_repl=('sourceQueueOverHardEvents,overlayFrames,overlayFailures,bottomUiRestoreFrames,statOverlayFrames,statNativePatternFrames,statAssetFailures,'
                   'proxyGenerationChanges,proxyReleaseEvents,proxyHiddenEdges,proxyMonBgVisibleFrames;volatile int sourceQueuePeak,activeSpecies;')
     if counter_anchor not in text:raise SystemExit('RuntimeView counter anchor missing')
     text=text.replace(counter_anchor,counter_repl,1)
@@ -52,12 +60,13 @@ def patch_java(path:Path):
     text=text.replace(state_anchor,state_repl,1)
 
     ctor_anchor='RuntimeView(){super(MainActivity.this);paint.setFilterBitmap(false);bootPaint.setColor(Color.rgb(120,230,170));'
-    ctor_repl='RuntimeView(){super(MainActivity.this);paint.setFilterBitmap(false);statPaint.setFilterBitmap(false);bootPaint.setColor(Color.rgb(120,230,170));'
+    ctor_repl=('RuntimeView(){super(MainActivity.this);paint.setFilterBitmap(false);statPaint.setFilterBitmap(false);statMaskPaint.setFilterBitmap(false);'
+               'statMaskPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_IN));bootPaint.setColor(Color.rgb(120,230,170));')
     if ctor_anchor not in text:raise SystemExit('RuntimeView ctor anchor missing')
     text=text.replace(ctor_anchor,ctor_repl,1)
 
     reset_anchor='sourceQueueOverHardEvents=overlayFrames=overlayFailures=0;sourceQueuePeak=activeSpecies=0;'
-    reset_repl=('sourceQueueOverHardEvents=overlayFrames=overlayFailures=bottomUiRestoreFrames=statOverlayFrames='
+    reset_repl=('sourceQueueOverHardEvents=overlayFrames=overlayFailures=bottomUiRestoreFrames=statOverlayFrames=statNativePatternFrames=statAssetFailures='
                 'proxyGenerationChanges=proxyReleaseEvents=proxyHiddenEdges=proxyMonBgVisibleFrames=0;sourceQueuePeak=activeSpecies=0;'
                 'presentationHadProxy=presentationVisibleOnce=lastPresentationVisible=false;presentationSpecies=presentationSpriteId=0;presentationEpochRomFrame=0;')
     if reset_anchor not in text:raise SystemExit('RuntimeView reset anchor missing')
@@ -65,10 +74,11 @@ def patch_java(path:Path):
 
     old_draw='''        @Override protected void onDraw(Canvas c){super.onDraw(c);if(bmp==null){c.drawText("M6X1 · External Showdown Bridge",42,105,bootPaint);c.drawText("registry + 65536 Hz audio authority",42,145,bootPaint);return;}float sx=getWidth()/(float)bmp.getWidth(),sy=getHeight()/(float)bmp.getHeight(),s=Math.min(sx,sy);int dw=Math.round(bmp.getWidth()*s),dh=Math.round(bmp.getHeight()*s),l=(getWidth()-dw)/2,t=(getHeight()-dh)/2;c.drawBitmap(bmp,null,new Rect(l,t,l+dw,t+dh),paint);if(nativeGetPlayerProxy(proxy)==1){int species=proxy[0];Provider p=providers.get(species);if(p==null){overlayFailures++;activeSpecies=0;return;}Bitmap frame=p.frameAt(SystemClock.uptimeMillis());if(frame==null){overlayFailures++;activeSpecies=species;return;}float cx=l+(proxy[2]+proxy[4])*s,cy=t+(proxy[3]+proxy[5])*s;float fw=frame.getWidth()*p.scale*s,fh=frame.getHeight()*p.scale*s;RectF dst=new RectF(cx-fw/2f,cy-fh/2f,cx+fw/2f,cy+fh/2f);c.drawBitmap(frame,null,dst,paint);overlayFrames++;activeSpecies=species;}else activeSpecies=0;}
 '''
-    new_draw=r'''        // M6X1_R2_FINAL_SHOWDOWN_PRESENTATION_AUTHORITY
-        // The compositor works at the native mGBA framebuffer resolution first,
-        // then scales the finished frame exactly once. This avoids device-space
-        // clip quantization and keeps body/stat/UI in one coordinate system.
+    new_draw=r'''        // M6X1_R3_NATIVE_SOULGOLD_STAT_FIDELITY
+        // R2's horizontal stripe/tint compositor is intentionally gone. R3 uses
+        // the exact pinned SoulGold stat-change BG tilemap + palette as the
+        // moving effect, and only replaces the native 64x64 OBJ-window silhouette
+        // with the current Showdown frame alpha.
         private boolean bottomBattleUiPresent(int w,int h){
             if(w<32||h<32)return false;int y0=(h*112)/160,light=0,total=0;
             for(int y=y0;y<h;y+=2)for(int x=0;x<w;x+=2){int col=pixels[y*w+x];int r=(col>>>16)&255,g=(col>>>8)&255,b=col&255;if(r>165&&g>165&&b>165)light++;total++;}
@@ -99,21 +109,29 @@ def patch_java(path:Path):
             if(proxy[12]!=0&&presentationVisible)proxyMonBgVisibleFrames++;
             return presentationVisible&&presentationVisibleOnce;
         }
+        private Bitmap statPattern(boolean decrease,int pal){
+            int d=decrease?1:0,p=(pal>=0&&pal<=6)?pal:7;Bitmap cached=statPatterns[d][p];if(cached!=null&&!cached.isRecycled())return cached;
+            final String[]names={"attack","defense","accuracy","speed","evasion","sp_attack","sp_defense","multiple"};
+            String file="stat_change/"+(decrease?"decrease_":"increase_")+names[p]+".png";
+            try(InputStream in=MainActivity.this.getAssets().open(file)){Bitmap b=BitmapFactory.decodeStream(in);if(b==null||b.getWidth()!=256||b.getHeight()!=256)throw new IllegalStateException("bad stat asset "+file);statPatterns[d][p]=b;return b;}
+            catch(Exception ex){statAssetFailures++;return null;}
+        }
         private void drawStatOverlayNative(Canvas nc,Bitmap frame,RectF dst,int battler){
             if(nativeGetPresentationState(presentation)!=1||presentation[0]==0||presentation[1]!=battler||presentation[5]<=0)return;
-            final int[][] colors={{255,96,80},{80,150,255},{255,220,80},{80,235,255},{210,100,255},{255,105,220},{90,235,165}};
-            int pal=presentation[3],r=220,g=220,b=220;if(pal>=0&&pal<colors.length){r=colors[pal][0];g=colors[pal][1];b=colors[pal][2];}
-            int alpha=Math.max(0,Math.min(210,presentation[5]*(presentation[4]!=0?16:14)));
-            statPaint.setAlpha(alpha);statPaint.setColorFilter(new PorterDuffColorFilter(Color.rgb(r,g,b),PorterDuff.Mode.ADD));
-            // Accepted M2R5D stat timing, but rasterized in native GBA space.
-            // The entire composed frame is scaled afterward, so clip edges do not
-            // become giant device-space blocks during the stat scroll.
-            int stripe=Math.max(2,Math.round(dst.height()/10f)),gap=Math.max(3,stripe*2),phase=Math.floorMod(presentation[6],gap);
-            for(int y=Math.round(dst.top)-gap+phase;y<dst.bottom;y+=gap){int save=nc.save();nc.clipRect(dst.left,y,dst.right,Math.min(dst.bottom,y+stripe));nc.drawBitmap(frame,null,dst,statPaint);nc.restoreToCount(save);}
-            statPaint.setAlpha(255);statPaint.setColorFilter(null);statOverlayFrames++;
+            boolean decrease=presentation[2]!=0;Bitmap pattern=statPattern(decrease,presentation[3]);if(pattern==null)return;
+            int blend=Math.max(0,Math.min(16,presentation[5]));int alpha=Math.round(255f*blend/16f);
+            BitmapShader shader=new BitmapShader(pattern,Shader.TileMode.REPEAT,Shader.TileMode.REPEAT);
+            Matrix matrix=new Matrix();float bgX=decrease?64f:0f,bgY=presentation[6];
+            // GBA BGxHOFS/VOFS select the source coordinate visible at screen 0.
+            // Translating the repeating shader by the negative offsets reproduces
+            // the native scroll direction in screen space.
+            matrix.setTranslate(-bgX,-bgY);shader.setLocalMatrix(matrix);
+            statPaint.setShader(shader);statPaint.setAlpha(alpha);
+            int layer=nc.saveLayer(dst,null);nc.drawRect(dst,statPaint);nc.drawBitmap(frame,null,dst,statMaskPaint);nc.restoreToCount(layer);
+            statPaint.setShader(null);statPaint.setAlpha(255);statOverlayFrames++;statNativePatternFrames++;
         }
         @Override protected void onDraw(Canvas c){
-            super.onDraw(c);if(bmp==null){c.drawText("M6X1 · External Showdown Bridge",42,105,bootPaint);c.drawText("R2 final presentation authority",42,145,bootPaint);return;}
+            super.onDraw(c);if(bmp==null){c.drawText("M6X1 · External Showdown Bridge",42,105,bootPaint);c.drawText("R3 native SoulGold stat fidelity",42,145,bootPaint);return;}
             int bw=bmp.getWidth(),bh=bmp.getHeight();
             if(compositeBmp==null||compositeBmp.getWidth()!=bw||compositeBmp.getHeight()!=bh)compositeBmp=Bitmap.createBitmap(bw,bh,Bitmap.Config.ARGB_8888);
             Canvas nc=new Canvas(compositeBmp);nc.drawBitmap(bmp,0,0,paint);
@@ -130,8 +148,6 @@ def patch_java(path:Path):
                     }
                 }
             }
-            // M2R6C/M2R11E Z authority: lower battle UI is composited after the
-            // external battler, in the SAME native coordinate space.
             restoreBottomBattleUiNative(nc,bw,bh);
             float sx=getWidth()/(float)bw,sy=getHeight()/(float)bh,s=Math.min(sx,sy);int dw=Math.round(bw*s),dh=Math.round(bh*s),l=(getWidth()-dw)/2,t=(getHeight()-dh)/2;
             c.drawBitmap(compositeBmp,null,new Rect(l,t,l+dw,t+dh),paint);
@@ -147,14 +163,15 @@ def patch_java(path:Path):
     if old_provider not in text:raise SystemExit('Provider wall-clock animation anchor missing')
     text=text.replace(old_provider,new_provider,1)
 
-    # A successful R2 build must not retain the Android wall clock as provider animation authority.
-    if 'frameAt(SystemClock.uptimeMillis())' in text:raise SystemExit('R2 wall-clock Showdown animation survivor')
+    forbidden=['frameAt(SystemClock.uptimeMillis())','stripe=Math.max','clipRect(dst.left','PorterDuffColorFilter']
+    survivors=[x for x in forbidden if x in text]
+    if survivors:raise SystemExit('R3 forbidden approximation survivor: '+repr(survivors))
     path.write_text(text);return 'patched'
 
 
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--root',required=True);a=ap.parse_args();root=Path(a.root)
     java=patch_java(root/'app/src/main/java/com/showpei/soulgold/m6x1/MainActivity.java')
-    print('M6X1_ANDROID_PRESENTATION_R2_JAVA=PASS java='+java)
+    print('M6X1_ANDROID_PRESENTATION_R3_JAVA=PASS java='+java)
 
 if __name__=='__main__':main()
