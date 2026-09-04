@@ -64,16 +64,6 @@ extern s16 gExternalShowdownStatAnimScroll;
         text=text.replace(publish,publish2,1)
     battle_main.write_text(text)
 
-    header=root/'include'/'battle.h'
-    h=header.read_text()
-    decl='bool32 M6X1_HostProvidesSpecies(u32 species, u32 side);'
-    if decl not in h:
-        anchor='void RunBattleScriptCommands(void);\n'
-        if anchor not in h:
-            raise SystemExit('battle.h declaration anchor missing')
-        h=h.replace(anchor,anchor+'\n// '+HOST_GATE_MARKER+'\n'+decl+'\n',1)
-        header.write_text(h)
-
 
 def patch_hud(root:Path):
     path=root/'src'/'battle_controller_player.c'
@@ -103,6 +93,15 @@ def patch_stat(root:Path):
     text=path.read_text()
     if STAT_MARKER in text:
         return 'already'
+
+    # Keep the bridge helper local to this translation unit. The pinned SoulGold
+    # declaration for RunBattleScriptCommands lives in battle_main.h, not battle.h;
+    # adding a project-wide header declaration was an unnecessary brittle anchor.
+    include_anchor='#include "constants/songs.h"\n'
+    forward='extern bool32 M6X1_HostProvidesSpecies(u32 species, u32 side);\n'
+    if forward not in text:
+        if include_anchor not in text: raise SystemExit('battle_anim_utility_funcs include anchor missing')
+        text=text.replace(include_anchor,include_anchor+'\n// '+HOST_GATE_MARKER+'\n'+forward,1)
 
     global_anchor='static EWRAM_DATA struct AnimStatsChangeData *sAnimStatsChangeData = {0};\n'
     if global_anchor not in text:
@@ -142,7 +141,9 @@ EWRAM_DATA s16 gExternalShowdownStatAnimScroll = 0;
     // fallback must retain the stock animation unchanged.
     if (!IsContest()
      && IsOnPlayerSide(sAnimStatsChangeData->battler1)
-     && M6X1_HostProvidesSpecies(gBattleMons[sAnimStatsChangeData->battler1].species, B_SIDE_PLAYER))
+     && M6X1_HostProvidesSpecies(
+            GetMonData(GetBattlerMon(sAnimStatsChangeData->battler1), MON_DATA_SPECIES),
+            B_SIDE_PLAYER))
     {
         gExternalShowdownStatAnimActive = TRUE;
         gExternalShowdownStatAnimBattler = sAnimStatsChangeData->battler1;
