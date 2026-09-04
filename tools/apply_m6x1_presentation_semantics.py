@@ -5,6 +5,7 @@ import argparse,re
 HUD_MARKER='M6X1_R1_EXTERNAL_SHOWDOWN_HUD_BOUNCE_DECOUPLE'
 STAT_MARKER='M6X1_R1_EXTERNAL_SHOWDOWN_STAT_PRESENTATION_BRIDGE'
 HOST_GATE_MARKER='M6X1_R1_HOST_PROVIDER_GATE_EXPORTED'
+BRIDGE_MARKER='M6X1_R1_PRESENTATION_BRIDGE_V2'
 
 
 def patch_host_gate(root:Path):
@@ -18,6 +19,49 @@ def patch_host_gate(root:Path):
         raise SystemExit('M6X1 host provider gate not found in battle_main.c')
     if HOST_GATE_MARKER not in text:
         text=text.replace(new,'// '+HOST_GATE_MARKER+'\n'+new,1)
+
+    if BRIDGE_MARKER not in text:
+        version='#define M6X1_BRIDGE_VERSION 1u'
+        if version not in text: raise SystemExit('M6X1 bridge version anchor missing')
+        text=text.replace(version,'#define M6X1_BRIDGE_VERSION 2u /* '+BRIDGE_MARKER+' */',1)
+        proxy_end='''    struct M6X1ExternalProxy proxy[MAX_BATTLERS_COUNT];
+};'''
+        if proxy_end not in text: raise SystemExit('M6X1 bridge proxy tail anchor missing')
+        stat_fields='''    struct M6X1ExternalProxy proxy[MAX_BATTLERS_COUNT];
+    u32 statActive;
+    u32 statBattler;
+    u32 statDecrease;
+    u32 statPal;
+    u32 statSharp;
+    u32 statBlend;
+    s32 statScroll;
+};'''
+        text=text.replace(proxy_end,stat_fields,1)
+        struct_anchor='struct M6X1ExternalBridge\n{\n'
+        externs='''extern u8 gExternalShowdownStatAnimActive;
+extern u8 gExternalShowdownStatAnimBattler;
+extern u8 gExternalShowdownStatAnimDecrease;
+extern u8 gExternalShowdownStatAnimPal;
+extern u8 gExternalShowdownStatAnimSharp;
+extern u8 gExternalShowdownStatAnimBlend;
+extern s16 gExternalShowdownStatAnimScroll;
+
+'''
+        if struct_anchor not in text: raise SystemExit('M6X1 bridge struct anchor missing')
+        text=text.replace(struct_anchor,externs+struct_anchor,1)
+        publish='''    gM6X1ExternalBridge.version = M6X1_BRIDGE_VERSION;
+    gM6X1ExternalBridge.romFrame++;
+'''
+        if publish not in text: raise SystemExit('M6X1 bridge publish header anchor missing')
+        publish2=publish+'''    gM6X1ExternalBridge.statActive = gExternalShowdownStatAnimActive;
+    gM6X1ExternalBridge.statBattler = gExternalShowdownStatAnimBattler;
+    gM6X1ExternalBridge.statDecrease = gExternalShowdownStatAnimDecrease;
+    gM6X1ExternalBridge.statPal = gExternalShowdownStatAnimPal;
+    gM6X1ExternalBridge.statSharp = gExternalShowdownStatAnimSharp;
+    gM6X1ExternalBridge.statBlend = gExternalShowdownStatAnimBlend;
+    gM6X1ExternalBridge.statScroll = gExternalShowdownStatAnimScroll;
+'''
+        text=text.replace(publish,publish2,1)
     battle_main.write_text(text)
 
     header=root/'include'/'battle.h'
@@ -186,6 +230,7 @@ def main():
     status.write_text(
         'M6X1_PRESENTATION_SEMANTICS=PASS\n'
         'authority=M2R11E_PORT\n'
+        'bridge_abi=2\n'
         'hud_bounce_mon_decoupled=PASS\n'
         'hud_bounce_healthbox_preserved=PASS\n'
         'stat_external_bridge='+stat+'\n'
