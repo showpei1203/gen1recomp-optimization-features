@@ -5,6 +5,7 @@ on:
     branches: [ feature/soulgold-showdown-m6x1 ]
     paths:
       - 'm6x1/BUILD_REQUEST'
+      - '.github/workflows/soulgold-m6x1-registry-audio-fix.yml'
   workflow_dispatch:
 
 permissions:
@@ -13,6 +14,7 @@ permissions:
 env:
   SOULGOLD_REV: 671b62f421b2356961274fcb6f199d6843017f16
   MGBA_REV: 507061afd70489a0c2ffc8ba26d8f9b53d6cf7d6
+  SOULGOLD_OUTPUT_BASENAME: Soulgold
 
 jobs:
   build-m6x1:
@@ -70,16 +72,22 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p artifacts/m6x1 evidence
-          arm-none-eabi-nm -C soulgold/Soulgold_Beta_1.elf | sort > evidence/M6X1_SYMBOLS.txt
+          ELF="soulgold/${SOULGOLD_OUTPUT_BASENAME}.elf"
+          GBA="soulgold/${SOULGOLD_OUTPUT_BASENAME}.gba"
+          test -s "$ELF"
+          test -s "$GBA"
+          printf 'SOULGOLD_ELF=%s\nSOULGOLD_GBA=%s\n' "$ELF" "$GBA" | tee evidence/M6X1_ROM_OUTPUT_PATHS.txt
+          arm-none-eabi-nm -C "$ELF" | sort > evidence/M6X1_SYMBOLS.txt
           ADDR="$(awk '$3=="gM6X1ExternalBridge"{print $1;exit}' evidence/M6X1_SYMBOLS.txt)"
           test -n "$ADDR"
           case "$ADDR" in 02*) ;; *) echo "bridge symbol not in EWRAM: $ADDR"; exit 1;; esac
-          cp soulgold/Soulgold_Beta_1.gba artifacts/m6x1/Soulgold_M6X1_ExternalPack.gba
+          cp "$GBA" artifacts/m6x1/Soulgold_M6X1_ExternalPack.gba
           test "$(stat -c %s artifacts/m6x1/Soulgold_M6X1_ExternalPack.gba)" -eq 33554432
           ROM_SHA="$(sha256sum artifacts/m6x1/Soulgold_M6X1_ExternalPack.gba | awk '{print $1}')"
           printf '#pragma once\n#define M6X1_BRIDGE_EWRAM_ADDRESS 0x%su\n#define M6X1_BRIDGE_SYMBOL_NAME "gM6X1ExternalBridge"\n' "$ADDR" > framework/android/m6x1/app/src/main/cpp/generated_bridge.h
           echo "M6X1_BRIDGE_ADDR=0x$ADDR" | tee evidence/M6X1_BRIDGE_ADDRESS.txt
           echo "M6X1_ROM_SHA256=$ROM_SHA" | tee -a evidence/M6X1_BRIDGE_ADDRESS.txt
+          echo "M6X1_ROM_BYTES=$(stat -c %s artifacts/m6x1/Soulgold_M6X1_ExternalPack.gba)" | tee -a evidence/M6X1_BRIDGE_ADDRESS.txt
 
       - name: Build paired Showdown SGXP
         run: |
@@ -129,12 +137,43 @@ jobs:
           JAVA=framework/android/m6x1/app/src/main/java/com/showpei/soulgold/m6x1/MainActivity.java
           ! grep -q 'M6X1_BRIDGE_EWRAM_ADDRESS 0u' framework/android/m6x1/app/src/main/cpp/generated_bridge.h
           grep -q 'RETRO_MEMORY_SYSTEM_RAM=2' "$CPP"
-          grep -q 'gEffectiveRate=(gReportedRate>=30000.0&&gReportedRate<=34000.0)?gReportedRate\*2.0:gReportedRate' "$CPP"
+          grep -Fq 'g.run();gCoreFrames++;syncBridge();' "$CPP"
+          grep -Fq 'static size_t audioBatch(const int16_t* p,size_t frames)' "$CPP"
+          grep -Fq 'const size_t samples=frames*2;' "$CPP"
+          grep -Fq 'gEffectiveRate=(gReportedRate>=30000.0&&gReportedRate<=34000.0)?gReportedRate*2.0:gReportedRate' "$CPP"
+          grep -Fq 'int frames=shorts/2;' "$JAVA"
           grep -q 'live_latency_sample_deletion' "$JAVA"
           grep -q 'latency_recovery_dropped_source_samples.*,0' "$JAVA"
           ! grep -q 'discardNativeAudioTo' "$JAVA"
           grep -q 'nativeGetPlayerProxy' "$JAVA"
           grep -q 'SOULGOLD_SHOWDOWN_PACK_V1' "$JAVA"
+          python3 - <<'PY'
+          from pathlib import Path
+          cpp=Path('framework/android/m6x1/app/src/main/cpp/native_bridge.cpp').read_text()
+          java=Path('framework/android/m6x1/app/src/main/java/com/showpei/soulgold/m6x1/MainActivity.java').read_text()
+          required_cpp=[
+              'static size_t audioBatch(const int16_t* p,size_t frames)',
+              'const size_t samples=frames*2;',
+              'gAudioGeneratedSamples.fetch_add(samples',
+              'return frames;',
+              'g.run();gCoreFrames++;syncBridge();',
+              'b->frontCount=0;',
+          ]
+          required_java=[
+              'int frames=shorts/2;',
+              'latency_recovery_dropped_source_samples",0',
+              'live_latency_sample_deletion",false',
+              'core_clock_master","mgba_monotonic_fps',
+          ]
+          missing=[x for x in required_cpp if x not in cpp]+[x for x in required_java if x not in java]
+          if missing:
+              raise SystemExit('M6X1 contract audit missing: '+repr(missing))
+          print('M6X1_RUNTIME_CONTRACT_AUDIT=PASS')
+          print('audio_batch_unit=stereo_frames')
+          print('audio_queue_unit=interleaved_int16_samples')
+          print('registry_sync_order=retro_run_then_syncBridge')
+          print('front_rollout=BLOCKED')
+          PY
 
       - name: Gradle 8.11.1
         uses: gradle/actions/setup-gradle@v4
@@ -164,76 +203,139 @@ jobs:
           cat > artifacts/m6x1/START_HERE_捷徑.txt <<EOF
           SoulGold M6X1：Registry Runtime Bridge + 65536 Hz Audio Authority
 
+          FIRST DEVICE GATE IS LOCKED TO SPRIGATITO PLAYER BACK ONLY.
+          FRONT、其他物種驗收、901 隻擴充全部禁止插隊。
+
           1. 安裝 SOULGOLD_M6X1_ANDROID_ARM64_DEBUG.apk
           2. 匯入 SOULGOLD_M6X1_STARTERS_BACK.sgxp
           3. 選擇 Soulgold_M6X1_ExternalPack.gba
-          4. 用支援的玩家側寶可夢進戰鬥，優先測 Sprigatito / Cyndaquil。
+          4. 只用 Sprigatito 作為玩家側寶可夢進入戰鬥，驗 Showdown BACK。
           5. 聽 BGM、選單音效與戰鬥音效是否仍有 crackle／雜音。
           6. START＋SELECT 輸出 diagnostics/M6X1_REGISTRY_AUDIO_REPORT.json。
           7. L＋R＋START 重置。
 
-          PASS 重點：
-          - 玩家側支援物種第一個可見 battler frame 就是 Showdown BACK，沒有原生圖閃一下。
+          第一個實機 PASS Gate：
+          - Sprigatito 玩家 BACK 第一個可見 battler frame 就是 Showdown sprite，沒有原生圖先閃。
           - external_registry_syncs > 0
           - external_overlay_frames > 0
           - external_overlay_failures = 0
           - source_effective_rate = 65536（或 pinned core 的精確 2x reported rate）
+          - source_observed_rate_from_core_frames 約 65536 stereo frames/s
           - latency_recovery_dropped_source_samples = 0
           - audio_underrun_count = 0，且主觀無持續雜音。
+
+          本包即使 CI 全綠，也只能叫 BUILD/STATIC CANDIDATE；上述 AYN THOR 實機 Gate 通過前不得標 Runtime PASS。
           EOF
           sed -i 's/^          //' artifacts/m6x1/START_HERE_捷徑.txt
+
           cat > artifacts/m6x1/HANDOVER.md <<EOF
           # M6X1 handover
 
-          Status: BUILD/STATIC CANDIDATE. Runtime PASS requires AYN THOR acceptance.
+          Status: BUILD/STATIC CANDIDATE ONLY. Runtime PASS requires the locked AYN THOR Sprigatito player-BACK gate.
+          Branch: feature/soulgold-showdown-m6x1
 
-          ## Parent
-          - branch parent: M6A2 FIX4B authority line
+          ## Authority / baseline
           - pinned SoulGold: ${SOULGOLD_REV}
           - pinned mGBA: ${MGBA_REV}
-          - rejected runtime evidence: M6X0 had registry_syncs=0, overlay_frames=0, overlay_failures=emu_frames; audio latency recovery deleted about half of source samples.
+          - M6X0: REJECTED / diagnostic baseline only.
+          - M1.4 mGBA single-clock audio: FORMAL PASS / SEALED authority.
+          - M6X0 AYN THOR authority: external_registry_syncs=0 and external_overlay_frames=0; latency recovery deleted roughly half of generated source PCM.
 
           ## M6X1 fixes
-          1. Symbol-driven EWRAM bridge: CI resolves gM6X1ExternalBridge from the freshly built ELF and injects its exact address into Android native code.
-          2. Registry is written and read back after every core frame using RETRO_MEMORY_SYSTEM_RAM.
-          3. ROM publishes proxy after AnimateSprites and before BuildOamBuffer; provider-owned native OBJ is hidden only for that OAM snapshot and immediately restored.
-          4. Unsupported species and FRONT remain native fallback.
-          5. Audio keeps mGBA FPS as sole emulation clock. Reported 32768 Hz is retained as telemetry; effective source-rate authority is 2x for this pinned runtime, matching M1.4 and THOR sample production evidence.
-          6. Normal live latency recovery does not delete PCM. DRC remains bounded ±0.5% on the sink thread.
+          1. CI resolves the real pinned SoulGold outputs Soulgold.elf / Soulgold.gba, resolves gM6X1ExternalBridge from the freshly built ELF, verifies its EWRAM address, then freezes an exact 33,554,432-byte ROM.
+          2. Android writes and reads back the EWRAM provider registry immediately after every retro_run() frame using RETRO_MEMORY_SYSTEM_RAM.
+          3. ROM publishes proxy state after AnimateSprites and before BuildOamBuffer; provider-owned native OBJ is hidden only for that OAM snapshot and immediately restored.
+          4. libretro audio_batch count is stereo frames; native PCM queue and Java drain/resampler counts are interleaved int16 samples. The callback therefore expands frames * 2 exactly once.
+          5. mGBA FPS remains the sole emulation clock. Reported 32768 Hz remains telemetry; effective source authority is about 65536 stereo frames/s for this pinned runtime.
+          6. Live latency recovery may not delete PCM. Sink DRC remains bounded to ±0.5%.
+
+          ## Locked first physical-device gate
+          - ONLY Sprigatito player BACK Showdown sprite.
+          - FRONT rollout: BLOCKED.
+          - Other roster acceptance / 901-species expansion: BLOCKED.
+          - CI/build success is not runtime success.
+
+          ## Required runtime evidence
+          - diagnostics/M6X1_REGISTRY_AUDIO_REPORT.json from AYN THOR.
+          - external_registry_syncs > 0
+          - external_overlay_frames > 0
+          - external_overlay_failures = 0
+          - source_observed_rate_from_core_frames approximately 65536 stereo frames/s
+          - latency_recovery_dropped_source_samples = 0
+          - subjective crackle/noise absent and audio_underrun_count = 0
 
           ROM_SHA256=${ROM_SHA}
           PACK_SHA256=${PACK_SHA}
           APK_SHA256=${APK_SHA}
           EOF
           sed -i 's/^          //' artifacts/m6x1/HANDOVER.md
+
           python3 - <<'PY'
-          import hashlib,json,os,re
+          import hashlib,json,os
           from pathlib import Path
           base=Path('artifacts/m6x1')
           def info(n):
-              p=base/n;return {'file':n,'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
+              p=base/n
+              return {'file':n,'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
           addr=Path('evidence/M6X1_BRIDGE_ADDRESS.txt').read_text().splitlines()[0].split('=',1)[1]
           data={
-            'milestone':'M6X1_REGISTRY_AUDIO_FIX','status':'BUILD_STATIC_PASS_RUNTIME_PENDING',
-            'soulgold_revision':os.environ['SOULGOLD_REV'],'mgba_revision':os.environ['MGBA_REV'],
-            'bridge_address':addr,'bridge_symbol':'gM6X1ExternalBridge',
-            'rom':info('Soulgold_M6X1_ExternalPack.gba'),'pack':info('SOULGOLD_M6X1_STARTERS_BACK.sgxp'),
+            'milestone':'M6X1_REGISTRY_AUDIO_FIX',
+            'status':'BUILD_STATIC_PASS_RUNTIME_PENDING',
+            'branch':'feature/soulgold-showdown-m6x1',
+            'soulgold_revision':os.environ['SOULGOLD_REV'],
+            'mgba_revision':os.environ['MGBA_REV'],
+            'bridge_address':addr,
+            'bridge_symbol':'gM6X1ExternalBridge',
+            'rom':info('Soulgold_M6X1_ExternalPack.gba'),
+            'pack':info('SOULGOLD_M6X1_STARTERS_BACK.sgxp'),
             'apk':info('SOULGOLD_M6X1_ANDROID_ARM64_DEBUG.apk'),
             'rom_exact_32_mib':(base/'Soulgold_M6X1_ExternalPack.gba').stat().st_size==33554432,
-            'audio_reported_rate_expected':32768,'audio_effective_rate_expected':65536,
-            'live_latency_sample_deletion':False,'front_providers':0,'back_providers':9,
-            'runtime_gate':'AYN_THOR_REQUIRED'
+            'm6x0_status':'REJECTED_DIAGNOSTIC_BASELINE_ONLY',
+            'm1_4_audio_authority':'SEALED_SINGLE_CLOCK',
+            'first_device_gate':'SPRIGATITO_PLAYER_BACK_ONLY',
+            'front_rollout':'BLOCKED',
+            'roster_expansion_901':'BLOCKED',
+            'audio_batch_argument_unit':'stereo_frames',
+            'native_audio_queue_unit':'interleaved_int16_samples',
+            'audio_reported_rate_expected':32768,
+            'audio_effective_rate_expected':65536,
+            'source_observed_rate_expected_approx':65536,
+            'live_latency_sample_deletion':False,
+            'registry_sync_order':'retro_run_then_syncBridge_each_core_frame',
+            'runtime_gate':'AYN_THOR_REQUIRED',
+            'runtime_report_filename':'M6X1_REGISTRY_AUDIO_REPORT.json'
           }
           Path('artifacts/m6x1/M6X1_BUILD_EVIDENCE.json').write_text(json.dumps(data,indent=2)+'\n')
+          diag={
+            'milestone':'M6X1_REGISTRY_AUDIO_FIX',
+            'status':'DEVICE_RUN_REQUIRED_NOT_OBSERVED',
+            'gate':'SPRIGATITO_PLAYER_BACK_ONLY',
+            'actual_runtime_report_filename':'M6X1_REGISTRY_AUDIO_REPORT.json',
+            'do_not_treat_this_template_as_runtime_evidence':True,
+            'pass_contract':{
+              'external_registry_syncs':'> 0',
+              'external_overlay_frames':'> 0',
+              'external_overlay_failures':'= 0',
+              'source_observed_rate_from_core_frames':'approximately 65536 stereo frames/s',
+              'latency_recovery_dropped_source_samples':'= 0',
+              'audio_underrun_count':'= 0',
+              'visual':'Sprigatito player BACK Showdown sprite on first visible battler frame; no native flash',
+              'audio':'no persistent crackle/noise'
+            }
+          }
+          Path('artifacts/m6x1/M6X1_RUNTIME_DIAGNOSTIC_CONTRACT.json').write_text(json.dumps(diag,indent=2)+'\n')
           PY
+
           sha256sum "$ROM" "$PACK" "$APK" > artifacts/m6x1/SHA256SUMS.txt
           cp soulgold/M6X1_EXTERNAL_BRIDGE_INSTALL_STATUS.txt artifacts/m6x1/
           cp evidence/M6X1_BRIDGE_ADDRESS.txt artifacts/m6x1/
+          cp evidence/M6X1_ROM_OUTPUT_PATHS.txt artifacts/m6x1/
           (cd artifacts/m6x1 && zip -9 SOULGOLD_M6X1_TEST_KIT.zip \
              SOULGOLD_M6X1_ANDROID_ARM64_DEBUG.apk Soulgold_M6X1_ExternalPack.gba \
              SOULGOLD_M6X1_STARTERS_BACK.sgxp START_HERE_捷徑.txt HANDOVER.md \
-             M6X1_BUILD_EVIDENCE.json M6X1_EXTERNAL_BRIDGE_INSTALL_STATUS.txt \
-             M6X1_BRIDGE_ADDRESS.txt SHA256SUMS.txt)
+             M6X1_BUILD_EVIDENCE.json M6X1_RUNTIME_DIAGNOSTIC_CONTRACT.json \
+             M6X1_EXTERNAL_BRIDGE_INSTALL_STATUS.txt M6X1_BRIDGE_ADDRESS.txt \
+             M6X1_ROM_OUTPUT_PATHS.txt SHA256SUMS.txt)
 
       - name: Upload M6X1 test kit
         uses: actions/upload-artifact@v4
@@ -250,6 +352,7 @@ jobs:
             artifacts/m6x1/HANDOVER.md
             artifacts/m6x1/START_HERE_捷徑.txt
             artifacts/m6x1/M6X1_BUILD_EVIDENCE.json
+            artifacts/m6x1/M6X1_RUNTIME_DIAGNOSTIC_CONTRACT.json
             artifacts/m6x1/SHA256SUMS.txt
             evidence/
             soulgold/M6X1_BUILD.log
@@ -261,17 +364,20 @@ jobs:
           set -euxo pipefail
           mkdir -p framework/authority framework/handoff framework/artifacts/m6x1
           cp artifacts/m6x1/M6X1_BUILD_EVIDENCE.json framework/artifacts/m6x1/
+          cp artifacts/m6x1/M6X1_RUNTIME_DIAGNOSTIC_CONTRACT.json framework/artifacts/m6x1/
           cp artifacts/m6x1/SHA256SUMS.txt framework/artifacts/m6x1/
           cp artifacts/m6x1/HANDOVER.md framework/handoff/SOULGOLD_M6X1_HANDOVER_20260904.md
           cp artifacts/m6x1/HANDOVER.md framework/handoff/CURRENT_HANDOVER.md
           cat > framework/authority/SOULGOLD_M6X1_REGISTRY_AUDIO_FIX_20260904.md <<'EOF'
           # SoulGold M6X1 Registry + Audio Fix Authority
 
-          Build/static candidate only until AYN THOR runtime acceptance.
+          Status is BUILD/STATIC CANDIDATE only until AYN THOR runtime acceptance.
 
-          M6X0 runtime evidence rejected the prior transport proof: registry sync never occurred and audio latency recovery deleted roughly half of generated source PCM. M6X1 replaces the hardcoded/opaque bridge with an ELF-symbol-resolved EWRAM ABI and restores the pinned runtime's effective 65536 Hz source-rate authority. Core pacing remains mGBA FPS; live latency repair may not delete PCM.
+          M6X0 is REJECTED / diagnostic baseline only: registry sync never occurred and audio latency recovery deleted roughly half of generated source PCM. M1.4 mGBA single-clock audio remains SEALED authority.
 
-          FRONT rollout and roster expansion remain blocked until player BACK + audio pass on device.
+          M6X1 uses an ELF-symbol-resolved EWRAM bridge, rewrites the host registry after every retro_run(), treats libretro audio_batch count as stereo frames and the PCM queue as interleaved int16 samples, and restores the pinned runtime's effective ~65536 stereo-frame/s source-rate authority without live latency sample deletion.
+
+          First physical-device gate is Sprigatito player BACK only. FRONT rollout and 901-species expansion remain blocked until that visual gate plus registry/audio telemetry pass on AYN THOR.
           EOF
           sed -i 's/^          //' framework/authority/SOULGOLD_M6X1_REGISTRY_AUDIO_FIX_20260904.md
           git -C framework config user.name 'github-actions[bot]'
