@@ -74,9 +74,20 @@ def main():
     if missing:
         raise SystemExit("M6X1 system RAM patch verification failed: " + repr(missing))
 
+    framework = Path(__file__).resolve().parents[1]
+
+    # R3 stat fidelity: generate Android textures directly from the exact pinned
+    # SoulGold stat-change source assets already checked out by CI. Nothing is
+    # hand-redrawn and nothing is downloaded at runtime.
+    soulgold = Path.cwd() / 'soulgold'
+    stat_prep = Path(__file__).with_name('prepare_m6x1_native_stat_assets.py')
+    subprocess.run([
+        sys.executable,str(stat_prep),'--soulgold',str(soulgold),
+        '--android-root',str(framework/'android'/'m6x1')
+    ],check=True)
+
     # Android presentation patch is attached to this already-mandatory workflow
     # step so a transport-only build cannot bypass the final Showdown authority.
-    framework = Path(__file__).resolve().parents[1]
     android_patch = Path(__file__).with_name('apply_m6x1_android_presentation_v2.py')
     subprocess.run([sys.executable,str(android_patch),'--root',str(framework/'android'/'m6x1')],check=True)
 
@@ -89,9 +100,11 @@ def main():
         "gba_bytes=262144\n"
         "core_clock_changes=NONE\n"
         "audio_core_changes=NONE\n"
-        "android_presentation_semantics=M6X1_R2_M2R5D_M2R11E_M2R12G_M3S1_FINAL_PORT\n"
+        "android_presentation_semantics=M6X1_R3_NATIVE_SOULGOLD_STAT_FIDELITY\n"
         "bridge_snapshot_policy=LAST_KNOWN_GOOD_ATOMIC_SWAP\n"
         "provider_animation_clock=ROM_FRAME\n"
+        "stat_source=PINNED_SOULGOLD_TILEMAP_GFX_PALETTE\n"
+        "stat_mask=SHOWDOWN_FRAME_ALPHA\n"
     )
     print("M6X1_LIBRETRO_SYSTEM_RAM_PATCH=PASS")
 
