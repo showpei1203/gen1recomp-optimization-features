@@ -193,10 +193,10 @@ def main():
     else:
         print('M6X1 bridge already installed')
 
-    # R2 final presentation semantics are mandatory. The authority chain is the
-    # accepted M2R5D -> M2R11E -> M2R12G -> M3S1 line, not a transport-only
-    # Android approximation.
-    semantics = Path(__file__).with_name('apply_m6x1_presentation_semantics.py')
+    # R2 final presentation semantics are mandatory. The runner deliberately
+    # reuses the exact accepted M2/R1 HUD regex while the remaining authority
+    # comes from M2R5D -> M2R11E -> M2R12G -> M3S1.
+    semantics = Path(__file__).with_name('apply_m6x1_presentation_semantics_r2.py')
     subprocess.run([sys.executable,str(semantics),'--soulgold',str(root)],check=True)
 
     framework=Path(__file__).resolve().parents[1]
