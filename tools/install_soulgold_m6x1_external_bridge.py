@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import argparse
+import argparse,subprocess,sys
 
 MAGIC = "M6X1_EXTERNAL_BRIDGE_INSTALL_V1"
 
@@ -180,27 +180,36 @@ def main():
     root = Path(args.soulgold)
     p = root / 'src' / 'battle_main.c'
     text = p.read_text()
-    if MAGIC in text:
+    if MAGIC not in text:
+        if OLD_TICK not in text:
+            raise SystemExit('RunBattleSoftwareTick authority block not found')
+        anchor = 'COMMON_DATA u8 gNumberOfMovesToChoose = 0;\n'
+        if anchor not in text:
+            raise SystemExit('battle global insertion anchor not found')
+        bridge = '\n// ' + MAGIC + '\n' + BRIDGE + '\n'
+        text = text.replace(anchor, anchor + bridge, 1)
+        text = text.replace(OLD_TICK, NEW_TICK, 1)
+        p.write_text(text)
+    else:
         print('M6X1 bridge already installed')
-        return
-    if OLD_TICK not in text:
-        raise SystemExit('RunBattleSoftwareTick authority block not found')
-    anchor = 'COMMON_DATA u8 gNumberOfMovesToChoose = 0;\n'
-    if anchor not in text:
-        raise SystemExit('battle global insertion anchor not found')
-    bridge = '\n// ' + MAGIC + '\n' + BRIDGE + '\n'
-    text = text.replace(anchor, anchor + bridge, 1)
-    text = text.replace(OLD_TICK, NEW_TICK, 1)
-    p.write_text(text)
+
+    # Presentation semantics are a mandatory part of this bridge generation.
+    # Do not allow a transport-only build to regress previously accepted battle
+    # layering/HUD/stat behavior again.
+    semantics = Path(__file__).with_name('apply_m6x1_presentation_semantics.py')
+    subprocess.run([sys.executable,str(semantics),'--soulgold',str(root)],check=True)
+
     (root / 'M6X1_EXTERNAL_BRIDGE_INSTALL_STATUS.txt').write_text(
         'M6X1_EXTERNAL_BRIDGE_INSTALL=PASS\n'
         'bridge_symbol=gM6X1ExternalBridge\n'
+        'bridge_abi=2\n'
         'proxy_hook=AFTER_ANIMATE_SPRITES_BEFORE_BUILD_OAM\n'
         'native_visibility_restore=IMMEDIATE_AFTER_BUILD_OAM\n'
         'host_registry_capacity=16\n'
         'front_provider_default=0\n'
+        'presentation_semantics=M2R11E_PORT\n'
     )
-    print('M6X1 external bridge installed')
+    print('M6X1 external bridge + presentation semantics installed')
 
 if __name__ == '__main__':
     main()
