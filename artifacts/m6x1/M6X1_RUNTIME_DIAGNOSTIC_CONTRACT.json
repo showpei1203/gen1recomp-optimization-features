@@ -1,0 +1,17 @@
+{
+  "milestone": "M6X1_REGISTRY_AUDIO_FIX",
+  "status": "DEVICE_RUN_REQUIRED_NOT_OBSERVED",
+  "gate": "SPRIGATITO_PLAYER_BACK_ONLY",
+  "actual_runtime_report_filename": "M6X1_REGISTRY_AUDIO_REPORT.json",
+  "do_not_treat_this_template_as_runtime_evidence": true,
+  "pass_contract": {
+    "external_registry_syncs": "> 0",
+    "external_overlay_frames": "> 0",
+    "external_overlay_failures": "= 0",
+    "source_observed_rate_from_core_frames": "approximately 65536 stereo frames/s",
+    "latency_recovery_dropped_source_samples": "= 0",
+    "audio_underrun_count": "= 0",
+    "visual": "Sprigatito player BACK Showdown sprite on first visible battler frame; no native flash",
+    "audio": "no persistent crackle/noise"
+  }
+}
