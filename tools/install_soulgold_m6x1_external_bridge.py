@@ -193,23 +193,28 @@ def main():
     else:
         print('M6X1 bridge already installed')
 
-    # Presentation semantics are a mandatory part of this bridge generation.
-    # Do not allow a transport-only build to regress previously accepted battle
-    # layering/HUD/stat behavior again.
+    # R2 final presentation semantics are mandatory. The authority chain is the
+    # accepted M2R5D -> M2R11E -> M2R12G -> M3S1 line, not a transport-only
+    # Android approximation.
     semantics = Path(__file__).with_name('apply_m6x1_presentation_semantics.py')
     subprocess.run([sys.executable,str(semantics),'--soulgold',str(root)],check=True)
+
+    framework=Path(__file__).resolve().parents[1]
+    validator=Path(__file__).with_name('validate_m6x1_r2_showdown_presentation.py')
+    subprocess.run([sys.executable,str(validator),'--framework',str(framework),'--soulgold',str(root)],check=True)
 
     (root / 'M6X1_EXTERNAL_BRIDGE_INSTALL_STATUS.txt').write_text(
         'M6X1_EXTERNAL_BRIDGE_INSTALL=PASS\n'
         'bridge_symbol=gM6X1ExternalBridge\n'
-        'bridge_abi=2\n'
+        'bridge_abi=3\n'
         'proxy_hook=AFTER_ANIMATE_SPRITES_BEFORE_BUILD_OAM\n'
         'native_visibility_restore=IMMEDIATE_AFTER_BUILD_OAM\n'
         'host_registry_capacity=16\n'
         'front_provider_default=0\n'
-        'presentation_semantics=M2R11E_PORT\n'
+        'presentation_semantics=M2R5D_M2R11E_M2R12G_M3S1_FINAL_PORT\n'
+        'permanent_r2_validator=PASS\n'
     )
-    print('M6X1 external bridge + presentation semantics installed')
+    print('M6X1 external bridge + R2 final presentation authority installed')
 
 if __name__ == '__main__':
     main()
