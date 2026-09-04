@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import argparse
+import argparse,subprocess,sys
 
 MARKER = "M6X1_LIBRETRO_SYSTEM_RAM_EWRAM_V1"
 
@@ -74,6 +74,12 @@ def main():
     if missing:
         raise SystemExit("M6X1 system RAM patch verification failed: " + repr(missing))
 
+    # This step is already mandatory in the canonical workflow, so attach the
+    # Android-side M2R11E presentation port here without disturbing CI topology.
+    framework = Path(__file__).resolve().parents[1]
+    android_patch = Path(__file__).with_name('apply_m6x1_android_presentation_v2.py')
+    subprocess.run([sys.executable,str(android_patch),'--root',str(framework/'android'/'m6x1')],check=True)
+
     status = root / "M6X1_LIBRETRO_SYSTEM_RAM_PATCH_STATUS.txt"
     status.write_text(
         "M6X1_LIBRETRO_SYSTEM_RAM_PATCH=PASS\n"
@@ -83,6 +89,7 @@ def main():
         "gba_bytes=262144\n"
         "core_clock_changes=NONE\n"
         "audio_core_changes=NONE\n"
+        "android_presentation_semantics=M6X1_R1_M2R11E_PORT\n"
     )
     print("M6X1_LIBRETRO_SYSTEM_RAM_PATCH=PASS")
 
