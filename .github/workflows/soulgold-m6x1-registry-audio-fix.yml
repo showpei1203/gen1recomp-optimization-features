@@ -1,0 +1,285 @@
+name: SoulGold M6X1 Registry + 65536 Audio Fix
+
+on:
+  push:
+    branches: [ feature/soulgold-showdown-m6x1 ]
+    paths:
+      - 'm6x1/BUILD_REQUEST'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  SOULGOLD_REV: 671b62f421b2356961274fcb6f199d6843017f16
+  MGBA_REV: 507061afd70489a0c2ffc8ba26d8f9b53d6cf7d6
+
+jobs:
+  build-m6x1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout framework
+        uses: actions/checkout@v4
+        with:
+          path: framework
+
+      - name: Checkout pinned SoulGold
+        uses: actions/checkout@v4
+        with:
+          repository: Eemeliri/soulgold
+          ref: ${{ env.SOULGOLD_REV }}
+          path: soulgold
+
+      - name: Checkout pinned mGBA
+        uses: actions/checkout@v4
+        with:
+          repository: mgba-emu/mgba
+          ref: ${{ env.MGBA_REV }}
+          path: _mgba
+
+      - name: Install ROM build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3 python3-pil ninja-build zip unzip
+
+      - name: Install M6X1 ROM bridge
+        run: |
+          set -euxo pipefail
+          python3 framework/tools/install_soulgold_m6x1_external_bridge.py --soulgold soulgold
+          grep -q 'M6X1_EXTERNAL_BRIDGE_INSTALL=PASS' soulgold/M6X1_EXTERNAL_BRIDGE_INSTALL_STATUS.txt
+          grep -q 'M6X1_PublishProxyAndSuppress' soulgold/src/battle_main.c
+          grep -q 'M6X1_RestoreNativeVisibility' soulgold/src/battle_main.c
+
+      - name: Build pinned SoulGold M6X1 ROM
+        working-directory: soulgold
+        env:
+          GAME_VERSION: EMERALD
+          GAME_REVISION: 0
+          GAME_LANGUAGE: ENGLISH
+          COMPARE: 0
+          UNUSED_ERROR: 0
+          DEPRECATED_ERROR: 0
+        run: |
+          set -o pipefail
+          make -j$(nproc) -O all 2>&1 | tee M6X1_BUILD.log
+
+      - name: Resolve bridge symbol and freeze 32 MiB ROM
+        run: |
+          set -euxo pipefail
+          mkdir -p artifacts/m6x1 evidence
+          arm-none-eabi-nm -C soulgold/Soulgold_Beta_1.elf | sort > evidence/M6X1_SYMBOLS.txt
+          ADDR="$(awk '$3=="gM6X1ExternalBridge"{print $1;exit}' evidence/M6X1_SYMBOLS.txt)"
+          test -n "$ADDR"
+          case "$ADDR" in 02*) ;; *) echo "bridge symbol not in EWRAM: $ADDR"; exit 1;; esac
+          cp soulgold/Soulgold_Beta_1.gba artifacts/m6x1/Soulgold_M6X1_ExternalPack.gba
+          test "$(stat -c %s artifacts/m6x1/Soulgold_M6X1_ExternalPack.gba)" -eq 33554432
+          ROM_SHA="$(sha256sum artifacts/m6x1/Soulgold_M6X1_ExternalPack.gba | awk '{print $1}')"
+          printf '#pragma once\n#define M6X1_BRIDGE_EWRAM_ADDRESS 0x%su\n#define M6X1_BRIDGE_SYMBOL_NAME "gM6X1ExternalBridge"\n' "$ADDR" > framework/android/m6x1/app/src/main/cpp/generated_bridge.h
+          echo "M6X1_BRIDGE_ADDR=0x$ADDR" | tee evidence/M6X1_BRIDGE_ADDRESS.txt
+          echo "M6X1_ROM_SHA256=$ROM_SHA" | tee -a evidence/M6X1_BRIDGE_ADDRESS.txt
+
+      - name: Build paired Showdown SGXP
+        run: |
+          set -euxo pipefail
+          ROM_SHA="$(sha256sum artifacts/m6x1/Soulgold_M6X1_ExternalPack.gba | awk '{print $1}')"
+          python3 framework/tools/build_m6x1_showdown_pack.py \
+            --rom-sha256 "$ROM_SHA" \
+            --output artifacts/m6x1/SOULGOLD_M6X1_STARTERS_BACK.sgxp | tee evidence/M6X1_PACK_BUILD.txt
+          unzip -t artifacts/m6x1/SOULGOLD_M6X1_STARTERS_BACK.sgxp
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build pieces
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+
+      - name: Build pinned mGBA libretro ARM64
+        run: |
+          set -euxo pipefail
+          SDK_CMAKE="$ANDROID_SDK_ROOT/cmake/3.22.1/bin/cmake"
+          NDK="$ANDROID_SDK_ROOT/ndk/28.2.13676358"
+          "$SDK_CMAKE" -S _mgba -B _mgba_build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_LIBRETRO=ON \
+            -DBUILD_QT=OFF -DBUILD_SDL=OFF -DBUILD_GL=OFF -DBUILD_GLES2=OFF -DBUILD_GLES3=OFF \
+            -DSKIP_LIBRARY=ON -DDISABLE_DEPS=ON -DENABLE_DEBUGGERS=OFF -DENABLE_GDB_STUB=OFF \
+            -DENABLE_SCRIPTING=OFF -DM_CORE_GBA=ON -DM_CORE_GB=OFF -DBUILD_LTO=OFF
+          "$SDK_CMAKE" --build _mgba_build --target mgba_libretro -j2
+          CORE="$(find _mgba_build -type f -name 'mgba_libretro.so' | head -1)"
+          test -n "$CORE" && test -s "$CORE"
+          mkdir -p framework/android/m6x1/app/src/main/jniLibs/arm64-v8a
+          cp "$CORE" framework/android/m6x1/app/src/main/jniLibs/arm64-v8a/libmgba_libretro.so
+
+      - name: Audit M6X1 contracts before APK build
+        run: |
+          set -euxo pipefail
+          CPP=framework/android/m6x1/app/src/main/cpp/native_bridge.cpp
+          JAVA=framework/android/m6x1/app/src/main/java/com/showpei/soulgold/m6x1/MainActivity.java
+          ! grep -q 'M6X1_BRIDGE_EWRAM_ADDRESS 0u' framework/android/m6x1/app/src/main/cpp/generated_bridge.h
+          grep -q 'RETRO_MEMORY_SYSTEM_RAM=2' "$CPP"
+          grep -q 'gEffectiveRate=(gReportedRate>=30000.0&&gReportedRate<=34000.0)?gReportedRate\*2.0:gReportedRate' "$CPP"
+          grep -q 'live_latency_sample_deletion' "$JAVA"
+          grep -q 'latency_recovery_dropped_source_samples.*,0' "$JAVA"
+          ! grep -q 'discardNativeAudioTo' "$JAVA"
+          grep -q 'nativeGetPlayerProxy' "$JAVA"
+          grep -q 'SOULGOLD_SHOWDOWN_PACK_V1' "$JAVA"
+
+      - name: Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Build M6X1 APK
+        run: |
+          set -euxo pipefail
+          gradle -p framework/android/m6x1 :app:assembleDebug --no-daemon
+          APK=framework/android/m6x1/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -l "$APK" | tee evidence/M6X1_APK_LIST.txt
+          grep -q 'lib/arm64-v8a/libmgba_libretro.so' evidence/M6X1_APK_LIST.txt
+          grep -q 'lib/arm64-v8a/libsoulgold_m6x1.so' evidence/M6X1_APK_LIST.txt
+          cp "$APK" artifacts/m6x1/SOULGOLD_M6X1_ANDROID_ARM64_DEBUG.apk
+
+      - name: Create test guide, handover and evidence
+        run: |
+          set -euxo pipefail
+          ROM=artifacts/m6x1/Soulgold_M6X1_ExternalPack.gba
+          PACK=artifacts/m6x1/SOULGOLD_M6X1_STARTERS_BACK.sgxp
+          APK=artifacts/m6x1/SOULGOLD_M6X1_ANDROID_ARM64_DEBUG.apk
+          ROM_SHA="$(sha256sum "$ROM" | awk '{print $1}')"
+          PACK_SHA="$(sha256sum "$PACK" | awk '{print $1}')"
+          APK_SHA="$(sha256sum "$APK" | awk '{print $1}')"
+          cat > artifacts/m6x1/START_HERE_捷徑.txt <<EOF
+          SoulGold M6X1：Registry Runtime Bridge + 65536 Hz Audio Authority
+
+          1. 安裝 SOULGOLD_M6X1_ANDROID_ARM64_DEBUG.apk
+          2. 匯入 SOULGOLD_M6X1_STARTERS_BACK.sgxp
+          3. 選擇 Soulgold_M6X1_ExternalPack.gba
+          4. 用支援的玩家側寶可夢進戰鬥，優先測 Sprigatito / Cyndaquil。
+          5. 聽 BGM、選單音效與戰鬥音效是否仍有 crackle／雜音。
+          6. START＋SELECT 輸出 diagnostics/M6X1_REGISTRY_AUDIO_REPORT.json。
+          7. L＋R＋START 重置。
+
+          PASS 重點：
+          - 玩家側支援物種第一個可見 battler frame 就是 Showdown BACK，沒有原生圖閃一下。
+          - external_registry_syncs > 0
+          - external_overlay_frames > 0
+          - external_overlay_failures = 0
+          - source_effective_rate = 65536（或 pinned core 的精確 2x reported rate）
+          - latency_recovery_dropped_source_samples = 0
+          - audio_underrun_count = 0，且主觀無持續雜音。
+          EOF
+          sed -i 's/^          //' artifacts/m6x1/START_HERE_捷徑.txt
+          cat > artifacts/m6x1/HANDOVER.md <<EOF
+          # M6X1 handover
+
+          Status: BUILD/STATIC CANDIDATE. Runtime PASS requires AYN THOR acceptance.
+
+          ## Parent
+          - branch parent: M6A2 FIX4B authority line
+          - pinned SoulGold: ${SOULGOLD_REV}
+          - pinned mGBA: ${MGBA_REV}
+          - rejected runtime evidence: M6X0 had registry_syncs=0, overlay_frames=0, overlay_failures=emu_frames; audio latency recovery deleted about half of source samples.
+
+          ## M6X1 fixes
+          1. Symbol-driven EWRAM bridge: CI resolves gM6X1ExternalBridge from the freshly built ELF and injects its exact address into Android native code.
+          2. Registry is written and read back after every core frame using RETRO_MEMORY_SYSTEM_RAM.
+          3. ROM publishes proxy after AnimateSprites and before BuildOamBuffer; provider-owned native OBJ is hidden only for that OAM snapshot and immediately restored.
+          4. Unsupported species and FRONT remain native fallback.
+          5. Audio keeps mGBA FPS as sole emulation clock. Reported 32768 Hz is retained as telemetry; effective source-rate authority is 2x for this pinned runtime, matching M1.4 and THOR sample production evidence.
+          6. Normal live latency recovery does not delete PCM. DRC remains bounded ±0.5% on the sink thread.
+
+          ROM_SHA256=${ROM_SHA}
+          PACK_SHA256=${PACK_SHA}
+          APK_SHA256=${APK_SHA}
+          EOF
+          sed -i 's/^          //' artifacts/m6x1/HANDOVER.md
+          python3 - <<'PY'
+          import hashlib,json,os,re
+          from pathlib import Path
+          base=Path('artifacts/m6x1')
+          def info(n):
+              p=base/n;return {'file':n,'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
+          addr=Path('evidence/M6X1_BRIDGE_ADDRESS.txt').read_text().splitlines()[0].split('=',1)[1]
+          data={
+            'milestone':'M6X1_REGISTRY_AUDIO_FIX','status':'BUILD_STATIC_PASS_RUNTIME_PENDING',
+            'soulgold_revision':os.environ['SOULGOLD_REV'],'mgba_revision':os.environ['MGBA_REV'],
+            'bridge_address':addr,'bridge_symbol':'gM6X1ExternalBridge',
+            'rom':info('Soulgold_M6X1_ExternalPack.gba'),'pack':info('SOULGOLD_M6X1_STARTERS_BACK.sgxp'),
+            'apk':info('SOULGOLD_M6X1_ANDROID_ARM64_DEBUG.apk'),
+            'rom_exact_32_mib':(base/'Soulgold_M6X1_ExternalPack.gba').stat().st_size==33554432,
+            'audio_reported_rate_expected':32768,'audio_effective_rate_expected':65536,
+            'live_latency_sample_deletion':False,'front_providers':0,'back_providers':9,
+            'runtime_gate':'AYN_THOR_REQUIRED'
+          }
+          Path('artifacts/m6x1/M6X1_BUILD_EVIDENCE.json').write_text(json.dumps(data,indent=2)+'\n')
+          PY
+          sha256sum "$ROM" "$PACK" "$APK" > artifacts/m6x1/SHA256SUMS.txt
+          cp soulgold/M6X1_EXTERNAL_BRIDGE_INSTALL_STATUS.txt artifacts/m6x1/
+          cp evidence/M6X1_BRIDGE_ADDRESS.txt artifacts/m6x1/
+          (cd artifacts/m6x1 && zip -9 SOULGOLD_M6X1_TEST_KIT.zip \
+             SOULGOLD_M6X1_ANDROID_ARM64_DEBUG.apk Soulgold_M6X1_ExternalPack.gba \
+             SOULGOLD_M6X1_STARTERS_BACK.sgxp START_HERE_捷徑.txt HANDOVER.md \
+             M6X1_BUILD_EVIDENCE.json M6X1_EXTERNAL_BRIDGE_INSTALL_STATUS.txt \
+             M6X1_BRIDGE_ADDRESS.txt SHA256SUMS.txt)
+
+      - name: Upload M6X1 test kit
+        uses: actions/upload-artifact@v4
+        with:
+          name: SOULGOLD_M6X1_REGISTRY_AUDIO_FIX_TEST_KIT
+          path: artifacts/m6x1/SOULGOLD_M6X1_TEST_KIT.zip
+          if-no-files-found: error
+
+      - name: Upload M6X1 individual evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: SOULGOLD_M6X1_BUILD_EVIDENCE
+          path: |
+            artifacts/m6x1/HANDOVER.md
+            artifacts/m6x1/START_HERE_捷徑.txt
+            artifacts/m6x1/M6X1_BUILD_EVIDENCE.json
+            artifacts/m6x1/SHA256SUMS.txt
+            evidence/
+            soulgold/M6X1_BUILD.log
+          if-no-files-found: warn
+
+      - name: Persist M6X1 compact authority
+        if: success()
+        run: |
+          set -euxo pipefail
+          mkdir -p framework/authority framework/handoff framework/artifacts/m6x1
+          cp artifacts/m6x1/M6X1_BUILD_EVIDENCE.json framework/artifacts/m6x1/
+          cp artifacts/m6x1/SHA256SUMS.txt framework/artifacts/m6x1/
+          cp artifacts/m6x1/HANDOVER.md framework/handoff/SOULGOLD_M6X1_HANDOVER_20260904.md
+          cp artifacts/m6x1/HANDOVER.md framework/handoff/CURRENT_HANDOVER.md
+          cat > framework/authority/SOULGOLD_M6X1_REGISTRY_AUDIO_FIX_20260904.md <<'EOF'
+          # SoulGold M6X1 Registry + Audio Fix Authority
+
+          Build/static candidate only until AYN THOR runtime acceptance.
+
+          M6X0 runtime evidence rejected the prior transport proof: registry sync never occurred and audio latency recovery deleted roughly half of generated source PCM. M6X1 replaces the hardcoded/opaque bridge with an ELF-symbol-resolved EWRAM ABI and restores the pinned runtime's effective 65536 Hz source-rate authority. Core pacing remains mGBA FPS; live latency repair may not delete PCM.
+
+          FRONT rollout and roster expansion remain blocked until player BACK + audio pass on device.
+          EOF
+          sed -i 's/^          //' framework/authority/SOULGOLD_M6X1_REGISTRY_AUDIO_FIX_20260904.md
+          git -C framework config user.name 'github-actions[bot]'
+          git -C framework config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C framework add authority/SOULGOLD_M6X1_REGISTRY_AUDIO_FIX_20260904.md handoff/CURRENT_HANDOVER.md handoff/SOULGOLD_M6X1_HANDOVER_20260904.md artifacts/m6x1/
+          if ! git -C framework diff --cached --quiet; then
+            git -C framework commit -m 'M6X1 persist registry audio fix build authority'
+            git -C framework fetch origin feature/soulgold-showdown-m6x1
+            git -C framework rebase origin/feature/soulgold-showdown-m6x1
+            git -C framework push origin HEAD:feature/soulgold-showdown-m6x1
+          fi
