@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import argparse,re
+import argparse,ast,re
 
 CANARY=155
+
+
+def parse_front_species(builder):
+    m=re.search(r'^FRONT_SPECIES\s*=\s*(\[[^\n]*\])\s*$',builder,re.M)
+    if not m:return None
+    try:return ast.literal_eval(m.group(1))
+    except Exception:return None
 
 
 def main():
@@ -12,6 +19,7 @@ def main():
     java=(fw/'android/m6x1/app/src/main/java/com/showpei/soulgold/m6x1/MainActivity.java').read_text()
     battle=(sg/'src/battle_main.c').read_text()
     builder=(fw/'tools/build_m6x1_showdown_pack.py').read_text()
+    front_species=parse_front_species(builder)
     ondraw_start=java.find('@Override protected void onDraw(Canvas c)')
     ondraw_end=java.find('\n    }\n\n    static final class AnimFrame',ondraw_start)
     ondraw=java[ondraw_start:ondraw_end] if ondraw_start>=0 and ondraw_end>ondraw_start else ''
@@ -40,14 +48,15 @@ def main():
       'front_telemetry':'external_front_overlay_frames' in java and 'external_bridge_front_count_readback' in java and 'front_canary_species' in java,
       'r5_report_marker':'M6X1_R5_FRONT_CANARY' in java,
       'builder_front_base':"FRONT_BASE='https://play.pokemonshowdown.com/sprites/ani/'" in builder,
-      'builder_exact_canary':"FRONT_SPECIES = [(155,'cyndaquil',0.72)]" in builder,
+      'builder_exact_canary':front_species==[(155,'cyndaquil',0.72)],
       'builder_back_roster_preserved':"(1289,'sprigatito')" in builder and "(155,'cyndaquil')" in builder,
-      'broad_front_rollout_blocked':not re.search(r'FRONT_SPECIES\s*=\s*\[[^\]]*,[^\]]*,',builder,re.S),
+      'broad_front_rollout_blocked':isinstance(front_species,list) and len(front_species)==1 and front_species[0][0]==155,
     }
     for k,v in checks.items():print(f'{k}={"PASS" if v else "FAIL"}')
     ok=all(checks.values())
     print('M6X1_R5_FRONT_CANARY_AUTHORITY='+('PASS' if ok else 'FAIL'))
     print('front_canary_species='+str(CANARY))
+    print('front_provider_count='+(str(len(front_species)) if isinstance(front_species,list) else 'INVALID'))
     print('roster_expansion_901=BLOCKED')
     return 0 if ok else 1
 
