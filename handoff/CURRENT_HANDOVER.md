@@ -1,100 +1,97 @@
-# SOULGOLD M6X1R3 — Native SoulGold Stat Fidelity Authority
+# SOULGOLD M6X1R4 — Edge Residue + Battle-End Teardown Guard
 
-Status: BUILD/STATIC PASS; AYN THOR R3 stat-fidelity runtime gate PENDING.
+Status: BUILD/STATIC PASS; AYN THOR R4 runtime gate PENDING.
 Branch: feature/soulgold-showdown-m6x1
 Pinned SoulGold: 671b62f421b2356961274fcb6f199d6843017f16
 Pinned mGBA: 507061afd70489a0c2ffc8ba26d8f9b53d6cf7d6
-Canonical R3 CI: Run #13 / 33867021188
+Canonical R4 CI: Run #14 / 33963616919
+Canonical binary head: 248c1592a5c0eb0729b813a85536dcdc422f1430
 
 ## Sealed baseline
 - M1.4 mGBA single-clock audio remains SEALED.
-- M6X0 remains REJECTED / diagnostic baseline only.
 - M6X1 registry/audio bridge remains SEALED.
 - M6X1R2 bridge v3, last-known-good snapshot, ROM-frame provider clock, presentation lifecycle, HUD bounce decoupling, monbg semantics, x2/y2 authority and lower-UI Z authority remain sealed.
+- M6X1R3 pinned-SoulGold native stat assets / tilemap / palette / scroll / blend remain sealed.
+- Historical stripe/tint stat approximation remains REJECTED and forbidden.
 - FRONT rollout and 901-species expansion remain BLOCKED.
 
-## Why R3 exists
-AYN THOR R2 runtime showed the stat bridge was actually active (`stat_native_composite_frames=87`) but the user still rejected the stat-decrease visual. Therefore the problem was not registry/proxy delivery. The historical M2/M6X1R2 implementation itself was only an approximation: moving hardcoded color strips clipped to the Showdown body.
+## R3 device authority entering R4
+AYN THOR report #3 established:
+- external_registry_syncs=11067, failures=0
+- external_overlay_frames=2260, failures=0
+- stat_native_pattern_frames=87
+- stat_asset_failures=0
+- presentation_semantics=M6X1_R3_NATIVE_SOULGOLD_STAT_FIDELITY
 
-That historical strip/tint approximation is now REJECTED and permanently forbidden.
+Remaining R3 user-visible regressions:
+1. Stat-decrease effect correctly follows the Showdown sprite but leaves a small residual animation on the LEFT side.
+2. At battle end, the old/native battler sprite briefly flashes.
 
-## R3 native stat authority
-R3 generates Android stat textures directly from the pinned SoulGold source directory `graphics/battle_anims/stat_change`.
+## R4 repair A — edge-safe stat alpha composition
+R3 composed the native SoulGold pattern first and then used DST_IN with the Showdown bitmap inside a fractional saveLayer RectF. R4 changes only the alpha-composition order:
+- draw the exact current Showdown frame alpha first,
+- set the native stat-pattern paint to PorterDuff SRC_IN,
+- paint the FULL stat rectangle through that alpha,
+- explicitly reset the xfermode every frame.
 
-Build-time source facts embedded in the APK manifest:
-- tiles.png: 128x32 indexed-P
-- tile count: 64
-- increase.bin / decrease.bin: native 32x32 GBA tilemaps
-- generated textures: 16 (increase/decrease x attack, defense, accuracy, speed, evasion, sp_attack, sp_defense, multiple)
-- output texture size: 256x256
-- tile base: 0 for increase and decrease
-- native decrease BG1 X offset: 64
-- palette index 0: transparent
+R3 native assets, ROM statScroll, native decrease X offset and statBlend remain authoritative.
 
-## R3 compositor
-- ROM remains authoritative for statActive/statBattler/statDecrease/statPal/statSharp/statBlend/statScroll.
-- Android chooses the exact SoulGold-generated pattern.
-- BitmapShader repeats the native BG texture.
-- statScroll drives BG Y and decrease uses native BG X=64.
-- statBlend drives alpha as blend / 16.
-- Current Showdown frame alpha is applied with DST_IN as the battler silhouette mask.
-- Body/stat/lower UI are composed at native mGBA framebuffer resolution and scaled once at the end.
+Permanent R4 gate forbids DST_IN for this stat mask, old stripe/clipRect approximation and hard-coded tint.
 
-## Permanently forbidden regressions
-- stripe / venetian-blind stat approximation
-- clipRect stripe segmentation
-- hardcoded RGB stat tint tables / PorterDuffColorFilter stat fake
-- Android uptime as provider animation clock
-- transient gBridgeFresh blank frames
-- provider-owned native 64x64 pixels inside stat/monbg presentation
-- BOUNCE_MON action-menu coupling
-- host raw BattleHealthboxInfo ABI stride writes
+## R4 repair B — battle-end provider ownership latch
+Battle teardown may clear/inactivate gBattleMons before the provider-owned native OBJ generation is destroyed. R4 therefore stores ROM-side provider ownership by exact battler sprite generation:
+- valid
+- species
+- side
+- spriteId
 
-## R3 permanent validator
-The build gate requires:
-- all M2R5D/M2R11E/M2R12G/M3S1 lifecycle and layering rules,
-- bridge v3 and last-known-good snapshot,
-- ROM-frame animation clock,
-- complete 16-texture native stat asset set + manifest,
-- BitmapShader native pattern,
-- DST_IN Showdown alpha mask,
-- ROM scroll/blend authority,
-- explicit absence of the old stripe/tint approximation,
-- FRONT still blocked.
+Ownership may bridge only an inactive/zero-species teardown gap on the SAME spriteId and only while the host provider table still confirms the latched species. A real nonzero replacement species or different generation releases ownership.
 
-## Canonical R3 build evidence
-GitHub Actions Run #13 / 33867021188:
-- native stat asset generation: PASS
-- R3 permanent validator: PASS
+The software tick also captures the exact suppressed spriteId and restores that object after BuildOamBuffer without depending on a possibly changed gBattlersCount.
+
+Permanent rule: a provider-owned native battler may not become visible in a final teardown OAM snapshot before its exact OBJ generation is actually gone.
+
+## R4 build / static authority
+GitHub Actions Run #14 / 33963616919:
+- declaration-safe R4 patcher: PASS
+- R4 permanent presentation validator: PASS
+- native SoulGold stat assets: PASS
 - SoulGold ROM compile: PASS
 - bridge symbol / exact 32 MiB: PASS
-- SGXP build: PASS
+- SGXP: PASS
 - patched mGBA ARM64: PASS
 - Android contract audit: PASS
 - APK assembleDebug: PASS
 - test-kit upload: PASS
 - evidence upload: PASS
-- final compact-authority persistence housekeeping: FAIL after artifacts were already uploaded; does not invalidate the R3 binaries.
+- compact-authority housekeeping step failed only after artifacts were uploaded; binary authority remains valid.
 
-## Canonical binary authority
-- gM6X1ExternalBridge: 0x02002ad4
+## Canonical R4 binary authority
+- gM6X1ExternalBridge: 0x02002af4
 - ROM bytes: 33,554,432
-- ROM SHA-256: 9030606040c40e81dff820489dcd9cd57ea4619e7c1a3b5bfeb7e702c9018c0e
-- SGXP SHA-256: 0915766512c3c704c640b95242a5fe184219a12808981e86d6729e99309724bc
-- APK SHA-256: 3452c642ba2dbeb138b5ac1b5f55876e55fe25985642c8f17988fe27799a77c1
+- ROM SHA-256: bde1f153fda6da8fb096cd720326542be0a09a0dde11ec572dccef1a3102e9e2
+- SGXP SHA-256: 2342ab524fa6f6fb858a26b4791c8b75fd824902442da9ba446b6e6f7fbbf528
+- APK SHA-256: fc0731f2d4f8c18c69618039fe51f3b37a7b490206425c2d7c855c87adbc90fb
 
-## Locked next AYN THOR gate
+Built APK inspection confirms:
+- M6X1_R4_EDGE_TEARDOWN_GUARD
+- stat_mask_mode=showdown_alpha_first_src_in_full_rect
+- stat_edge_safe_frames telemetry
+- battle_end_native_flash_guard telemetry
+- all 16 R3 native stat textures + manifest remain packaged.
+
+## Locked AYN THOR R4 gate
 ONLY Sprigatito player BACK.
-1. Trigger stat decrease at least 2–3 times.
-2. Expected: the SoulGold native stat-change BG pattern scrolls/blends continuously inside the Showdown silhouette.
-3. Forbidden: stripe/block segmentation, old native 64x64 silhouette, Showdown disappearance.
-4. Battle command <-> MOVE command switching must remain flicker-free.
-5. HUD/dialogue/monbg layering and audio must not regress.
-6. START+SELECT runtime JSON should report:
-   - presentation_semantics = M6X1_R3_NATIVE_SOULGOLD_STAT_FIDELITY
-   - stat_render_mode = soulgold_bg1_tilemap_palette_scroll_showdown_alpha_mask
-   - stat_native_pattern_frames > 0
-   - stat_asset_failures = 0
-   - registry/overlay/audio sealed metrics remain healthy.
+1. Trigger stat decrease 2–3 times: absolutely no residual stat effect outside any Showdown edge.
+2. End several battles: absolutely no old/native battler sprite flash during teardown.
+3. Battle command <-> MOVE command remains flicker-free.
+4. HUD/dialogue/monbg layering remains correct.
+5. Audio remains subjectively normal; do not reopen audio without an actual regression.
+6. START+SELECT report should show:
+   - presentation_semantics = M6X1_R4_EDGE_TEARDOWN_GUARD
+   - stat_mask_mode = showdown_alpha_first_src_in_full_rect
+   - stat_edge_safe_frames > 0 after stat animation
+   - battle_end_native_flash_guard = rom_provider_ownership_latch
+   - registry/overlay failures remain 0.
 
-If R3 visual fidelity is still wrong while the R3 stat counters pass, the next repair scope is ONLY shader phase / GBA BG scroll sign / blend fidelity. Do not reopen registry/audio and do not restore the rejected strip/tint approximation.
+Do not unlock FRONT or broad roster expansion until this R4 physical-device gate is accepted.
