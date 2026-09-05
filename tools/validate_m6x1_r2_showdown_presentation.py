@@ -19,6 +19,13 @@ def main():
     expected=[f'{d}_{p}.png' for d in ('increase','decrease') for p in
               ('attack','defense','accuracy','speed','evasion','sp_attack','sp_defense','multiple')]
 
+    stat_start=java.find('private void drawStatOverlayNative(')
+    stat_end=java.find('@Override protected void onDraw',stat_start)
+    stat_java=java[stat_start:stat_end] if stat_start>=0 and stat_end>stat_start else ''
+    restore_start=battle.find('static void M6X1_RestoreNativeVisibility(')
+    restore_end=battle.find('static void RunBattleSoftwareTick(void)',restore_start)
+    restore=battle[restore_start:restore_end] if restore_start>=0 and restore_end>restore_start else ''
+
     checks={
         # Permanent M2/M3 presentation rules.
         'bridge_v3':'#define M6X1_BRIDGE_VERSION 3u' in battle and 'kBridgeVersion=3u' in cpp,
@@ -39,16 +46,40 @@ def main():
         'first_visible_epoch':'presentationVisibleOnce' in java and 'presentationEpochRomFrame=romFrame' in java,
         'provider_release_on_gap':'proxyReleaseEvents' in java and 'resetPresentationProxy()' in java,
 
-        # R3: exact pinned SoulGold stat-change art semantics. The old accepted
-        # M2 approximation is now explicitly forbidden after AYN THOR rejected it.
-        'r3_marker':'M6X1_R3_NATIVE_SOULGOLD_STAT_FIDELITY' in java,
-        'native_stat_assets_complete':assets.is_dir() and (assets/'manifest.json').is_file() and all((assets/x).is_file() for x in expected),
+        # R3 native SoulGold stat-change content stays sealed.
+        'r3_native_stat_assets_complete':assets.is_dir() and (assets/'manifest.json').is_file() and all((assets/x).is_file() for x in expected),
         'native_stat_pattern_shader':'BitmapShader' in java and 'Shader.TileMode.REPEAT' in java,
-        'showdown_alpha_mask':'PorterDuff.Mode.DST_IN' in java and 'statMaskPaint' in java,
         'native_scroll_authority':'float bgX=decrease?64f:0f,bgY=presentation[6]' in java and 'matrix.setTranslate(-bgX,-bgY)' in java,
         'native_blend_authority':'255f*blend/16f' in java,
         'old_stat_stripes_forbidden':'stripe=Math.max' not in java and 'clipRect(dst.left' not in java,
         'old_hardcoded_tint_forbidden':'PorterDuffColorFilter' not in java and 'final int[][] colors=' not in java,
+
+        # R4 edge-safe mask. R3's DST_IN order can leave a fringe when saveLayer
+        # rounds a fractional RectF outward. R4 establishes Showdown alpha first,
+        # then SRC_IN paints the full pattern rectangle so outside-alpha pixels
+        # are explicitly transparent.
+        'r4_java_marker':'M6X1_R4_EDGE_SAFE_STAT_MASK' in java,
+        'r4_presentation_report':'M6X1_R4_EDGE_TEARDOWN_GUARD' in java,
+        'showdown_alpha_draw_first':stat_java.find('nc.drawBitmap(frame,null,dst,statMaskPaint)') >= 0,
+        'pattern_draw_after_alpha':stat_java.find('nc.drawRect(dst,statPaint)') > stat_java.find('nc.drawBitmap(frame,null,dst,statMaskPaint)'),
+        'src_in_edge_safe_mask':'PorterDuff.Mode.SRC_IN' in stat_java,
+        'dst_in_stat_mask_forbidden':'PorterDuff.Mode.DST_IN' not in java,
+        'xfermode_reset':'statPaint.setXfermode(null)' in stat_java,
+        'stat_edge_counter':'statEdgeSafeFrames++' in stat_java and 'stat_edge_safe_frames' in java,
+
+        # R4 battle-end teardown guard. Provider ownership remains latched only
+        # across an inactive/zero-species gap on the exact same sprite generation.
+        'r4_rom_marker':'M6X1_R4_BATTLE_END_PROVIDER_LATCH' in battle,
+        'owned_latch_arrays':all(x in battle for x in ('gM6X1ExternalOwnedValid','gM6X1ExternalOwnedSpecies','gM6X1ExternalOwnedSide','gM6X1ExternalOwnedSpriteId')),
+        'teardown_zero_species_gate':'(!activeBattler || species == 0)' in battle,
+        'teardown_same_sprite_generation':'gM6X1ExternalOwnedSpriteId[battler] == spriteId' in battle,
+        'latched_provider_revalidated':'M6X1_HostProvidesSpecies(gM6X1ExternalOwnedSpecies[battler], gM6X1ExternalOwnedSide[battler])' in battle,
+        'native_suppressed_while_latched':'(currentProvided || latchedOwned)' in battle,
+        'suppressed_sprite_id_captured':'suppressedSpriteId[battler] = spriteId;' in battle,
+        'restore_uses_captured_id':'const u8 spriteId = suppressedSpriteId[battler];' in restore,
+        'restore_not_gbattlerscount_gated':'battler >= gBattlersCount' not in restore,
+        'tick_tracks_suppressed_generation':'m6x1SuppressedSpriteId' in battle,
+
         'native_resolution_composite':'Bitmap bmp,compositeBmp' in java and 'Canvas nc=new Canvas(compositeBmp)' in java,
         'stat_same_frame_geometry':'drawStatOverlayNative(nc,frame,dst,proxy[1])' in java,
         'stat_before_final_scale':java.find('drawStatOverlayNative(nc,frame,dst,proxy[1])') < java.find('c.drawBitmap(compositeBmp'),
@@ -59,7 +90,7 @@ def main():
     }
     for k,v in checks.items(): print(f'{k}={"PASS" if v else "FAIL"}')
     ok=all(checks.values())
-    print('M6X1_R3_SHOWDOWN_PRESENTATION_AUTHORITY='+('PASS' if ok else 'FAIL'))
+    print('M6X1_R4_SHOWDOWN_PRESENTATION_AUTHORITY='+('PASS' if ok else 'FAIL'))
     return 0 if ok else 1
 
 if __name__=='__main__':
