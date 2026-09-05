@@ -13,70 +13,49 @@ def load_base():
 
 
 def patch_hud(root:Path):
-    """Exact accepted M2/R1 BOUNCE_MON patch, retained as permanent R4 authority."""
-    path=root/'src'/'battle_controller_player.c'
-    text=path.read_text()
+    path=root/'src'/'battle_controller_player.c';text=path.read_text()
     mon_call=re.compile(r'^(?P<indent>[ \t]*)DoBounceEffect\(battler,\s*BOUNCE_MON,\s*7,\s*1\);[ \t]*$',re.MULTILINE)
     found=list(mon_call.finditer(text))
     if found:
         def repl(m):
-            i=m.group('indent')
-            return (i+'// '+HUD_MARKER+': healthbox bounce remains native;\n'
-                    +i+'// action-selection UI must never inject y2 into external battler body.')
+            i=m.group('indent');return (i+'// '+HUD_MARKER+': healthbox bounce remains native;\n'+i+'// action-selection UI must never inject y2 into external battler body.')
         text,count=mon_call.subn(repl,text)
     else:
         count=0
-        if HUD_MARKER not in text and 'M6X1_R1_EXTERNAL_SHOWDOWN_HUD_BOUNCE_DECOUPLE' not in text:
-            raise SystemExit('BOUNCE_MON anchors missing before M6X1 R4 HUD patch')
-    if mon_call.search(text):
-        raise SystemExit('BOUNCE_MON survivor after M6X1 R4 HUD patch')
-    if not re.search(r'DoBounceEffect\(battler,\s*BOUNCE_HEALTHBOX,\s*7,\s*1\);',text):
-        raise SystemExit('BOUNCE_HEALTHBOX disappeared unexpectedly')
-    if HUD_MARKER not in text and 'M6X1_R1_EXTERNAL_SHOWDOWN_HUD_BOUNCE_DECOUPLE' in text:
-        text=text.replace('M6X1_R1_EXTERNAL_SHOWDOWN_HUD_BOUNCE_DECOUPLE',HUD_MARKER)
-    path.write_text(text)
-    return count
+        if HUD_MARKER not in text and 'M6X1_R1_EXTERNAL_SHOWDOWN_HUD_BOUNCE_DECOUPLE' not in text:raise SystemExit('BOUNCE_MON anchors missing before M6X1 R4 HUD patch')
+    if mon_call.search(text):raise SystemExit('BOUNCE_MON survivor after M6X1 R4 HUD patch')
+    if not re.search(r'DoBounceEffect\(battler,\s*BOUNCE_HEALTHBOX,\s*7,\s*1\);',text):raise SystemExit('BOUNCE_HEALTHBOX disappeared unexpectedly')
+    if HUD_MARKER not in text and 'M6X1_R1_EXTERNAL_SHOWDOWN_HUD_BOUNCE_DECOUPLE' in text:text=text.replace('M6X1_R1_EXTERNAL_SHOWDOWN_HUD_BOUNCE_DECOUPLE',HUD_MARKER)
+    path.write_text(text);return count
+
+
+def preserve_r4_report_marker(framework:Path):
+    p=framework/'android/m6x1/app/src/main/java/com/showpei/soulgold/m6x1/MainActivity.java';text=p.read_text()
+    if 'M6X1_R4_EDGE_TEARDOWN_GUARD' in text:return 'already'
+    anchor='j.put("presentation_semantics","M6X1_R5_FRONT_CANARY");j.put("r4_runtime_authority","PASS_ACCEPTED_AYN_THOR");'
+    repl='j.put("presentation_semantics","M6X1_R5_FRONT_CANARY");j.put("r4_presentation_authority","M6X1_R4_EDGE_TEARDOWN_GUARD");j.put("r4_runtime_authority","PASS_ACCEPTED_AYN_THOR");'
+    if anchor not in text:raise SystemExit('R5 report anchor missing while preserving R4 authority marker')
+    p.write_text(text.replace(anchor,repl,1));return 'patched'
 
 
 def main():
-    ap=argparse.ArgumentParser();ap.add_argument('--soulgold',required=True);a=ap.parse_args()
-    root=Path(a.soulgold);base=load_base()
-    base.patch_host_gate(root)
-    monbg=base.patch_monbg(root)
-    hud=patch_hud(root)
-    stat=base.patch_stat(root)
-
+    ap=argparse.ArgumentParser();ap.add_argument('--soulgold',required=True);a=ap.parse_args();root=Path(a.soulgold);base=load_base()
+    base.patch_host_gate(root);monbg=base.patch_monbg(root);hud=patch_hud(root);stat=base.patch_stat(root)
     framework=Path(__file__).resolve().parents[1]
-
-    # R3 native SoulGold stat textures remain the visual authority.
     prep=Path(__file__).with_name('prepare_m6x1_native_stat_assets.py')
-    subprocess.run([
-        sys.executable,str(prep),'--soulgold',str(root),
-        '--android-root',str(framework/'android'/'m6x1')
-    ],check=True)
-
-    # R4 is sealed physical-device authority. Use the declaration-safe runner.
+    subprocess.run([sys.executable,str(prep),'--soulgold',str(root),'--android-root',str(framework/'android'/'m6x1')],check=True)
     r4=Path(__file__).with_name('apply_m6x1_r4_edge_teardown_patch_v2.py')
-    subprocess.run([
-        sys.executable,str(r4),'--framework',str(framework),'--soulgold',str(root)
-    ],check=True)
-
-    # R5 opens exactly one opponent FRONT provider after R4. ROM provider
-    # ownership is already side-generic, so R5 changes host registry/compositor
-    # only and keeps 901/broad FRONT rollout blocked.
+    subprocess.run([sys.executable,str(r4),'--framework',str(framework),'--soulgold',str(root)],check=True)
     r5=Path(__file__).with_name('apply_m6x1_r5_front_canary.py')
-    subprocess.run([
-        sys.executable,str(r5),'--framework',str(framework),'--soulgold',str(root)
-    ],check=True)
+    subprocess.run([sys.executable,str(r5),'--framework',str(framework),'--soulgold',str(root)],check=True)
+    print('r4_report_authority_marker='+preserve_r4_report_marker(framework))
     r5v=Path(__file__).with_name('validate_m6x1_r5_front_canary.py')
-    subprocess.run([
-        sys.executable,str(r5v),'--framework',str(framework),'--soulgold',str(root)
-    ],check=True)
-
+    subprocess.run([sys.executable,str(r5v),'--framework',str(framework),'--soulgold',str(root)],check=True)
     status=root/'M6X1_PRESENTATION_SEMANTICS_STATUS.txt'
     status.write_text(
         'M6X1_PRESENTATION_SEMANTICS=PASS\n'
         'authority=M2R5D_M2R11E_M2R12G_M3S1_PLUS_R3_NATIVE_STAT_PLUS_R4_EDGE_TEARDOWN_PLUS_R5_FRONT_CANARY\n'
+        'r4_runtime_authority=PASS_ACCEPTED_AYN_THOR\n'
         'bridge_abi=3\n'
         'proxy_native_vs_presentation_visibility=SEPARATE\n'
         'monbg_external_semantic='+monbg+'\n'
@@ -98,8 +77,7 @@ def main():
         'legacy_stripe_tint_approximation=FORBIDDEN\n'
         'native_fallback_stat_path=PRESERVED\n'
         'host_raw_healthbox_abi_writes=FORBIDDEN\n'
-        'hud_mon_calls_removed='+str(hud)+'\n'
-    )
+        'hud_mon_calls_removed='+str(hud)+'\n')
     print(status.read_text(),end='')
 
 if __name__=='__main__':main()
