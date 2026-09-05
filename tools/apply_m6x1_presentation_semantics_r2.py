@@ -13,7 +13,7 @@ def load_base():
 
 
 def patch_hud(root:Path):
-    """Exact accepted M2/R1 BOUNCE_MON patch, retained as permanent R3 authority."""
+    """Exact accepted M2/R1 BOUNCE_MON patch, retained as permanent R4 authority."""
     path=root/'src'/'battle_controller_player.c'
     text=path.read_text()
     mon_call=re.compile(r'^(?P<indent>[ \t]*)DoBounceEffect\(battler,\s*BOUNCE_MON,\s*7,\s*1\);[ \t]*$',re.MULTILINE)
@@ -27,9 +27,9 @@ def patch_hud(root:Path):
     else:
         count=0
         if HUD_MARKER not in text and 'M6X1_R1_EXTERNAL_SHOWDOWN_HUD_BOUNCE_DECOUPLE' not in text:
-            raise SystemExit('BOUNCE_MON anchors missing before M6X1 R3 HUD patch')
+            raise SystemExit('BOUNCE_MON anchors missing before M6X1 R4 HUD patch')
     if mon_call.search(text):
-        raise SystemExit('BOUNCE_MON survivor after M6X1 R3 HUD patch')
+        raise SystemExit('BOUNCE_MON survivor after M6X1 R4 HUD patch')
     if not re.search(r'DoBounceEffect\(battler,\s*BOUNCE_HEALTHBOX,\s*7,\s*1\);',text):
         raise SystemExit('BOUNCE_HEALTHBOX disappeared unexpectedly')
     if HUD_MARKER not in text and 'M6X1_R1_EXTERNAL_SHOWDOWN_HUD_BOUNCE_DECOUPLE' in text:
@@ -46,20 +46,26 @@ def main():
     hud=patch_hud(root)
     stat=base.patch_stat(root)
 
-    # This script runs after workflow ROM build dependencies are installed, so
-    # Pillow is available here. Generate exact Android stat textures from the
-    # checked-out pinned SoulGold source before the permanent validator runs.
     framework=Path(__file__).resolve().parents[1]
+
+    # R3 native SoulGold stat textures remain the visual authority.
     prep=Path(__file__).with_name('prepare_m6x1_native_stat_assets.py')
     subprocess.run([
         sys.executable,str(prep),'--soulgold',str(root),
         '--android-root',str(framework/'android'/'m6x1')
     ],check=True)
 
+    # R4 is deliberately applied after the sealed R2/R3 semantic chain. It only
+    # changes stat alpha compositing order and battle-end provider teardown.
+    r4=Path(__file__).with_name('apply_m6x1_r4_edge_teardown_patch.py')
+    subprocess.run([
+        sys.executable,str(r4),'--framework',str(framework),'--soulgold',str(root)
+    ],check=True)
+
     status=root/'M6X1_PRESENTATION_SEMANTICS_STATUS.txt'
     status.write_text(
         'M6X1_PRESENTATION_SEMANTICS=PASS\n'
-        'authority=M2R5D_M2R11E_M2R12G_M3S1_PLUS_R3_NATIVE_STAT_FIDELITY\n'
+        'authority=M2R5D_M2R11E_M2R12G_M3S1_PLUS_R3_NATIVE_STAT_PLUS_R4_EDGE_TEARDOWN\n'
         'bridge_abi=3\n'
         'proxy_native_vs_presentation_visibility=SEPARATE\n'
         'monbg_external_semantic='+monbg+'\n'
@@ -69,6 +75,10 @@ def main():
         'stat_external_bridge='+stat+'\n'
         'stat_provider_gate=M6X1_HostProvidesSpecies\n'
         'stat_render=PINNED_SOULGOLD_TILEMAP_PALETTE_SCROLL_SHOWDOWN_ALPHA_MASK\n'
+        'stat_mask_order=SHOWDOWN_ALPHA_FIRST_THEN_SRC_IN_FULL_PATTERN_RECT\n'
+        'stat_edge_residue_guard=PASS\n'
+        'battle_end_provider_ownership_latch=PASS\n'
+        'battle_end_native_flash_guard=PASS\n'
         'legacy_stripe_tint_approximation=FORBIDDEN\n'
         'native_fallback_stat_path=PRESERVED\n'
         'host_raw_healthbox_abi_writes=FORBIDDEN\n'
