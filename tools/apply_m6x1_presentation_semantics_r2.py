@@ -57,7 +57,9 @@ def main():
 
     # R4 is deliberately applied after the sealed R2/R3 semantic chain. It only
     # changes stat alpha compositing order and battle-end provider teardown.
-    r4=Path(__file__).with_name('apply_m6x1_r4_edge_teardown_patch.py')
+    # Use the v2 runner because it distinguishes a C forward declaration from
+    # the actual function definition before replacing RunBattleSoftwareTick.
+    r4=Path(__file__).with_name('apply_m6x1_r4_edge_teardown_patch_v2.py')
     subprocess.run([
         sys.executable,str(r4),'--framework',str(framework),'--soulgold',str(root)
     ],check=True)
@@ -79,6 +81,7 @@ def main():
         'stat_edge_residue_guard=PASS\n'
         'battle_end_provider_ownership_latch=PASS\n'
         'battle_end_native_flash_guard=PASS\n'
+        'function_patch_boundary=FORWARD_DECLARATION_SAFE\n'
         'legacy_stripe_tint_approximation=FORBIDDEN\n'
         'native_fallback_stat_path=PRESERVED\n'
         'host_raw_healthbox_abi_writes=FORBIDDEN\n'
