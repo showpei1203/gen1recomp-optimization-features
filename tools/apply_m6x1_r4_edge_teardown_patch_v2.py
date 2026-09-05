@@ -10,25 +10,44 @@ def load_base():
     return mod
 
 
+def _definition_brace(text:str,start:int,signature:str):
+    """Return opening-brace index only when this match is a C function definition."""
+    j=start+len(signature)
+
+    # Some callers intentionally pass a prefix ending with '(' so the parameter
+    # list may vary. Balance that list first, then require the next token to be
+    # '{'. This still rejects a prototype because its next token is ';'.
+    if signature.rstrip().endswith('('):
+        depth=1
+        while j<len(text) and depth:
+            c=text[j]
+            if c=='(':
+                depth+=1
+            elif c==')':
+                depth-=1
+            j+=1
+        if depth:
+            return None
+
+    while j<len(text) and text[j] in ' \t\r\n':
+        j+=1
+    return j if j<len(text) and text[j]=='{' else None
+
+
 def replace_definition(text:str, signature:str, replacement:str)->str:
     """Replace an actual function definition, never a forward declaration.
 
-    The first R4 attempt searched for the next '{' after a signature. For
-    RunBattleSoftwareTick that matched the early forward declaration ending in
-    ';' and then consumed the next unrelated function body. This scanner skips
-    declarations and accepts only a signature whose next non-whitespace token is
-    an opening brace.
+    Supports both a complete signature (RunBattleSoftwareTick(void)) and a
+    function-name prefix ending in '(' (PublishProxy/RestoreVisibility). A
+    forward declaration ending in ';' is always skipped.
     """
     pos=0
     while True:
         start=text.find(signature,pos)
         if start<0:
             raise SystemExit('function definition missing: '+signature)
-        j=start+len(signature)
-        while j<len(text) and text[j] in ' \t\r\n':
-            j+=1
-        if j<len(text) and text[j]=='{':
-            brace=j
+        brace=_definition_brace(text,start,signature)
+        if brace is not None:
             break
         pos=start+len(signature)
 
@@ -60,12 +79,22 @@ def main():
     rom=base.patch_rom(soulgold/'src/battle_main.c')
 
     patched=(soulgold/'src/battle_main.c').read_text()
-    if patched.count('static void RunBattleSoftwareTick(void)\n{') != 1:
-        raise SystemExit('R4 RunBattleSoftwareTick definition count is not exactly one')
+    # Count definitions semantically rather than depending on a particular EOL.
+    sig='static void RunBattleSoftwareTick(void)'
+    definition_count=0;pos=0
+    while True:
+        p=patched.find(sig,pos)
+        if p<0:break
+        if _definition_brace(patched,p,sig) is not None:
+            definition_count+=1
+        pos=p+len(sig)
+    if definition_count != 1:
+        raise SystemExit(f'R4 RunBattleSoftwareTick definition count={definition_count}, expected 1')
     if 'static void RunBattleSoftwareTick(void);' not in patched:
         raise SystemExit('R4 accidentally removed RunBattleSoftwareTick forward declaration')
     print('M6X1_R4_EDGE_TEARDOWN_PATCH_V2=PASS java='+java+' rom='+rom)
     print('definition_boundary=FORWARD_DECLARATION_SAFE')
+    print('RunBattleSoftwareTick_definition_count=1')
 
 if __name__=='__main__':
     main()
