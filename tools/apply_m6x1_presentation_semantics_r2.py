@@ -55,19 +55,28 @@ def main():
         '--android-root',str(framework/'android'/'m6x1')
     ],check=True)
 
-    # R4 is deliberately applied after the sealed R2/R3 semantic chain. It only
-    # changes stat alpha compositing order and battle-end provider teardown.
-    # Use the v2 runner because it distinguishes a C forward declaration from
-    # the actual function definition before replacing RunBattleSoftwareTick.
+    # R4 is sealed physical-device authority. Use the declaration-safe runner.
     r4=Path(__file__).with_name('apply_m6x1_r4_edge_teardown_patch_v2.py')
     subprocess.run([
         sys.executable,str(r4),'--framework',str(framework),'--soulgold',str(root)
     ],check=True)
 
+    # R5 opens exactly one opponent FRONT provider after R4. ROM provider
+    # ownership is already side-generic, so R5 changes host registry/compositor
+    # only and keeps 901/broad FRONT rollout blocked.
+    r5=Path(__file__).with_name('apply_m6x1_r5_front_canary.py')
+    subprocess.run([
+        sys.executable,str(r5),'--framework',str(framework),'--soulgold',str(root)
+    ],check=True)
+    r5v=Path(__file__).with_name('validate_m6x1_r5_front_canary.py')
+    subprocess.run([
+        sys.executable,str(r5v),'--framework',str(framework),'--soulgold',str(root)
+    ],check=True)
+
     status=root/'M6X1_PRESENTATION_SEMANTICS_STATUS.txt'
     status.write_text(
         'M6X1_PRESENTATION_SEMANTICS=PASS\n'
-        'authority=M2R5D_M2R11E_M2R12G_M3S1_PLUS_R3_NATIVE_STAT_PLUS_R4_EDGE_TEARDOWN\n'
+        'authority=M2R5D_M2R11E_M2R12G_M3S1_PLUS_R3_NATIVE_STAT_PLUS_R4_EDGE_TEARDOWN_PLUS_R5_FRONT_CANARY\n'
         'bridge_abi=3\n'
         'proxy_native_vs_presentation_visibility=SEPARATE\n'
         'monbg_external_semantic='+monbg+'\n'
@@ -82,6 +91,10 @@ def main():
         'battle_end_provider_ownership_latch=PASS\n'
         'battle_end_native_flash_guard=PASS\n'
         'function_patch_boundary=FORWARD_DECLARATION_SAFE\n'
+        'front_rollout=R5_SINGLE_SPECIES_CANARY\n'
+        'front_canary_species=155\n'
+        'front_canary_name=cyndaquil\n'
+        'roster_expansion_901=BLOCKED\n'
         'legacy_stripe_tint_approximation=FORBIDDEN\n'
         'native_fallback_stat_path=PRESERVED\n'
         'host_raw_healthbox_abi_writes=FORBIDDEN\n'
